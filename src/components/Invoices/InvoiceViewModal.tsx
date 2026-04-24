@@ -1,0 +1,461 @@
+import { useEffect, useMemo, useState } from 'react'
+import type { Invoice, InvoiceItem } from '../../utils/models'
+import { invoiceService } from '../../services/invoiceService'
+import { enrichSingleInvoice } from '../../services/dbService'
+import styles from './InvoiceViewModal.module.css'
+import {
+  X, CheckCircle2, Circle, AlertTriangle, RotateCcw,
+  Phone, Package, Truck, DollarSign, FileText, Send,
+  Edit3, Trash2, Plus, Calendar, Hash, CreditCard,
+  ArrowUpRight, ArrowDownRight, User, MapPin, Box, Scale,
+  Loader2, RefreshCw
+} from 'lucide-react'
+
+type Props = {
+  open: boolean
+  invoice: Invoice | null
+  onClose: () => void
+  onEdit: () => void
+  onAddItem: () => void
+  onCollect: () => void
+  onDelete: () => void
+}
+
+function getInvItems(inv: Invoice): InvoiceItem[] {
+  let items: unknown = inv.items
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items) } catch { items = [] }
+  }
+  if (Array.isArray(items) && items.length) {
+    // Normalize items from backend format to display format
+    return items.map((it: any) => ({
+      type: it.type || it.description || 'بند',
+      details: it.details || it.description || '',
+      price: Number(it.price || it.total || it.unit_price || 0),
+    }))
+  }
+  // No items — create one from invoice data
+  return [{
+    type: inv.itemType || 'شحن دولي',
+    details: inv.details || '',
+    price: Number(inv.price || 0),
+  }]
+}
+
+function StatusBadge({ status }: { status: Invoice['status'] }) {
+  if (status === 'paid')
+    return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30"><CheckCircle2 size={14} /> مدفوعة بالكامل</span>
+  if (status === 'partial')
+    return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/20"><AlertTriangle size={14} /> مدفوعة جزئياً</span>
+  if (status === 'returned')
+    return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/30"><RotateCcw size={14} /> مرتجعة</span>
+  return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30"><Circle size={14} /> بانتظار الدفع</span>
+}
+
+export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, onCollect, onDelete }: Props) {
+  const [loadingFull, setLoadingFull] = useState(false)
+  const [enriching, setEnriching] = useState(false)
+  const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
+
+  // الفاتورة النهائية المعروضة
+  const displayInv = fullInvoice ?? invoice
+
+  // عند فتح المودال → جلب البيانات الكاملة من DB
+  useEffect(() => {
+    if (!open || !invoice) {
+      setFullInvoice(null)
+      return
+    }
+
+    let cancelled = false
+
+    const loadFull = async () => {
+      setLoadingFull(true)
+      try {
+        const data = await invoiceService.getInvoice(String(invoice.id))
+        if (cancelled) return
+
+        // Parse items
+        let items: InvoiceItem[] = []
+        try {
+          items = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || [])
+        } catch { items = [] }
+
+        const fullData: Invoice = { ...invoice, ...data, items }
+        setFullInvoice(fullData)
+
+        // لو البيانات ناقصة → enrich من دفترة
+        const needsEnrich = (data as any).needs_enrichment && data.daftra_id
+        if (needsEnrich && !cancelled) {
+          setEnriching(true)
+          try {
+            const enriched = await enrichSingleInvoice(data.daftra_id!)
+            if (!cancelled && enriched.ok && enriched.invoice) {
+              let enrichedItems: InvoiceItem[] = []
+              try {
+                enrichedItems = typeof enriched.invoice.items === 'string'
+                  ? JSON.parse(enriched.invoice.items as string)
+                  : (enriched.invoice.items || [])
+              } catch { enrichedItems = [] }
+              setFullInvoice({ ...fullData, ...enriched.invoice, items: enrichedItems })
+            }
+          } catch {
+            // فشل الإثراء — نعرض البيانات الموجودة
+          } finally {
+            if (!cancelled) setEnriching(false)
+          }
+        }
+      } catch {
+        // فشل جلب التفاصيل — نعرض البيانات الأساسية
+        setFullInvoice(null)
+      } finally {
+        if (!cancelled) setLoadingFull(false)
+      }
+    }
+
+    void loadFull()
+    return () => { cancelled = true }
+  }, [open, invoice?.id, invoice?.daftra_id])
+
+  // إعادة الإثراء يدوياً
+  const handleManualEnrich = async () => {
+    const daftraId = displayInv?.daftra_id
+    if (!daftraId || enriching) return
+    setEnriching(true)
+    try {
+      const enriched = await enrichSingleInvoice(daftraId)
+      if (enriched.ok && enriched.invoice) {
+        let items: InvoiceItem[] = []
+        try {
+          items = typeof enriched.invoice.items === 'string'
+            ? JSON.parse(enriched.invoice.items as string)
+            : (enriched.invoice.items || [])
+        } catch { items = [] }
+        setFullInvoice(prev => ({ ...(prev ?? invoice!), ...enriched.invoice, items }))
+      }
+    } catch { /* silent */ }
+    finally { setEnriching(false) }
+  }
+
+  const items = useMemo(() => (displayInv ? getInvItems(displayInv) : []), [displayInv])
+  const total = useMemo(() => {
+    // Use invoice total first (from DB), fallback to items sum
+    const invTotal = Number(displayInv?.price || displayInv?.total || 0)
+    if (invTotal > 0) return invTotal
+    return items.reduce((s, it) => s + (Number(it.price) || 0), 0)
+  }, [displayInv, items])
+
+  const paidAmount = useMemo(() => {
+    if (!displayInv) return 0
+    if (displayInv.status === 'paid') return total
+    // Read from all possible field names
+    const paid = Number(
+      (displayInv as any).paid_amount ?? 
+      displayInv.partialPaid ?? 
+      displayInv.partial_paid ?? 
+      0
+    )
+    return paid
+  }, [displayInv, total])
+
+  const remainingAmount = useMemo(() => {
+    if (!displayInv) return 0
+    if (displayInv.status === 'paid') return 0
+    return Math.max(0, total - paidAmount)
+  }, [displayInv, total, paidAmount])
+
+  const dhlCost = Number(displayInv?.dhl_cost || displayInv?.dhlCost || (displayInv as any)?.dhl_cost || 0)
+  const profit = total > 0 && dhlCost > 0 ? total - dhlCost : 0
+
+  if (!open || !displayInv) return null
+
+  return (
+    <div className={styles.overlay} role="dialog" aria-modal="true">
+      <div className={styles.modal}>
+
+        {/* ═══ Header ═══ */}
+        <div className={styles.header}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-indigo-800/20 hidden sm:flex">
+              <FileText size={22} />
+            </div>
+            <div>
+              <h2 className={styles.title}>
+                <span className="flex items-center gap-2">
+                  فاتورة #{displayInv.invoice_number || displayInv.daftra_id || displayInv.id}
+                  {displayInv.isDraft && <span className="text-[9px] bg-gray-200 dark:bg-slate-700 text-gray-500 px-2 py-0.5 rounded uppercase font-inter">مسودة</span>}
+                  {(loadingFull || enriching) && (
+                    <span className="inline-flex items-center gap-1 text-[9px] bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-0.5 rounded">
+                      <Loader2 size={10} className="animate-spin" />
+                      {loadingFull ? 'جاري التحميل...' : 'جلب التفاصيل...'}
+                    </span>
+                  )}
+                </span>
+              </h2>
+              <div className="text-xs text-gray-500 dark:text-gray-400 font-semibold mt-0.5">
+                <span className="text-gray-400">العميل:</span>{' '}
+                <span className="text-gray-900 dark:text-white">{displayInv.client}</span>
+                {displayInv.phone && <span className="text-green-500 mr-2">· {displayInv.phone}</span>}
+                {displayInv.daftra_id && <span className="text-indigo-500 mr-2">· دفترة #{displayInv.daftra_id}</span>}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            {displayInv.daftra_id && (
+              <button
+                type="button"
+                title="إعادة جلب التفاصيل من دفترة"
+                className="text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors p-2 rounded-xl"
+                onClick={handleManualEnrich}
+                disabled={enriching}
+              >
+                <RefreshCw size={16} className={enriching ? 'animate-spin' : ''} />
+              </button>
+            )}
+            <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* ═══ Body ═══ */}
+        <div className={styles.body}>
+
+          {/* ─── بيانات أساسية ─── */}
+          <div className={styles.topGrid}>
+            <div className={styles.card}>
+              <div className={styles.k}><Calendar size={13} /> الحالة</div>
+              <StatusBadge status={displayInv.status} />
+            </div>
+            <div className={styles.card}>
+              <div className={styles.k}><Calendar size={13} /> التاريخ</div>
+              <div className={styles.v}>{String(displayInv.date).slice(0, 10) || '—'}</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.k}><Phone size={13} /> جوال العميل</div>
+              <div className={`${styles.v} ${styles.mono}`} dir="ltr">{displayInv.phone || '—'}</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.k}><Hash size={13} /> رقم دفترة</div>
+              <div className={`${styles.v} ${styles.mono}`}>{displayInv.daftra_id ? `#${displayInv.daftra_id}` : '—'}</div>
+            </div>
+          </div>
+
+          {/* ─── بيانات الشحن ─── */}
+          <div className={styles.topGrid} style={{ marginTop: 12 }}>
+            <div className={styles.card}>
+              <div className={styles.k}><Package size={13} /> رقم البوليصة (AWB)</div>
+              <div className={`${styles.v} ${styles.mono}`} dir="ltr">{displayInv.awb || '—'}</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.k}><Truck size={13} /> شركة الشحن</div>
+              <div className={styles.v}>{displayInv.carrier || '—'}</div>
+            </div>
+          </div>
+
+          {/* ─── المرسل والمستلم ─── */}
+          {(displayInv.sender || displayInv.receiver || displayInv.sender_phone || displayInv.receiver_phone) && (
+            <div style={{ marginTop: 12 }} className="bg-blue-50/50 dark:bg-blue-900/5 rounded-xl border border-blue-100 dark:border-blue-800/20 overflow-hidden">
+              <div className="bg-blue-50 dark:bg-blue-900/10 px-4 py-2.5 border-b border-blue-100 dark:border-blue-800/20 text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                <Truck size={13} /> معلومات التوجيه اللوجستي
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
+                {/* المرسل */}
+                <div className="flex flex-col gap-2 p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
+                  <div className="text-[10px] font-bold text-blue-500 flex items-center gap-1 uppercase tracking-wider">
+                    <Send size={10} /> المُرسل (Shipper)
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white">
+                    {displayInv.sender || displayInv.shipperName || '—'}
+                  </div>
+                  {(displayInv.sender_phone || displayInv.shipperPhone) && (
+                    <div className="text-xs text-gray-500 font-inter" dir="ltr">
+                      <Phone size={10} className="inline mr-1" />
+                      {displayInv.sender_phone || displayInv.shipperPhone}
+                    </div>
+                  )}
+                  {(displayInv.sender_address || displayInv.shipperAddress) && (
+                    <div className="text-xs text-gray-500 flex items-start gap-1">
+                      <MapPin size={10} className="mt-0.5 shrink-0" />
+                      <span className="leading-relaxed">{displayInv.sender_address || displayInv.shipperAddress}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* المستلم */}
+                <div className="flex flex-col gap-2 p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
+                  <div className="text-[10px] font-bold text-green-500 flex items-center gap-1 uppercase tracking-wider">
+                    <User size={10} /> المُستلم (Receiver)
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white">
+                    {displayInv.receiver || displayInv.receiverName || '—'}
+                  </div>
+                  {(displayInv.receiver_phone || displayInv.receiverPhone) && (
+                    <div className="text-xs text-gray-500 font-inter" dir="ltr">
+                      <Phone size={10} className="inline mr-1" />
+                      {displayInv.receiver_phone || displayInv.receiverPhone}
+                    </div>
+                  )}
+                  {(displayInv.receiver_address || displayInv.receiverAddress) && (
+                    <div className="text-xs text-gray-500 flex items-start gap-1">
+                      <MapPin size={10} className="mt-0.5 shrink-0" />
+                      <span className="leading-relaxed">{displayInv.receiver_address || displayInv.receiverAddress}</span>
+                    </div>
+                  )}
+                  {(displayInv.receiver_country || displayInv.receiverCountry) && (
+                    <div className="text-[10px] text-indigo-500 font-bold mt-1">
+                      🌍 {displayInv.receiver_country || displayInv.receiverCountry}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── الوزن والأبعاد ─── */}
+          {(displayInv.weight || displayInv.final_weight || displayInv.dimensions) && (
+            <div className={styles.topGrid} style={{ marginTop: 12, gridTemplateColumns: '1fr 1fr 1fr' }}>
+              <div className={styles.card}>
+                <div className={styles.k}><Scale size={13} /> الوزن الفعلي</div>
+                <div className={styles.v}>{displayInv.weight || '—'}</div>
+              </div>
+              <div className={styles.card} style={{ background: displayInv.final_weight ? 'rgba(245, 158, 11, 0.08)' : undefined, borderColor: displayInv.final_weight ? 'rgba(245, 158, 11, 0.2)' : undefined }}>
+                <div className={styles.k} style={{ color: displayInv.final_weight ? '#d97706' : undefined }}>
+                  <Scale size={13} /> الوزن النهائي
+                </div>
+                <div className={styles.v} style={{ color: displayInv.final_weight ? '#b45309' : undefined, fontFamily: 'var(--mono)' }}>
+                  {displayInv.final_weight || '—'}
+                </div>
+              </div>
+              <div className={styles.card}>
+                <div className={styles.k}><Box size={13} /> الأبعاد</div>
+                <div className={styles.v}>{displayInv.dimensions || '—'}</div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── ملخص مالي ─── */}
+          <div style={{ marginTop: 16 }} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-slate-700 rtl:divide-x-reverse">
+              <div className="p-3 text-center">
+                <div className="text-[10px] font-bold text-gray-400 mb-1 flex items-center justify-center gap-1">
+                  <DollarSign size={11} /> الإجمالي
+                </div>
+                <div className="font-inter font-black text-lg text-gray-900 dark:text-white">{total.toFixed(2)}</div>
+                <div className="text-[9px] text-gray-400">ر.س</div>
+              </div>
+              <div className="p-3 text-center">
+                <div className="text-[10px] font-bold text-green-600 dark:text-green-400 mb-1 flex items-center justify-center gap-1">
+                  <ArrowUpRight size={11} /> المدفوع
+                </div>
+                <div className="font-inter font-black text-lg text-green-600 dark:text-green-400">{paidAmount.toFixed(2)}</div>
+                <div className="text-[9px] text-green-500/70">ر.س</div>
+              </div>
+              <div className="p-3 text-center">
+                <div className="text-[10px] font-bold text-red-500 dark:text-red-400 mb-1 flex items-center justify-center gap-1">
+                  <ArrowDownRight size={11} /> المتبقي
+                </div>
+                <div className={`font-inter font-black text-lg ${remainingAmount > 0 ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                  {remainingAmount > 0 ? remainingAmount.toFixed(2) : '0.00'}
+                </div>
+                <div className="text-[9px] text-gray-400">ر.س</div>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            {total > 0 && (
+              <div className="px-3 pb-3">
+                <div className="w-full bg-gray-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full transition-all duration-700" style={{ width: `${Math.min(100, (paidAmount / total) * 100)}%` }} />
+                </div>
+                <div className="flex justify-between mt-1 text-[9px] font-bold">
+                  <span className="text-green-600 dark:text-green-400">{total > 0 ? ((paidAmount / total) * 100).toFixed(0) : 0}% محصّل</span>
+                  <span className="text-gray-400">{total.toFixed(2)} ر.س</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ─── تكلفة الناقل + الربح ─── */}
+          {dhlCost > 0 && (
+            <div style={{ marginTop: 12 }} className="flex items-center gap-2 px-3 py-2.5 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/20 rounded-lg">
+              <Truck size={14} className="text-orange-500" />
+              <span className="text-xs font-bold text-orange-700 dark:text-orange-400">تكلفة الناقل:</span>
+              <span className="text-xs font-inter font-bold text-orange-600">{dhlCost.toFixed(2)} ر.س</span>
+              {profit > 0 && (
+                <span className="text-[10px] text-green-600 dark:text-green-400 font-bold mr-auto">
+                  ربح: {profit.toFixed(2)} ر.س ({((profit / total) * 100).toFixed(0)}%)
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ─── طريقة الدفع ─── */}
+          {displayInv.payment && (
+            <div style={{ marginTop: 8 }} className="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/20 rounded-lg">
+              <CreditCard size={14} className="text-indigo-500" />
+              <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400">طريقة الدفع:</span>
+              <span className="text-xs font-semibold text-indigo-600">{displayInv.payment}</span>
+            </div>
+          )}
+
+          {/* ─── بنود الفاتورة ─── */}
+          <div className={styles.items}>
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+              <div className="bg-gray-50 dark:bg-slate-700/50 px-4 py-2.5 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">بنود الفاتورة</span>
+                <span className="text-[10px] font-bold text-gray-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-gray-200 dark:border-slate-700">
+                  {items.length} عنصر
+                </span>
+              </div>
+              <div className="divide-y divide-gray-100 dark:divide-slate-700/50">
+                {items.map((it, idx) => (
+                  <div key={`${it.type}-${idx}`} className={styles.itemRow}>
+                    <div className="flex flex-col gap-1 min-w-0 flex-1" style={{ padding: '12px 16px' }}>
+                      <span className={styles.badge}>{it.type}</span>
+                      {it.details && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed whitespace-pre-wrap" style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {it.details}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-inter font-bold text-sm text-yellow-600 dark:text-yellow-500 shrink-0 whitespace-nowrap" style={{ padding: '12px 16px' }}>
+                      {Number(it.price || 0).toFixed(2)} <span className="text-[10px]">ر.س</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ─── ملاحظات ─── */}
+          {displayInv.details && (
+            <div style={{ marginTop: 12 }} className="bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700 p-3">
+              <div className="text-[10px] font-bold text-gray-400 mb-1 flex items-center gap-1"><FileText size={10} /> ملاحظات</div>
+              <div className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{displayInv.details}</div>
+            </div>
+          )}
+        </div>
+
+        {/* ═══ Footer ═══ */}
+        <div className={styles.footer}>
+          {(!displayInv.isDraft && displayInv.status !== 'paid' && displayInv.status !== 'returned' && displayInv.phone) && (
+            <button type="button" className={styles.btnGhost} onClick={onCollect} style={{ color: '#25d366', borderColor: 'rgba(37,211,102,0.3)' }}>
+              <Send size={14} style={{ display: 'inline', marginLeft: 4 }} /> مطالبة واتساب
+            </button>
+          )}
+          <button type="button" className={styles.btnGhost} onClick={onAddItem}>
+            <Plus size={14} style={{ display: 'inline', marginLeft: 4 }} /> إضافة بند
+          </button>
+          <button type="button" className={styles.btnPrimary} onClick={onEdit}>
+            <Edit3 size={14} style={{ display: 'inline', marginLeft: 4 }} /> {displayInv.isDraft ? 'إكمال' : 'تعديل'}
+          </button>
+          <div style={{ flex: 1 }} />
+          <button type="button" className={styles.btnDanger} onClick={onDelete}>
+            <Trash2 size={14} style={{ display: 'inline', marginLeft: 4 }} /> حذف
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

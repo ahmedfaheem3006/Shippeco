@@ -1,0 +1,178 @@
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.dateRange {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.dateField {
+  display: grid;
+  gap: 4px;
+}
+
+.dateLabel {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.dateArrow {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  transform: translateY(8px);
+  user-select: none;
+}
+
+.dateInput {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+  min-width: 170px;
+}
+
+.placeholder {
+  color: var(--muted);
+}
+
+.filtersRight {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 1100px) {
+  .filters {
+    flex-wrap: nowrap;
+  }
+  .filtersRight {
+    margin-right: auto;
+    flex-wrap: nowrap;
+  }
+}
+
+.clearBtn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.advBtn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.advBtnActive {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(14, 165, 233, 0.09);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 1040px;
+}
+
+.table th,
+.table td {
+  vertical-align: middle;
+  padding: 12px 14px !important;
+  box-sizing: border-box;
+}
+
+.table th {
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table td {
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ltr {
+  direction: ltr;
+  text-align: left;
+}
+
+.itemBadge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actionsCell {
+  text-align: left;
+}
+
+@media (max-width: 860px) {
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+  .filters {
+    grid-template-columns: 1fr;
+  }
+  .dateRange {
+    grid-template-columns: 1fr;
+  }
+  .dateInput {
+    min-width: 0;
+    width: 100%;
+  }
+}

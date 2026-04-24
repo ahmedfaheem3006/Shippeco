@@ -1,0 +1,59 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+.layout,
+.main,
+.content {
+  overflow-x: hidden;
+}
+
+.invoices-table-wrap {
+  max-width: 100%;
+}
+
+.inv-search-row {
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .inv-search-row {
+    display: grid !important;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+  }
+}
+
+.inv-date-range {
+  min-height: 44px;
+}
+
+.inv-adv-btn {
+  min-height: 44px;
+}
+
+#sec-invoices .actions {
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+#sec-invoices .actions .btn.btn-sm {
+  padding: 6px 10px;
+}
+
+#sec-invoices .invoices-table-wrap table td:last-child {
+  width: auto;
+  min-width: unset;
+}
+
+.sidebar .nav {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

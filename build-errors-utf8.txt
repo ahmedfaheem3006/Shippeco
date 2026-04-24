@@ -1,0 +1,37 @@
+﻿
+> spa@0.0.0 build
+> tsc -b && vite build
+
+src/pages/AuditLogPage.tsx(7,33): error TS6133: 'XCircle' is declared but its value is never read.
+src/pages/CalculatorPage.tsx(5,3): error TS2305: Module '"lucide-react"' has no exported member 'Outbox'.
+src/pages/CalculatorPage.tsx(264,18): error TS2304: Cannot find name 'AlertCircle'.
+src/pages/CalculatorPage.tsx(337,11): error TS2304: Cannot find name 'Package'.
+src/pages/InvoicesPage.tsx(16,11): error TS6133: 'Calendar' is declared but its value is never read.
+src/pages/InvoicesPage.tsx(19,23): error TS6133: 'Trash2' is declared but its value is never read.
+src/pages/InvoicesPage.tsx(19,31): error TS6133: 'Edit2' is declared but its value is never read.
+src/pages/InvoicesPage.tsx(26,9): error TS6133: 'openSidebar' is declared but its value is never read.
+src/pages/PaymobLinksPage.tsx(10,16): error TS6133: 'ChevronDown' is declared but its value is never read.
+src/pages/PaymobLinksPage.tsx(325,129): error TS2304: Cannot find name 'CircleDollarSign'.
+src/pages/ProfitReportPage.tsx(6,25): error TS6133: 'TrendingUp' is declared but its value is never read.
+src/pages/ProfitReportPage.tsx(7,3): error TS6133: 'CheckCircle2' is declared but its value is never read.
+src/pages/ProfitReportPage.tsx(7,17): error TS6133: 'AlertTriangle' is declared but its value is never read.
+src/pages/ProfitReportPage.tsx(7,32): error TS6133: 'AlertCircle' is declared but its value is never read.
+src/pages/ProfitReportPage.tsx(139,52): error TS6133: 'idx' is declared but its value is never read.
+src/pages/ProfitReportPage.tsx(220,29): error TS6133: 'hasProfit' is declared but its value is never read.
+src/pages/ReconcilePage.tsx(1,1): error TS6133: 'CSSProperties' is declared but its value is never read.
+src/pages/ReconcilePage.tsx(3,1): error TS6133: 'useAppLayout' is declared but its value is never read.
+src/pages/ReconcilePage.tsx(19,40): error TS6133: 'CreditCard' is declared but its value is never read.
+src/pages/ReconcilePage.tsx(19,52): error TS6133: 'ChevronDown' is declared but its value is never read.
+src/pages/ReconcilePage.tsx(26,55): error TS2353: Object literal may only specify known properties, and 'border' does not exist in type '{ bg: string; text: string; icon: any; label: string; }'.
+src/pages/ReconcilePage.tsx(27,57): error TS2353: Object literal may only specify known properties, and 'border' does not exist in type '{ bg: string; text: string; icon: any; label: string; }'.
+src/pages/ReconcilePage.tsx(28,67): error TS2353: Object literal may only specify known properties, and 'border' does not exist in type '{ bg: string; text: string; icon: any; label: string; }'.
+src/pages/ReconcilePage.tsx(34,126): error TS2339: Property 'border' does not exist on type '{ bg: string; text: string; icon: any; label: string; }'.
+src/pages/SettingsPage.tsx(377,171): error TS2304: Cannot find name 'AlertCircle'.
+src/pages/SettingsPage.tsx(378,175): error TS2304: Cannot find name 'CheckCircle2'.
+src/pages/WaTemplatesPage.tsx(5,18): error TS6133: 'Copy' is declared but its value is never read.
+src/pages/WaTemplatesPage.tsx(6,48): error TS6133: 'Plus' is declared but its value is never read.
+src/pages/WaTemplatesPage.tsx(7,3): error TS6133: 'FileText' is declared but its value is never read.
+src/pages/WaTemplatesPage.tsx(7,25): error TS6133: 'LayoutTemplate' is declared but its value is never read.
+src/pages/WaTemplatesPage.tsx(150,31): error TS2367: This comparison appears to be unintentional because the types 'WaTemplateKey' and '"welcome"' have no overlap.
+src/pages/WaTemplatesPage.tsx(150,70): error TS2367: This comparison appears to be unintentional because the types 'WaTemplateKey' and '"invoice"' have no overlap.
+src/pages/WaTemplatesPage.tsx(150,116): error TS2367: This comparison appears to be unintentional because the types 'WaTemplateKey' and '"payment"' have no overlap.

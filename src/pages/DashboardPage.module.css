@@ -1,0 +1,256 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.periodRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.periodBtn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-family: var(--font);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.periodBtnActive {
+  background: rgba(14, 165, 233, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.kpiGrid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.kpiGrid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.kpiCard {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 18px;
+  cursor: default;
+}
+
+.kpiCardClickable {
+  cursor: pointer;
+}
+
+.kpiHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.kpiTitle {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.kpiIcon {
+  font-size: 18px;
+  opacity: 0.95;
+}
+
+.kpiValue {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.kpiDetail {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.kpiHint {
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.panelTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.panelTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.chipRow {
+  display: flex;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.chipActive {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.sparkSvg {
+  width: 100%;
+  height: 52px;
+  display: block;
+}
+
+.sparkPath {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.3;
+}
+
+.sparkArea {
+  fill: rgba(14, 165, 233, 0.12);
+}
+
+.barList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.barLabel {
+  width: 110px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.barTrack {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.barCount {
+  width: 44px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.listMain {
+  min-width: 0;
+}
+
+.listTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.listSub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+  font-family: var(--mono);
+}
+
+.rightMono {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 18px 0;
+  font-size: 13px;
+}
+
+@media (max-width: 920px) {
+  .kpiGrid3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .kpiGrid2 {
+    grid-template-columns: 1fr;
+  }
+  .barLabel {
+    width: 90px;
+  }
+}
+

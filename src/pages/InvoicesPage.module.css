@@ -1,0 +1,48 @@
+.page {
+  direction: rtl;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.titleWrap {
+  text-align: right;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.syncButton {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(14, 165, 233, 0.12);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-weight: 700;
+  white-space: nowrap;
+  justify-self: start;
+}
+
+.warn {
+  margin-top: 12px;
+  color: #f59e0b;
+  font-size: 13px;
+}
+
+.filtersWrap {
+  margin-top: 14px;
+}

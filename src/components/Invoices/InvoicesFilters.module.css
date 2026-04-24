@@ -1,0 +1,31 @@
+.row {
+  direction: rtl;
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.control {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(10, 14, 26, 0.35);
+  color: #e2e8f0;
+  outline: none;
+  width: 100%;
+}
+
+.search {
+  text-align: right;
+}
+
+.select {
+  text-align: right;
+}
+
+@media (max-width: 680px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
