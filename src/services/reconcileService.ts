@@ -60,4 +60,24 @@ export const reconcileApiService = {
     if (!res.ok) throw new Error('Export failed');
     return res.blob();
   },
+
+  /** Start AWB backfill job (Admin only) */
+  async startBackfill(): Promise<{ job_id: string }> {
+    const res = await fetch(`${API}/sync/backfill-fast`, {
+      method: 'POST',
+      headers: getHeaders(true),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.message || 'Backfill failed');
+    return json?.data ?? json;
+  },
+
+  /** Get backfill job status */
+  async getBackfillStatus(jobId: string): Promise<any> {
+    const res = await fetch(`${API}/sync/backfill-status/${jobId}`, {
+      headers: getHeaders(false),
+    });
+    const json = await res.json();
+    return json?.data ?? json;
+  },
 };
