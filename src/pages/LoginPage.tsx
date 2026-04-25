@@ -13,7 +13,7 @@ export function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   return (
-    <div className="min-h-screen flex font-cairo" dir="rtl">
+    <div className="min-h-screen flex flex-col lg:flex-row font-cairo" dir="rtl">
 
       {/* ═══════════════════════════════════════════
           LEFT SIDE — Branding Panel (hidden on mobile)
@@ -111,32 +111,47 @@ export function LoginPage() {
       {/* ═══════════════════════════════════════════
           RIGHT SIDE — Login Form
           ═══════════════════════════════════════════ */}
-      <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-slate-950 relative overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row lg:items-center lg:justify-center bg-gray-50 dark:bg-slate-950 relative overflow-hidden">
         {/* Subtle background */}
         <div className="absolute inset-0 bg-gradient-to-br from-gray-50 via-indigo-50/30 to-gray-50 dark:from-slate-950 dark:via-indigo-950/20 dark:to-slate-950" />
         
         {/* Mobile branding (visible on mobile only) */}
-        <div className="absolute top-0 left-0 right-0 lg:hidden">
-          <div className="bg-gradient-to-br from-indigo-950 to-slate-900 px-6 pt-12 pb-16 text-center relative overflow-hidden">
-            <div className="absolute inset-0 opacity-[0.03]"
+        <div className="relative flex-shrink-0 lg:hidden">
+          <div className="bg-gradient-to-br from-indigo-950 via-indigo-900 to-slate-900 px-6 pt-14 pb-12 text-center relative overflow-hidden" style={{ borderRadius: '0 0 2rem 2rem' }}>
+            {/* Animated gradient orbs */}
+            <div className="absolute top-0 -right-10 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute bottom-0 -left-10 w-32 h-32 bg-sky-500/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDelay: '3s' }} />
+            {/* Grid pattern */}
+            <div className="absolute inset-0 opacity-[0.04]"
               style={{ 
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M20 18v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
               }}
             />
+            {/* Floating icons */}
+            <div className="absolute top-4 right-6 text-white/[0.06] animate-bounce" style={{ animationDuration: '5s' }}>
+              <Package size={28} />
+            </div>
+            <div className="absolute bottom-6 left-8 text-white/[0.06] animate-bounce" style={{ animationDuration: '7s', animationDelay: '1s' }}>
+              <Truck size={24} />
+            </div>
             <div className="relative z-10">
-              <img 
-                src={shippecLogo} 
-                alt="Shippeco" 
-                className="w-16 h-16 rounded-2xl object-cover shadow-2xl ring-2 ring-white/10 mx-auto mb-4" 
-              />
-              <h2 className="text-xl font-bold text-white">ShipPec</h2>
-              <p className="text-indigo-300/60 text-xs mt-1">منصة إدارة الشحن والفوترة</p>
+              <div className="relative inline-block mb-3">
+                <div className="absolute -inset-2 bg-gradient-to-br from-indigo-500/30 to-sky-500/30 rounded-3xl blur-xl animate-pulse" />
+                <img 
+                  src={shippecLogo} 
+                  alt="Shippeco" 
+                  className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl ring-2 ring-white/20" 
+                />
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">ShipPec</h2>
+              <p className="text-indigo-300/70 text-xs sm:text-sm mt-1 font-medium">منصة إدارة الشحن والفوترة</p>
             </div>
           </div>
         </div>
 
         {/* Form Container */}
-        <div className="relative z-10 w-full max-w-[420px] px-6 lg:px-8 mt-36 lg:mt-0">
+        <div className="relative z-10 w-full max-w-[420px] mx-auto px-5 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-0 flex-1 flex flex-col justify-center lg:flex-none">
           
           {/* Form Header */}
           <div className="text-center lg:text-right mb-8">
@@ -379,7 +394,7 @@ export function LoginPage() {
           )}
 
           {/* Bottom text */}
-          <div className="text-center mt-8 mb-8 lg:mb-0">
+          <div className="text-center mt-6 mb-6 sm:mt-8 sm:mb-8 lg:mb-0 pb-[env(safe-area-inset-bottom)]">
             <p className="text-[11px] text-gray-400 dark:text-gray-600">
               بتسجيل دخولك، أنت توافق على سياسة الاستخدام والخصوصية
             </p>
