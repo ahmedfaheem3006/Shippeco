@@ -78,6 +78,15 @@ export function InvoicesPage() {
   const displayDate = (value: unknown) => {
     const s = String(value ?? '').trim()
     if (!s) return '—'
+
+    // Match yyyy-mm-dd (handles "2026-03-07" and "2026-03-07T00:00:00.000Z")
+    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      const [, y, m, d] = match
+      return `${d}/${m}/${y}`
+    }
+
+    // Fallback to formatDateEnGb from hook
     const formatted = formatDateEnGb(s)
     return formatted === '—' ? '—' : formatted
   }

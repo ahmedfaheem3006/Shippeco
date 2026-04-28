@@ -191,7 +191,7 @@ export function useLegacyInvoicesPage() {
     let list = [...invoices]
     if (ui.advCarrier) list = list.filter(i => i.carrier === ui.advCarrier)
     if (ui.advPayment) list = list.filter(i => i.payment === ui.advPayment)
-    // NO client-side sorting — server already sorts correctly
+    // NO client-side sorting — server sorts by daftra_id DESC
     return list
   }, [invoices, ui.advCarrier, ui.advPayment])
 
