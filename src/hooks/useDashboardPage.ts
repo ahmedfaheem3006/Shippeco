@@ -57,9 +57,9 @@ export function useDashboardPage() {
     if (useServer && serverData.recent?.length) {
       return serverData.recent.slice(0, 10).map((r: any) => ({
         id: String(r.id),
-        invoiceNumber: r.invoice_number || r.daftra_id || '',
+        invoiceNumber: r.daftra_id ? String(r.daftra_id) : (r.invoice_number || ''),
         client: r.client_name || r.display_name || '—',
-        date: String(r.invoice_date || '').slice(0, 10),
+        date: String(r.invoice_date || r.created_at || '').slice(0, 10),
         status: STATUS_MAP[r.payment_status] || 'unpaid',
         amount: parseFloat(r.total) || 0,
         remaining: parseFloat(r.remaining) || Math.max(0, (parseFloat(r.total) || 0) - (parseFloat(r.paid_amount) || 0)),
