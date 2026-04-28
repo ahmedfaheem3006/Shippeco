@@ -5,9 +5,7 @@ import { useTheme } from '../../hooks/useTheme';
 import {
   Menu, Moon, Sun, Bell, LayoutDashboard, FileText,
   Users, BarChart3, MoreHorizontal, CheckCheck,
-  FileCode, Calculator, CreditCard, Settings as SettingsIcon,
-  ClipboardCheck, TrendingUp, ClipboardList, MessageSquare,
-  Check,
+  CreditCard, ClipboardCheck, ClipboardList, Check,
 } from 'lucide-react';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import shippecLogo from '../../assets/shippec.jpeg';
