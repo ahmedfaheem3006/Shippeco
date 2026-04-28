@@ -7,7 +7,7 @@ export const invoiceService = {
     const allInvoices: Invoice[] = [];
     let page = 1;
     const limit = 100;
-    const MAX_PAGES = 200; // حد أقصى عشان ميقعدش يجيب للأبد
+    const MAX_PAGES = 200;
 
     while (page <= MAX_PAGES) {
       const qp = new URLSearchParams();
@@ -16,14 +16,12 @@ export const invoiceService = {
       if (params.status) qp.set('payment_status', params.status);
       if (params.search) qp.set('search', params.search);
 
-
       const { api } = await import('../utils/apiClient');
 
       let result: any;
       try {
         result = await api.get(`/invoices?${qp.toString()}`);
       } catch (err: any) {
-        // Rate limited — wait and retry
         if (err.message?.includes('Too many') || err.message?.includes('429')) {
           console.warn(`[getInvoices] Rate limited at page ${page}, waiting 3s...`);
           await new Promise(r => setTimeout(r, 3000));
@@ -65,7 +63,6 @@ export const invoiceService = {
         break;
       }
 
-      // ═══ Delay 100ms between requests to avoid rate limiting ═══
       await new Promise(r => setTimeout(r, 100));
       page++;
     }
@@ -80,10 +77,6 @@ export const invoiceService = {
     return mapRailwayToCloudflare(raw);
   },
 
-  // ══════════════════════════════════════════════
-  // جلب فواتير خفيفة مع pagination من السيرفر
-  // (للجدول في صفحة الفواتير)
-  // ══════════════════════════════════════════════
   async getInvoicesLight(params: any = {}): Promise<{
     invoices: Invoice[];
     pagination: { page: number; limit: number; total: number; pages: number };
@@ -193,7 +186,6 @@ export const invoiceService = {
 
   async getDashboardData(): Promise<any> {
     const result: any = await unifiedService.get('/invoices/dashboard-data');
-    // apiClient returns { success, data } — extract data
     if (result?.success && result?.data) return result.data;
     if (result?.data) return result.data;
     return result;
@@ -201,6 +193,7 @@ export const invoiceService = {
 };
 
 // ══════════════════════════════════════════════
+// MAPPERS
 // ══════════════════════════════════════════════
 
 function mapToRailway(inv: Partial<Invoice>): any {
@@ -215,7 +208,7 @@ function mapToRailway(inv: Partial<Invoice>): any {
     dhl_cost: i.dhl_cost || i.dhlCost || 0,
     status: i.status,
     paid_amount: Number(i.partialPaid || i.partial_paid || i.paid_amount || 0),
-    invoice_date: i.date || i.invoice_date,
+    invoice_date: normalizeDate(i.date || i.invoice_date),
     items: Array.isArray(i.items) ? i.items : undefined,
     notes: i.notes,
     details: i.details,
@@ -224,6 +217,30 @@ function mapToRailway(inv: Partial<Invoice>): any {
     weight: i.weight || i.final_weight,
     code_type: i.codeType || i.code_type,
   };
+}
+
+/**
+ * Normalize any date input to yyyy-mm-dd format.
+ * Strips time and timezone to prevent day-shift issues.
+ */
+function normalizeDate(raw: any): string {
+  if (!raw) return '';
+  const s = String(raw).trim();
+  if (!s) return '';
+
+  // Already yyyy-mm-dd
+  const dateOnly = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnly) return dateOnly[1];
+
+  // Try parsing as Date
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+
+  // Extract date parts in LOCAL timezone (not UTC) to prevent day shift
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function mapRailwayToCloudflare(result: any): Invoice {
@@ -236,6 +253,10 @@ function mapRailwayToCloudflare(result: any): Invoice {
   const paidAmount = parseFloat(result.paid_amount || result.partial_paid || 0) || 0;
   const remaining = parseFloat(result.remaining || 0) || Math.max(0, price - paidAmount);
 
+  // Normalize date — always store as yyyy-mm-dd to prevent timezone issues
+  const rawDate = result.invoice_date || result.date || '';
+  const normalizedDate = normalizeDate(rawDate);
+
   return {
     ...result,
     id: String(result.id),
@@ -243,7 +264,7 @@ function mapRailwayToCloudflare(result: any): Invoice {
     price,
     client: result.client_name || result.client || '',
     phone: result.phone || result.client_phone || '',
-    date: result.invoice_date || result.date || '',
+    date: normalizedDate,
     awb: result.awb || '',
     carrier: result.carrier || '',
     details: result.details || '',
@@ -263,7 +284,6 @@ function mapRailwayToCloudflare(result: any): Invoice {
     weight: result.weight || result.final_weight || '',
     dimensions: result.dimensions || '',
     status,
-    // Don't mark as draft — manual invoices are valid
     isDraft: false,
   } as Invoice;
 }
@@ -272,7 +292,6 @@ function mapPaymentStatusToString(
   paymentStatus: number | undefined,
   fallbackStatus?: string
 ): string {
-  // payment_status الرقمي أولوية أعلى دائماً
   if (paymentStatus !== undefined && paymentStatus !== null) {
     switch (paymentStatus) {
       case 0: return 'unpaid';
@@ -281,7 +300,6 @@ function mapPaymentStatusToString(
       case 3: return 'returned';
     }
   }
-  // Fallback to string status only if valid
   if (
     fallbackStatus &&
     typeof fallbackStatus === 'string' &&

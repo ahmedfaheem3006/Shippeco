@@ -8,7 +8,6 @@ type InvoicesFilter = {
   status: InvoiceStatus | 'all'
 }
 
-// Auto-refresh every 10 minutes to match backend cron
 const AUTO_REFRESH_MS = 10 * 60 * 1000
 
 export function useInvoicesData() {
@@ -19,22 +18,19 @@ export function useInvoicesData() {
   const [filter, setFilter] = useState<InvoicesFilter>({ query: '', status: 'all' })
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
 
-  // ═══ Pagination State ═══
   const [page, setPage] = useState(1)
   const [limit] = useState(50)
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 })
 
-  // Refs to avoid stale closures in interval
   const filterRef = useRef(filter)
   const pageRef = useRef(page)
   filterRef.current = filter
   pageRef.current = page
 
-  // ═══ Server-side pagination using /invoices/light ═══
   const fetchPage = useCallback(async (
     pageNum?: number,
     filterOverride?: InvoicesFilter,
-    silent?: boolean // silent = no loading spinner (for auto-refresh)
+    silent?: boolean
   ) => {
     if (!silent) setLoading(true)
     setError(null)
@@ -47,8 +43,12 @@ export function useInvoicesData() {
         limit,
         status: currentFilter.status !== 'all' ? currentFilter.status : undefined,
         search: currentFilter.query || undefined,
+        // Always sort by date descending by default
+        sort_by: 'date',
+        sort_dir: 'desc',
       })
 
+      // Server already returns sorted data — DO NOT re-sort on client
       setInvoices(result.invoices)
       setPagination(result.pagination)
       setLastSyncTime(new Date())
@@ -61,12 +61,10 @@ export function useInvoicesData() {
     }
   }, [limit, setInvoices])
 
-  // ═══ Initial load ═══
   useEffect(() => {
     void fetchPage(1)
   }, [])
 
-  // ═══ Auto-refresh every 10 minutes (silent — no loading spinner) ═══
   useEffect(() => {
     const interval = setInterval(() => {
       console.log('[AutoRefresh] Refreshing invoices...')
@@ -76,11 +74,9 @@ export function useInvoicesData() {
     return () => clearInterval(interval)
   }, [fetchPage])
 
-  // ═══ Also refresh when tab becomes visible (user comes back) ═══
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        // Only refresh if last sync was > 2 minutes ago
         const now = new Date()
         if (!lastSyncTime || (now.getTime() - lastSyncTime.getTime()) > 2 * 60 * 1000) {
           console.log('[AutoRefresh] Tab visible — refreshing...')
@@ -93,20 +89,17 @@ export function useInvoicesData() {
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [fetchPage, lastSyncTime])
 
-  // ═══ Re-fetch when filter changes ═══
   const updateFilter = useCallback((newFilter: InvoicesFilter) => {
     setFilter(newFilter)
     setPage(1)
     void fetchPage(1, newFilter)
   }, [fetchPage])
 
-  // ═══ Page change ═══
   const goToPage = useCallback((newPage: number) => {
     setPage(newPage)
     void fetchPage(newPage)
   }, [fetchPage])
 
-  // ═══ Manual Sync and refresh ═══
   const syncFromDb = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -120,12 +113,9 @@ export function useInvoicesData() {
     }
   }, [fetchPage, page])
 
-  // ═══ Sorted invoices ═══
+  // Server already sorts — just filter out drafts, NO re-sorting
   const filteredInvoices = useMemo(() => {
-    return invoices
-      .filter((inv: any) => !inv.isDraft)
-      .slice()
-      .sort((a: any, b: any) => String(b.date).localeCompare(String(a.date)))
+    return invoices.filter((inv: any) => !inv.isDraft)
   }, [invoices])
 
   return {

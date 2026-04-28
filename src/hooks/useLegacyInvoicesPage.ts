@@ -27,20 +27,57 @@ function normalizeDateInput(date: string) {
   return date ? String(date).slice(0, 10) : ''
 }
 
-function parseDate(date: string) {
-  const d = new Date(date)
+/**
+ * Parse a date string safely — handles ISO, yyyy-mm-dd, etc.
+ * Returns null if invalid.
+ */
+function parseDate(date: string): Date | null {
+  if (!date) return null
+  const s = String(date).trim()
+  if (!s) return null
+
+  // If it's just a date (yyyy-mm-dd), parse as local date (not UTC)
+  // This prevents timezone shift issues (e.g., 2026-02-11 becoming Feb 10)
+  const dateOnlyMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dateOnlyMatch) {
+    const [, y, m, d] = dateOnlyMatch
+    return new Date(Number(y), Number(m) - 1, Number(d))
+  }
+
+  // If it's an ISO string with time, also extract just the date part
+  // to avoid UTC→local timezone issues
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})T/)
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch
+    return new Date(Number(y), Number(m) - 1, Number(d))
+  }
+
+  // Fallback
+  const d = new Date(s)
   if (Number.isNaN(d.getTime())) return null
   return d
 }
 
-function formatDateEnGb(date: string) {
+/**
+ * Format date as dd/mm/yyyy (Gregorian, Arabic-friendly)
+ * Examples: 11/02/2026, 28/04/2026
+ */
+function formatDateEnGb(date: string): string {
   const d = parseDate(date)
   if (!d) return '—'
-  return d.toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' })
+
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+
+  return `${day}/${month}/${year}`
 }
 
 function toIsoDate(d: Date) {
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function computeQuickDateRange(quickDate: QuickDate) {
@@ -102,15 +139,12 @@ export function useLegacyInvoicesPage() {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ═══ Build sort params from UI state ═══
   const getSortParams = useCallback((s: LegacyInvoicesUiState) => {
     if (s.priceSort) return { sort_by: 'price', sort_dir: s.priceSort }
     if (s.dateSort) return { sort_by: 'date', sort_dir: s.dateSort }
-    // Default: الأحدث أولاً
     return { sort_by: 'date', sort_dir: 'desc' }
   }, [])
 
-  // ═══ Core fetch — ALL filtering/sorting on server ═══
   const fetchPage = useCallback(async (pageNum: number, uiState?: LegacyInvoicesUiState) => {
     setLoading(true)
     setError(null)
@@ -146,7 +180,6 @@ export function useLegacyInvoicesPage() {
   }, [ui, setInvoices, getSortParams])
 
   const syncFromDb = useCallback(async (_forceSync = false) => {
-    // مزامنة = refresh البيانات فقط — الـ cron job بيتعامل مع دفترة كل 15 دقيقة
     try {
       const { unifiedService } = await import('../services/unifiedService')
       unifiedService.invalidateCache()
@@ -154,16 +187,14 @@ export function useLegacyInvoicesPage() {
     await fetchPage(ui.page)
   }, [fetchPage, ui.page])
 
-  // ═══ No client-side filtering needed — server does everything ═══
   const filtered = useMemo(() => {
     let list = [...invoices]
-    // Only client-side: carrier and payment (not on server yet)
     if (ui.advCarrier) list = list.filter(i => i.carrier === ui.advCarrier)
     if (ui.advPayment) list = list.filter(i => i.payment === ui.advPayment)
+    // NO client-side sorting — server already sorts correctly
     return list
   }, [invoices, ui.advCarrier, ui.advPayment])
 
-  // ═══ Setters — all trigger server fetch ═══
   const setQuery = useCallback((q: string) => {
     setUi(prev => ({ ...prev, q, page: 1 }))
     if (searchTimer.current) clearTimeout(searchTimer.current)

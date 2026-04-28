@@ -19,11 +19,40 @@ function statusColor(status: Invoice['status']) {
   return styles.statusUnpaid
 }
 
-function formatDate(date: string) {
+/**
+ * Format date as dd/mm/yyyy (Gregorian)
+ * Handles: "2026-02-11", "2026-02-11T00:00:00.000Z", etc.
+ * Parses date parts directly to avoid UTC→local timezone shift.
+ */
+function formatDate(date: string): string {
+  if (!date) return '—'
+  const s = String(date).trim()
+  if (!s) return '—'
+
+  // Match yyyy-mm-dd at the start (covers both "2026-02-11" and "2026-02-11T...")
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) {
+    const [, y, m, d] = match
+    // Validate basic ranges
+    const month = Number(m)
+    const day = Number(d)
+    const year = Number(y)
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+      return `${d}/${m}/${y}`
+    }
+  }
+
+  // Fallback: try to parse and format manually (local timezone)
   try {
-    return new Date(date).toLocaleDateString('ar-SA')
+    const parsed = new Date(s)
+    if (isNaN(parsed.getTime())) return s
+
+    const day = String(parsed.getDate()).padStart(2, '0')
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    const year = parsed.getFullYear()
+    return `${day}/${month}/${year}`
   } catch {
-    return date
+    return s
   }
 }
 
