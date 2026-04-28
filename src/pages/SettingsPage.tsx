@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsPage } from '../hooks/useSettingsPage';
 import type { UserRecord } from '../utils/models';
@@ -47,43 +48,93 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/* ═══ Role Dropdown (Portal-based) ═══ */
 function RoleDropdown({ user, onChangeRole, disabled }: {
   user: UserRecord; onChangeRole: (id: number, role: string) => void; disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const btnRef = React.useRef<HTMLButtonElement>(null);
   const currentUser = useAuthStore((s) => s.user);
+
   if (user.id === (currentUser as any)?.id) return null;
   if (user.status !== 'approved') return null;
 
+  const handleOpen = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setOpen(!open);
+  };
+
+  // Close on scroll
+  React.useEffect(() => {
+    if (!open) return;
+    const handleScroll = () => setOpen(false);
+    const handleResize = () => setOpen(false);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [open]);
+
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen(!open)} disabled={disabled}
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={handleOpen}
+        disabled={disabled}
         className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-300 transition-all disabled:opacity-50"
-        title="تغيير الدور">
-        <Shield size={13} /><span className="hidden sm:inline">تغيير الدور</span>
+        title="تغيير الدور"
+      >
+        <Shield size={13} />
+        <span className="hidden sm:inline">تغيير الدور</span>
         <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && (
+
+      {open && pos && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-200 dark:border-slate-700 z-50 overflow-hidden">
+          {/* Backdrop */}
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          {/* Dropdown Menu */}
+          <div
+            className="fixed w-52 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-700 z-[9999] overflow-hidden"
+            style={{ top: pos.top, right: pos.right }}
+          >
             {Object.entries(ROLE_CONFIG).map(([key, config]) => {
               const Icon = config.icon;
               const isActive = user.role === key;
               return (
-                <button key={key} type="button"
-                  onClick={() => { if (!isActive) onChangeRole(user.id!, key); setOpen(false); }}
-                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors ${
-                    isActive ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700/50'
-                  }`}>
-                  <Icon size={14} /><span>{config.label}</span>
-                  {isActive && <CheckCircle2 size={13} className="mr-auto text-indigo-500" />}
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    if (!isActive) onChangeRole(user.id!, key);
+                    setOpen(false);
+                  }}
+                  disabled={isActive}
+                  className={`w-full flex items-center gap-2.5 px-4 py-3 text-xs font-bold transition-colors border-b border-gray-100 dark:border-slate-700/50 last:border-0 ${
+                    isActive
+                      ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 cursor-default'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer'
+                  }`}
+                >
+                  <Icon size={15} />
+                  <span className="flex-1 text-right">{config.label}</span>
+                  {isActive && <CheckCircle2 size={14} className="text-indigo-500" />}
                 </button>
               );
             })}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -231,7 +282,7 @@ export function SettingsPage() {
         )}
       </div>
 
-      {/* ═══ Status Messages (top) ═══ */}
+      {/* ═══ Status Messages ═══ */}
       {(st.error || st.status) && (
         <div className="flex flex-col gap-2">
           {st.error && (
@@ -270,7 +321,7 @@ export function SettingsPage() {
                 <input
                   className="flex-1 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-inter transition-all disabled:opacity-50 text-left"
                   value={st.settings.storeWA}
-                  onChange={(e) => st.setSettings((prev: any) => ({ ...prev, storeWA: e.target.value }))}
+                  onChange={(e) => st.setSettings({ ...st.settings, storeWA: e.target.value })}
                   placeholder="966XXXXXXXXX" dir="ltr"
                   disabled={st.loading || st.saving}
                 />
@@ -302,7 +353,7 @@ export function SettingsPage() {
               <select
                 className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-inter transition-all disabled:opacity-50"
                 value={st.settings.currency}
-                onChange={(e) => st.setSettings((prev: any) => ({ ...prev, currency: e.target.value }))}
+                onChange={(e) => st.setSettings({ ...st.settings, currency: e.target.value })}
                 disabled={st.loading || st.saving}>
                 <option value="PL">رابط دفع سريع (Payment Link)</option>
                 <option value="WEB">بطاقة ائتمان مدى/فيزا (Web Checkout)</option>
@@ -316,7 +367,7 @@ export function SettingsPage() {
                 className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-cairo transition-all disabled:opacity-50 resize-y"
                 rows={3}
                 value={st.settings.invoiceNote}
-                onChange={(e) => st.setSettings((prev: any) => ({ ...prev, invoiceNote: e.target.value }))}
+                onChange={(e) => st.setSettings({ ...st.settings, invoiceNote: e.target.value })}
                 placeholder="شكراً لتعاملكم معنا..."
                 disabled={st.loading || st.saving}
               />

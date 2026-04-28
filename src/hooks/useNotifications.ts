@@ -9,23 +9,20 @@ export function useNotifications() {
   const failCountRef = useRef(0);
   const isFirstLoadRef = useRef(true);
   const MAX_CONSECUTIVE_FAILURES = 3;
-  const POLL_INTERVAL = 60_000; // 60 seconds instead of 10
+  const POLL_INTERVAL = 30_000; // 30 seconds
 
   const fetchNotifications = useCallback(async () => {
-    // Stop polling after too many failures
     if (failCountRef.current >= MAX_CONSECUTIVE_FAILURES) {
       return;
     }
 
-    // Don't show loading spinner for background polls
     if (isFirstLoadRef.current) {
       setLoading(true);
     }
 
     try {
-      // Fetch both in parallel but handle failures gracefully
       const [notifRes, countRes] = await Promise.allSettled([
-        notificationsService.getNotifications(1, 10),
+        notificationsService.getNotifications(1, 20),
         notificationsService.getUnreadCount(),
       ]);
 
@@ -36,20 +33,15 @@ export function useNotifications() {
         setUnreadCount(countRes.value?.count || 0);
       }
 
-      // At least one succeeded = reset failure counter
       if (notifRes.status === 'fulfilled' || countRes.status === 'fulfilled') {
         failCountRef.current = 0;
       } else {
         failCountRef.current++;
       }
-    } catch (error) {
+    } catch {
       failCountRef.current++;
       if (failCountRef.current >= MAX_CONSECUTIVE_FAILURES) {
-        console.warn(
-          '[Notifications] Stopped polling after',
-          MAX_CONSECUTIVE_FAILURES,
-          'consecutive failures. Will retry on manual refresh.'
-        );
+        console.warn('[Notifications] Stopped polling after consecutive failures.');
       }
     } finally {
       setLoading(false);
@@ -58,10 +50,8 @@ export function useNotifications() {
   }, []);
 
   useEffect(() => {
-    // Initial fetch
     fetchNotifications();
 
-    // Poll at a reasonable interval (60s instead of 10s)
     const timer = setInterval(() => {
       if (failCountRef.current < MAX_CONSECUTIVE_FAILURES) {
         fetchNotifications();
@@ -75,7 +65,9 @@ export function useNotifications() {
     try {
       await notificationsService.markAsRead(id);
       setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+        prev.map((n) =>
+          n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
+        )
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (e) {
@@ -83,8 +75,20 @@ export function useNotifications() {
     }
   }, []);
 
+  const markAllAsRead = useCallback(async () => {
+    try {
+      await notificationsService.markAllAsRead();
+      setNotifications((prev) =>
+        prev.map((n) => ({ ...n, is_read: true, read_at: new Date().toISOString() }))
+      );
+      setUnreadCount(0);
+    } catch (e) {
+      console.error('[Notifications] markAllAsRead failed:', e);
+    }
+  }, []);
+
   const refresh = useCallback(() => {
-    failCountRef.current = 0; // Reset failures on manual refresh
+    failCountRef.current = 0;
     return fetchNotifications();
   }, [fetchNotifications]);
 
@@ -94,5 +98,6 @@ export function useNotifications() {
     loading,
     refresh,
     markAsRead,
+    markAllAsRead,
   };
 }

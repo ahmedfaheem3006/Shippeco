@@ -1,9 +1,9 @@
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext } from 'react-router-dom';
 
 export type AppLayoutOutletContext = {
-  openSidebar: () => void
-}
+  openSidebar: () => void;
+};
 
 export function useAppLayout() {
-  return useOutletContext<AppLayoutOutletContext>()
+  return useOutletContext<AppLayoutOutletContext>();
 }

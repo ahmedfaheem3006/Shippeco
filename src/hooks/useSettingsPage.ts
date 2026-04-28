@@ -39,13 +39,25 @@ export function useSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
-  const [settings, setSettings] = useState<PlatformSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettingsRaw] = useState<PlatformSettings>(DEFAULT_SETTINGS);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [rawUsers, setRawUsers] = useState<User[]>([]);
 
   const [connPaymob, setConnPaymob] = useState<{ ok: boolean; text: string } | null>(null);
   const [connDaftra, setConnDaftra] = useState<{ ok: boolean; text: string } | null>(null);
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
+
+  /* ── setSettings wrapper: accepts object or updater function ── */
+  const setSettings = useCallback(
+    (valueOrUpdater: PlatformSettings | Partial<PlatformSettings> | ((prev: PlatformSettings) => PlatformSettings)) => {
+      if (typeof valueOrUpdater === 'function') {
+        setSettingsRaw(valueOrUpdater);
+      } else {
+        setSettingsRaw((prev) => ({ ...prev, ...valueOrUpdater }));
+      }
+    },
+    []
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -67,34 +79,30 @@ export function useSettingsPage() {
 
         // Handle different response formats
         if (Array.isArray(rows)) {
-          // Array of { key, value }
           for (const r of rows) {
             if (r?.key && r.value !== undefined) {
               settingsMap.set(r.key, typeof r.value === 'string' ? r.value : JSON.stringify(r.value));
             }
           }
         } else if (rows && typeof rows === 'object' && !Array.isArray(rows)) {
-          // Object { key1: value1, key2: value2 }
           for (const [k, v] of Object.entries(rows as Record<string, unknown>)) {
             settingsMap.set(k, typeof v === 'string' ? v : JSON.stringify(v));
           }
         }
 
-        // Try to find settings in different formats
         const rawSettings = settingsMap.get('shippec_settings');
         if (rawSettings) {
           const parsed = safeJsonParse<unknown>(rawSettings);
           const nextSettings = normalizeSettings(parsed);
-          setSettings(nextSettings);
+          setSettingsRaw(nextSettings);
           setStoreSettings(nextSettings);
         } else {
-          // Maybe settings are stored as individual keys
           const nextSettings: PlatformSettings = {
             currency: settingsMap.get('currency') || DEFAULT_SETTINGS.currency,
             invoiceNote: settingsMap.get('invoiceNote') || settingsMap.get('invoice_note') || DEFAULT_SETTINGS.invoiceNote,
             storeWA: settingsMap.get('storeWA') || settingsMap.get('store_wa') || DEFAULT_SETTINGS.storeWA,
           };
-          setSettings(nextSettings);
+          setSettingsRaw(nextSettings);
           setStoreSettings(nextSettings);
         }
       }
@@ -147,7 +155,6 @@ export function useSettingsPage() {
       const payload = JSON.stringify(settings);
       console.log('[Settings] Saving:', payload);
 
-      // Use POST /settings with { key, value } format (upsertSetting)
       await api.post('/settings', {
         key: 'shippec_settings',
         value: payload,
@@ -204,7 +211,12 @@ export function useSettingsPage() {
     try {
       await usersService.changeRole(id, role);
       await refresh();
-      const roleNames: Record<string, string> = { admin: 'مدير النظام', accountant: 'محاسب', employee: 'موظف مبيعات', viewer: 'مشاهد فقط' };
+      const roleNames: Record<string, string> = {
+        admin: 'مدير النظام',
+        accountant: 'محاسب',
+        employee: 'موظف مبيعات',
+        viewer: 'مشاهد فقط',
+      };
       setStatus(`✅ تم تغيير الدور إلى ${roleNames[role] || role}`);
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل تغيير الدور'); }
@@ -278,14 +290,12 @@ export function useSettingsPage() {
   const testDaftra = useCallback(async () => {
     setConnDaftra(null);
     try {
-      // Use invoices count from DB directly
       const res = await api.get<any>('/invoices/light?limit=1');
       const d = res?.data || res;
       const total = d?.pagination?.total || d?.total || 0;
       
       if (total > 0) {
         setConnDaftra({ ok: true, text: `متصل — ${total.toLocaleString()} فاتورة في قاعدة البيانات` });
-        // Update sync info
         setSyncInfo(prev => prev ? { ...prev, total_invoices: total } : { last_recent_sync: null, total_invoices: total, cron_enabled: true });
       } else {
         setConnDaftra({ ok: false, text: 'لا توجد فواتير في قاعدة البيانات' });

@@ -8,6 +8,7 @@ export interface Notification {
   message: string;
   data: any;
   is_read: boolean;
+  read_at: string | null;
   created_at: string;
 }
 
@@ -26,7 +27,8 @@ export const notificationsService = {
       const result = await api.get<any>(
         `/notifications?limit=${limit}&offset=${offset}`
       );
-      // Handle Railway wrapped response
+
+      // Handle different response shapes
       if (result && Array.isArray(result)) {
         return { notifications: result, total: result.length };
       }
@@ -34,7 +36,10 @@ export const notificationsService = {
         return result;
       }
       if (result && Array.isArray(result.data)) {
-        return { notifications: result.data, total: result.total || result.data.length };
+        return {
+          notifications: result.data,
+          total: result.pagination?.total || result.total || result.data.length,
+        };
       }
       return { notifications: [], total: 0 };
     } catch {
@@ -47,7 +52,10 @@ export const notificationsService = {
       const result = await api.get<any>('/notifications/count');
       if (typeof result === 'number') return { count: result };
       if (result && typeof result.count === 'number') return result;
-      if (result && typeof result.data === 'number') return { count: result.data };
+      if (result && result.data && typeof result.data.count === 'number')
+        return { count: result.data.count };
+      if (result && typeof result.data === 'number')
+        return { count: result.data };
       return { count: 0 };
     } catch {
       return { count: 0 };
