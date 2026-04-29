@@ -17,7 +17,7 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw, X, Loader2, ArrowRight, Phone,
+  RotateCcw,
 } from 'lucide-react'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
