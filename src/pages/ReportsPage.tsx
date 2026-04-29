@@ -15,6 +15,7 @@ import { formatSar, formatNum, formatPct } from '../utils/reports';
 //  Constants
 // ═══════════════════════════════════════════════════════════
 const PERIODS = [
+  { key: 'all', label: 'الكل' },
   { key: 'daily', label: 'يومي' },
   { key: 'weekly', label: 'أسبوعي' },
   { key: 'monthly', label: 'شهري' },
@@ -140,11 +141,11 @@ export function ReportsPage() {
         {/* Navigation */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           <div className="flex items-center bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg sm:rounded-xl p-1 sm:p-1.5">
-            <button type="button" className="p-1.5 sm:p-2.5 rounded-md sm:rounded-lg text-gray-500 hover:text-gray-900 hover:bg-white dark:hover:bg-slate-800 transition-colors disabled:opacity-30" onClick={() => rep.navigate(-1)} disabled={rep.loading}>
+            <button type="button" className="p-1.5 sm:p-2.5 rounded-md sm:rounded-lg text-gray-500 hover:text-gray-900 hover:bg-white dark:hover:bg-slate-800 transition-colors disabled:opacity-30" onClick={() => rep.navigate(-1)} disabled={rep.loading || rep.period === 'all'}>
               <ChevronRight className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </button>
             <span className="flex-1 text-xs sm:text-base font-bold text-gray-900 dark:text-white px-2 sm:px-5 font-inter min-w-[100px] sm:min-w-[160px] text-center">{rep.range.label}</span>
-            <button type="button" className="p-1.5 sm:p-2.5 rounded-md sm:rounded-lg text-gray-500 hover:text-gray-900 hover:bg-white dark:hover:bg-slate-800 transition-colors disabled:opacity-30" onClick={() => rep.navigate(1)} disabled={rep.loading}>
+            <button type="button" className="p-1.5 sm:p-2.5 rounded-md sm:rounded-lg text-gray-500 hover:text-gray-900 hover:bg-white dark:hover:bg-slate-800 transition-colors disabled:opacity-30" onClick={() => rep.navigate(1)} disabled={rep.loading || rep.period === 'all'}>
               <ChevronLeft className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </button>
           </div>

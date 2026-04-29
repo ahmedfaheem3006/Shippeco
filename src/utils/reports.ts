@@ -1,6 +1,6 @@
 import type { Invoice } from './models'
 
-export type ReportsPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+export type ReportsPeriod = 'all' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
 export type ReportsStatus = 'all' | 'paid' | 'unpaid' | 'partial' | 'returned' | 'unpaid_all'
 
 export type DateRange = { from: string; to: string; label: string }
@@ -75,6 +75,10 @@ export function computeRange(period: ReportsPeriod, navOffset: number, custom: {
     const a = from.getTime() <= to.getTime() ? from : to
     const b = from.getTime() <= to.getTime() ? to : from
     return { from: toIsoDate(a), to: toIsoDate(b), label: `${toIsoDate(a)} → ${toIsoDate(b)}` }
+  }
+
+  if (period === 'all') {
+    return { from: '2000-01-01', to: '2099-12-31', label: 'كل الفترات' }
   }
 
   if (period === 'daily') {
