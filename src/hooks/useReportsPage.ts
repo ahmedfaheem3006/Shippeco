@@ -157,7 +157,7 @@ export function useReportsPage() {
 
   // ── Filters ──
   const [query, setQueryState] = useState('');
-  const [period, setPeriodState] = useState<ReportsPeriod>('monthly');
+  const [period, setPeriodState] = useState<ReportsPeriod>('all');
   const [navOffset, setNavOffset] = useState(0);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');

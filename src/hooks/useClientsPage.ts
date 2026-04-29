@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { clientService } from "../services/clientService";
 import {
   type ClientsSummaryResponse,
@@ -68,6 +69,7 @@ export function useClientsPage() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ═══ Data ═══
   const [clientsData, setClientsData] = useState<ClientsStatsResponse | null>(
@@ -206,6 +208,30 @@ export function useClientsPage() {
     setSelectedClientId(null);
     setProfile(null);
   }, []);
+
+  // ═══ Initialize auto-open profile from URL ═══
+  useEffect(() => {
+    const profileParam = searchParams.get('profile')
+    if (profileParam) {
+      // Clear the param so it doesn't reopen if they close it
+      setSearchParams(prev => {
+        prev.delete('profile')
+        return prev
+      }, { replace: true })
+      
+      setSelectedClientId(profileParam)
+      setShowProfile(true)
+      setProfileLoading(true)
+      setProfile(null)
+      clientService.getClientProfile(profileParam).then(data => {
+        setProfile(data)
+      }).catch(() => {
+        setProfile(null)
+      }).finally(() => {
+        setProfileLoading(false)
+      })
+    }
+  }, [searchParams, setSearchParams])
 
   // ═══ Update Client ═══
   const updateClient = useCallback(
