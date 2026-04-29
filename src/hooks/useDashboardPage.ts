@@ -28,7 +28,7 @@ export function useDashboardPage() {
   const filtered = useMemo(() => filterForDashboard(invoices, range), [invoices, range])
   const kpis = useMemo(() => computeDashboardKpis(filtered), [filtered])
 
-  const useServer = period === 'all' && serverData?.summary
+  const useServer = serverData?.summary != null
 
   // ═══ CHARTS — now supports daily/monthly/yearly from server ═══
   const revenueSeries = useMemo((): SeriesPoint[] => {
@@ -80,11 +80,16 @@ export function useDashboardPage() {
     setDataSource('unknown')
     try {
       const [dashData, recentResult] = await Promise.all([
-        invoiceService.getDashboardData().catch((err) => {
+        invoiceService.getDashboardData(period).catch((err) => {
           console.error('[Dashboard] getDashboardData failed:', err)
           return null
         }),
-        invoiceService.getInvoicesLight({ page: 1, limit: 200 }).catch(() => ({ invoices: [] })),
+        invoiceService.getInvoicesLight({ 
+          page: 1, 
+          limit: 200,
+          sort_by: 'date',
+          sort_dir: 'desc',
+        }).catch(() => ({ invoices: [] })),
       ])
 
       if (dashData) {
@@ -93,13 +98,8 @@ export function useDashboardPage() {
       setInvoices(recentResult.invoices || [])
       setDataSource('railway')
 
-      console.log('[Dashboard] Summary loaded — Total:', dashData?.summary?.total?.count || 0, 'invoices')
-      console.log('[Dashboard] Loaded', recentResult.invoices?.length || 0, 'recent invoices for charts')
-      console.log('[Dashboard] Profit:', dashData?.profit)
-      console.log('[Dashboard] Partial clients:', dashData?.partial_clients?.length || 0)
-      console.log('[Dashboard] Total clients:', dashData?.total_clients || 0)
+      console.log('[Dashboard] Period:', period, 'Total:', dashData?.summary?.total?.count || 0, 'invoices')
 
-      // Background sync
       void (async () => { try { await invoiceService.syncRecent() } catch { } })()
     } catch (e) {
       console.error('[Dashboard] Failed:', e)
@@ -107,7 +107,7 @@ export function useDashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [period])
 
   // ═══ CARDS ═══
   const cards = useMemo(() => {

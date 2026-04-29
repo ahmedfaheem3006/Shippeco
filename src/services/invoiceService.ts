@@ -184,8 +184,9 @@ export const invoiceService = {
     return result;
   },
 
-  async getDashboardData(): Promise<any> {
-    const result: any = await unifiedService.get('/invoices/dashboard-data');
+  async getDashboardData(period?: 'today' | 'week' | 'month' | 'year' | 'all'): Promise<any> {
+    const qp = period && period !== 'all' ? `?period=${period}` : '';
+    const result: any = await unifiedService.get(`/invoices/dashboard-data${qp}`);
     if (result?.success && result?.data) return result.data;
     if (result?.data) return result.data;
     return result;
