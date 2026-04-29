@@ -7,6 +7,7 @@ import { InvoiceWizardModal } from '../components/Invoices/InvoiceWizardModal'
 import { useLegacyInvoicesPage } from '../hooks/useLegacyInvoicesPage'
 import { useInvoicesStore } from '../hooks/useInvoicesStore'
 import { invoiceService } from '../services/invoiceService'
+import { clientService } from '../services/clientService'
 import type { Invoice } from '../utils/models'
 import type { InvoiceDraftInput } from '../utils/invoiceWizard'
 import { toDraftFromInvoice, toInvoiceFromDraft } from '../utils/invoiceWizard'
@@ -17,7 +18,7 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw
+  RotateCcw, X, Loader2, ArrowRight, Phone,
 } from 'lucide-react'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
@@ -46,6 +47,27 @@ export function InvoicesPage() {
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
   const [addItemInvoiceId, setAddItemInvoiceId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // ── Client Profile State ──
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileData, setProfileData] = useState<any>(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+
+  const openClientProfile = useCallback(async (clientName: string, clientId?: string | number) => {
+    const lookupId = clientId ? String(clientId) : clientName
+    if (!lookupId) return
+    setProfileOpen(true)
+    setProfileLoading(true)
+    setProfileData(null)
+    try {
+      const data = await clientService.getClientProfile(lookupId)
+      setProfileData(data)
+    } catch {
+      setProfileData(null)
+    } finally {
+      setProfileLoading(false)
+    }
+  }, [])
 
   const openNewWizard = useCallback(() => {
     navTo('/new-invoice')
@@ -426,7 +448,14 @@ export function InvoicesPage() {
                         </td>
 
                         <td className="px-3 py-3">
-                          <div className="font-bold text-sm text-gray-900 dark:text-white truncate max-w-[140px]">{inv.client || '—'}</div>
+                          <button
+                            type="button"
+                            onClick={() => openClientProfile(inv.client || '', (inv as any).client_id)}
+                            className="font-bold text-sm text-gray-900 dark:text-white truncate max-w-[140px] text-right hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                            title={`فتح بروفايل ${inv.client}`}
+                          >
+                            {inv.client || '—'}
+                          </button>
                         </td>
 
                         <td className="px-3 py-3 font-inter text-xs text-gray-500 dark:text-gray-400 direction-ltr" dir="ltr">
@@ -505,7 +534,14 @@ export function InvoicesPage() {
                 <div key={inv.id} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <div className="font-bold text-sm text-gray-900 dark:text-white">{inv.client || '—'}</div>
+                      <button
+                        type="button"
+                        onClick={() => openClientProfile(inv.client || '', (inv as any).client_id)}
+                        className="font-bold text-sm text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors text-right cursor-pointer"
+                        title={`فتح بروفايل ${inv.client}`}
+                      >
+                        {inv.client || '—'}
+                      </button>
                       <div className="text-[11px] text-gray-500 dark:text-gray-400 font-inter mt-0.5">
                         #{inv.invoice_number || inv.daftra_id || inv.id} · {displayDate(inv.date)}
                         {inv.awb && <span className="text-blue-500 mr-1">· AWB: {inv.awb}</span>}
@@ -609,6 +645,308 @@ export function InvoicesPage() {
               const newItem = allItems[allItems.length - 1]
 
               if (newItem) {
+                const { api } = await import('../utils/apiClient')
+
+                await api.post(`/invoices/${addItemInvoiceId}/items`, {
+                  description: (newItem as any).type || (newItem as any).details || 'بند إضافي',
+                  quantity: 1,
+                  unit_price: Number(newItem.price) || 0,
+                  total: Number(newItem.price) || 0,
+                })
+
+                const newTotal = allItems.reduce((s, it) => s + (Number(it.price) || 0), 0)
+                await api.put(`/invoices/${addItemInvoiceId}`, {
+                  total: newTotal,
+                })
+
+                console.log(`[Invoices] ✅ Added item to #${addItemInvoiceId}, total: ${newTotal}`)
+              }
+
+              await syncFromDb()
+              setAddItemInvoiceId(null)
+            } catch (e: any) {
+              console.error('[Invoices] ❌ Add item failed:', e)
+              window.alert(e?.message || 'فشل في إضافة البند')
+            } finally {
+              setMutating(false)
+            }
+          })()
+        }}
+      />
+
+      {/* ── Client Profile Overlay ── */}
+      {profileOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) { setProfileOpen(false); setProfileData(null) } }}
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-2xl w-full max-w-3xl my-8 overflow-hidden animate-in slide-in-from-top-4 duration-300">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
+              <span className="font-bold text-gray-900 dark:text-white text-sm">
+                {profileLoading ? 'جاري التحميل...' : (profileData?.client?.name || 'بروفايل العميل')}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const clientId = profileData?.client?.id
+                    if (clientId) { window.location.href = `/clients?open=${clientId}` }
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  title="فتح في صفحة العملاء"
+                >
+                  <ArrowRight size={14} /> فتح في صفحة العملاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setProfileOpen(false); setProfileData(null) }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 max-h-[80vh] overflow-y-auto">
+              {profileLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <Loader2 size={32} className="animate-spin text-indigo-500" />
+                  <p className="text-sm text-gray-500">جاري تحميل بيانات العميل...</p>
+                </div>
+              ) : !profileData?.client ? (
+                <div className="text-center py-12 text-gray-400">
+                  <p className="font-bold">لم يتم العثور على بيانات العميل</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Client Info Card */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl p-4 border border-indigo-100 dark:border-indigo-800/30">
+                    <div className="flex items-start gap-4">
+                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                        {(profileData.client.name || '?')[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h2 className="font-bold text-lg text-gray-900 dark:text-white">{profileData.client.name}</h2>
+                        {profileData.client.phone && (
+                          <div className="flex items-center gap-1.5 text-sm text-gray-500 mt-1 font-inter">
+                            <Phone size={13} />{profileData.client.phone}
+                          </div>
+                        )}
+                        {profileData.client.city && (
+                          <p className="text-xs text-gray-400 mt-0.5">{profileData.client.city}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'الفواتير', value: profileData.client.total_invoices || 0, color: 'text-blue-600', suffix: '' },
+                      { label: 'الإيرادات', value: (profileData.client.total_revenue || 0).toFixed(0), color: 'text-yellow-600', suffix: ' ر.س' },
+                      { label: 'المحصّل', value: (profileData.client.total_paid || 0).toFixed(0), color: 'text-green-600', suffix: ' ر.س' },
+                      { label: 'المتبقي', value: (profileData.client.total_remaining || 0).toFixed(0), color: 'text-red-600', suffix: ' ر.س' },
+                    ].map((kpi) => (
+                      <div key={kpi.label} className="bg-white dark:bg-slate-700/50 rounded-xl p-3 border border-gray-200 dark:border-slate-600 text-center">
+                        <p className={`font-bold text-lg font-inter ${kpi.color}`}>{kpi.value}{kpi.suffix}</p>
+                        <p className="text-[11px] text-gray-500 font-bold mt-0.5">{kpi.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Recent Invoices */}
+                  {(profileData.invoices?.length > 0) && (
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-700 dark:text-gray-300 mb-2">آخر الفواتير</h3>
+                      <div className="space-y-2 max-h-72 overflow-y-auto">
+                        {profileData.invoices.slice(0, 15).map((inv: any) => (
+                          <div key={inv.id || inv.daftra_id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-700/30 rounded-lg px-3 py-2 text-xs">
+                            <span className="font-bold font-inter text-indigo-600 dark:text-indigo-400">#{inv.daftra_id || inv.id}</span>
+                            <span className="text-gray-500">{String(inv.date || '').slice(0, 10) || '—'}</span>
+                            <span className="font-bold font-inter">{Number(inv.price || 0).toFixed(0)} ر.س</span>
+                            <span className={`px-2 py-0.5 rounded-md font-bold ${
+                              inv.status === 'paid' ? 'bg-green-50 text-green-600' :
+                              inv.status === 'partial' ? 'bg-yellow-50 text-yellow-600' :
+                              inv.status === 'returned' ? 'bg-purple-50 text-purple-600' :
+                              'bg-red-50 text-red-600'
+                            }`}>
+                              {inv.status === 'paid' ? 'مدفوعة' : inv.status === 'partial' ? 'جزئية' : inv.status === 'returned' ? 'مرتجعة' : 'غير مدفوعة'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+        invoice={addItemInvoiceId ? storeInvoices.find((i) => String(i.id) === String(addItemInvoiceId)) ?? null : null}
+        onClose={() => setAddItemInvoiceId(null)}
+        saving={mutating}
+        onSave={(next: Invoice) => {
+          if (mutating || !addItemInvoiceId) return
+          void (async () => {
+            setMutating(true)
+            try {
+              const allItems = Array.isArray(next.items) ? next.items : []
+              const newItem = allItems[allItems.length - 1]
+
+              if (newItem) {
+                const { api } = await import('../utils/apiClient')
+
+                await api.post(`/invoices/${addItemInvoiceId}/items`, {
+                  description: (newItem as any).type || (newItem as any).details || 'بند إضافي',
+                  quantity: 1,
+                  unit_price: Number(newItem.price) || 0,
+                  total: Number(newItem.price) || 0,
+                })
+
+                const newTotal = allItems.reduce((s, it) => s + (Number(it.price) || 0), 0)
+                await api.put(`/invoices/${addItemInvoiceId}`, {
+                  total: newTotal,
+                })
+
+                console.log(`[Invoices] ✅ Added item to #${addItemInvoiceId}, total: ${newTotal}`)
+              }
+
+              await syncFromDb()
+              setAddItemInvoiceId(null)
+            } catch (e: any) {
+              console.error('[Invoices] ❌ Add item failed:', e)
+              window.alert(e?.message || 'فشل في إضافة البند')
+            } finally {
+              setMutating(false)
+            }
+          })()
+        }}
+      />
+
+      {/* ── Client Profile Overlay ── */}
+      {profileOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) { setProfileOpen(false); setProfileData(null) } }}
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-2xl w-full max-w-3xl my-8 overflow-hidden animate-in slide-in-from-top-4 duration-300">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
+              <span className="font-bold text-gray-900 dark:text-white text-sm">
+                {profileLoading ? 'جاري التحميل...' : (profileData?.client?.name || 'بروفايل العميل')}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Navigate to clients page with this client
+                    const clientId = profileData?.client?.id
+                    if (clientId) {
+                      window.location.href = `/clients?open=${clientId}`
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  title="فتح في صفحة العملاء"
+                >
+                  <ArrowRight size={14} /> فتح في صفحة العملاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setProfileOpen(false); setProfileData(null) }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 max-h-[80vh] overflow-y-auto">
+              {profileLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <Loader2 size={32} className="animate-spin text-indigo-500" />
+                  <p className="text-sm text-gray-500">جاري تحميل بيانات العميل...</p>
+                </div>
+              ) : !profileData?.client ? (
+                <div className="text-center py-12 text-gray-400">
+                  <p className="font-bold">لم يتم العثور على بيانات العميل</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Client Info Card */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl p-4 border border-indigo-100 dark:border-indigo-800/30">
+                    <div className="flex items-start gap-4">
+                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0">
+                        {(profileData.client.name || '?')[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h2 className="font-bold text-lg text-gray-900 dark:text-white">{profileData.client.name}</h2>
+                        {profileData.client.phone && (
+                          <div className="flex items-center gap-1.5 text-sm text-gray-500 mt-1 font-inter">
+                            <Phone size={13} />{profileData.client.phone}
+                          </div>
+                        )}
+                        {profileData.client.city && (
+                          <p className="text-xs text-gray-400 mt-0.5">{profileData.client.city}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'الفواتير', value: profileData.client.total_invoices || 0, color: 'text-blue-600', suffix: '' },
+                      { label: 'الإيرادات', value: (profileData.client.total_revenue || 0).toFixed(0), color: 'text-yellow-600', suffix: ' ر.س' },
+                      { label: 'المحصّل', value: (profileData.client.total_paid || 0).toFixed(0), color: 'text-green-600', suffix: ' ر.س' },
+                      { label: 'المتبقي', value: (profileData.client.total_remaining || 0).toFixed(0), color: 'text-red-600', suffix: ' ر.س' },
+                    ].map((kpi) => (
+                      <div key={kpi.label} className="bg-white dark:bg-slate-700/50 rounded-xl p-3 border border-gray-200 dark:border-slate-600 text-center">
+                        <p className={`font-bold text-lg font-inter ${kpi.color}`}>{kpi.value}{kpi.suffix}</p>
+                        <p className="text-[11px] text-gray-500 font-bold mt-0.5">{kpi.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Recent Invoices */}
+                  {(profileData.invoices?.length > 0) && (
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-700 dark:text-gray-300 mb-2">آخر الفواتير</h3>
+                      <div className="space-y-2 max-h-72 overflow-y-auto">
+                        {profileData.invoices.slice(0, 15).map((inv: any) => (
+                          <div key={inv.id || inv.daftra_id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-700/30 rounded-lg px-3 py-2 text-xs">
+                            <span className="font-bold font-inter text-indigo-600 dark:text-indigo-400">#{inv.daftra_id || inv.id}</span>
+                            <span className="text-gray-500">{String(inv.date || '').slice(0, 10) || '—'}</span>
+                            <span className="font-bold font-inter">{Number(inv.price || 0).toFixed(0)} ر.س</span>
+                            <span className={`px-2 py-0.5 rounded-md font-bold ${
+                              inv.status === 'paid' ? 'bg-green-50 text-green-600' :
+                              inv.status === 'partial' ? 'bg-yellow-50 text-yellow-600' :
+                              inv.status === 'returned' ? 'bg-purple-50 text-purple-600' :
+                              'bg-red-50 text-red-600'
+                            }`}>
+                              {inv.status === 'paid' ? 'مدفوعة' : inv.status === 'partial' ? 'جزئية' : inv.status === 'returned' ? 'مرتجعة' : 'غير مدفوعة'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
                 const { api } = await import('../utils/apiClient')
 
                 await api.post(`/invoices/${addItemInvoiceId}/items`, {
