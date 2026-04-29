@@ -646,7 +646,28 @@ function ClientProfilePage({
       </div>
     );
   }
-  if (!client) return null;
+  if (!client) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 px-4 text-center animate-in fade-in duration-300">
+        <div className="w-20 h-20 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-6">
+          <UserX size={32} className="text-gray-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+          لم يتم العثور على بيانات العميل
+        </h2>
+        <p className="text-gray-500 max-w-md mx-auto mb-8 leading-relaxed">
+          عذراً، لا يمكننا العثور على أي بيانات مسجلة لهذا العميل. قد يكون الاسم مسجلاً بشكل مختلف أو لا توجد فواتير مرتبطة به.
+        </p>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-indigo-500/20"
+        >
+          <ArrowRight size={18} />
+          العودة لقائمة العملاء
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
