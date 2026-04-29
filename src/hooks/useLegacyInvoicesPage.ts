@@ -85,9 +85,20 @@ function computeQuickDateRange(quickDate: QuickDate) {
   now.setHours(0, 0, 0, 0)
   if (quickDate === 'all') return { from: '', to: '' }
   if (quickDate === 'today') { const f = toIsoDate(now); return { from: f, to: f } }
-  if (quickDate === 'week') { const ws = new Date(now); ws.setDate(now.getDate() - now.getDay()); return { from: toIsoDate(ws), to: toIsoDate(now) } }
-  if (quickDate === 'month') { return { from: toIsoDate(new Date(now.getFullYear(), now.getMonth(), 1)), to: toIsoDate(now) } }
-  return { from: toIsoDate(new Date(now.getFullYear(), 0, 1)), to: toIsoDate(now) }
+  if (quickDate === 'week') {
+    const ws = new Date(now); ws.setDate(now.getDate() - now.getDay())
+    const we = new Date(ws); we.setDate(ws.getDate() + 6)
+    return { from: toIsoDate(ws), to: toIsoDate(we) }
+  }
+  if (quickDate === 'month') {
+    const ms = new Date(now.getFullYear(), now.getMonth(), 1)
+    const me = new Date(now.getFullYear(), now.getMonth() + 1, 0) // last day of month
+    return { from: toIsoDate(ms), to: toIsoDate(me) }
+  }
+  // 'year': from Jan 1 to Dec 31 of current year (NOT just "to today")
+  const ys = new Date(now.getFullYear(), 0, 1)
+  const ye = new Date(now.getFullYear(), 11, 31)
+  return { from: toIsoDate(ys), to: toIsoDate(ye) }
 }
 
 function parseItems(inv: Invoice): InvoiceItem[] {

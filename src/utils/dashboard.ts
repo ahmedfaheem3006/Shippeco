@@ -61,9 +61,22 @@ export function computeDashboardRange(period: DashboardPeriod): DashRange {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
   if (period === 'today') { const iso = toIsoDate(now); return { from: iso, to: iso, label: 'اليوم' } }
-  if (period === 'week') { return { from: toIsoDate(startOfWeek(now)), to: toIsoDate(endOfWeek(now)), label: 'هذا الأسبوع' } }
-  if (period === 'month') { return { from: toIsoDate(startOfMonth(now)), to: toIsoDate(endOfMonth(now)), label: `هذا الشهر (${now.getFullYear()}-${pad2(now.getMonth() + 1)})` } }
-  if (period === 'year') { return { from: toIsoDate(startOfYear(now)), to: toIsoDate(endOfYear(now)), label: `هذه السنة (${now.getFullYear()})` } }
+  if (period === 'week') {
+    const ws = startOfWeek(now)
+    const we = endOfWeek(now) // ← was using endOfWeek already (correct)
+    return { from: toIsoDate(ws), to: toIsoDate(we), label: 'هذا الأسبوع' }
+  }
+  if (period === 'month') {
+    const ms = startOfMonth(now)
+    const me = endOfMonth(now) // ← was using endOfMonth already (correct)
+    return { from: toIsoDate(ms), to: toIsoDate(me), label: `هذا الشهر (${now.getFullYear()}-${pad2(now.getMonth() + 1)})` }
+  }
+  if (period === 'year') {
+    // Fix: use Dec 31 as end date, NOT today — so full-year filter is consistent
+    const ys = startOfYear(now)
+    const ye = new Date(now.getFullYear(), 11, 31)
+    return { from: toIsoDate(ys), to: toIsoDate(ye), label: `هذه السنة (${now.getFullYear()})` }
+  }
   return { from: '0000-01-01', to: '9999-12-31', label: 'الكل' }
 }
 
@@ -114,10 +127,17 @@ export type DashboardKpis = {
 }
 
 export function filterForDashboard(invoices: Invoice[], range: DashRange) {
+  // Max valid date: 1 year from today (to catch corrupted future dates from day/month swap bug)
+  const maxValidDate = new Date()
+  maxValidDate.setFullYear(maxValidDate.getFullYear() + 1)
+  const maxValidStr = maxValidDate.toISOString().slice(0, 10)
+
   return invoices.filter((inv) => {
     if (inv.isDraft) return false
     const d = String(inv.date || '').slice(0, 10)
-    if (!d) return false
+    if (!d || d < '2000-01-01') return false
+    // Reject suspiciously far-future dates (corrupted from day/month swap)
+    if (d > maxValidStr) return false
     return d >= range.from && d <= range.to
   })
 }
