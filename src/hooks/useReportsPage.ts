@@ -181,7 +181,7 @@ export function useReportsPage() {
     return {
       points: last14.map((d) => d.amount),
       max,
-      labels: last14.map((d) => d.date.slice(5)),
+      labels: last14.map((d) => (d.date || '').slice(5)),
     };
   }, [dailySeries]);
 
