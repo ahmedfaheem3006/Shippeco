@@ -6,9 +6,10 @@ export type DashboardChartView = 'daily' | 'monthly' | 'yearly'
 export type DashRange = { from: string; to: string; label: string }
 
 function toIsoDate(d: Date) {
-  const dt = new Date(d.getTime())
-  dt.setHours(0, 0, 0, 0)
-  return dt.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function addDays(d: Date, days: number) {
@@ -74,7 +75,7 @@ export function computeDashboardRange(period: DashboardPeriod): DashRange {
   if (period === 'year') {
     // Fix: use Dec 31 as end date, NOT today — so full-year filter is consistent
     const ys = startOfYear(now)
-    const ye = new Date(now.getFullYear(), 11, 31)
+    const ye = endOfYear(now)
     return { from: toIsoDate(ys), to: toIsoDate(ye), label: `هذه السنة (${now.getFullYear()})` }
   }
   return { from: '0000-01-01', to: '9999-12-31', label: 'الكل' }
