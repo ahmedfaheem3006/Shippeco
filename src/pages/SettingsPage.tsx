@@ -351,13 +351,13 @@ export function SettingsPage() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold text-gray-500 dark:text-gray-400">وسيلة الدفع الافتراضية</label>
               <select
-                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-inter transition-all disabled:opacity-50"
+                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-cairo transition-all disabled:opacity-50"
                 value={st.settings.currency}
                 onChange={(e) => st.setSettings({ ...st.settings, currency: e.target.value })}
                 disabled={st.loading || st.saving}>
-                <option value="PL">رابط دفع سريع (Payment Link)</option>
-                <option value="WEB">بطاقة ائتمان مدى/فيزا (Web Checkout)</option>
-                <option value="APAY">Apple Pay</option>
+                <option value="">بدون مسار / قيد الانتظار</option>
+                <option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option>
+                <option value="سداد إلكتروني">عبر روابط الدفع (Paymob)</option>
               </select>
             </div>
 
@@ -423,7 +423,7 @@ export function SettingsPage() {
                 </div>
                 <div className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-3 text-center">
                   <div className="text-sm font-bold text-gray-900 dark:text-white font-inter">
-                    {st.syncInfo.last_recent_sync
+                    {st.syncInfo.last_recent_sync && !isNaN(new Date(st.syncInfo.last_recent_sync).getTime())
                       ? new Date(st.syncInfo.last_recent_sync).toLocaleString('ar-SA', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
                       : '—'}
                   </div>

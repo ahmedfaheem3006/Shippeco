@@ -257,8 +257,21 @@ export function useSettingsPage() {
       const result = await api.get<any>('/sync/recent');
       const d = result?.data || result;
       const synced = d?.synced || 0;
+      const total = d?.total || d?.total_invoices || syncInfo?.total_invoices || 0;
+      
       setStatus(`✅ تم المزامنة — ${synced} فاتورة`);
-      setTimeout(() => { setStatus(null); refresh(); }, 3000);
+      
+      // Update sync info locally to reflect today's date and updated count
+      setSyncInfo(prev => ({
+        last_recent_sync: new Date().toISOString(),
+        total_invoices: total,
+        cron_enabled: prev?.cron_enabled ?? true
+      }));
+
+      setTimeout(() => { 
+        setStatus(null); 
+        refresh(); // Refresh everything else
+      }, 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل تشغيل المزامنة'); }
     finally { setSaving(false); }
   }, [refresh]);
