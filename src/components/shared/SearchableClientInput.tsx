@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { User, Phone, Search, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { User, Phone, Loader2 } from 'lucide-react'
 import { api } from '../../utils/apiClient'
 
 type ClientResult = {
@@ -20,7 +20,7 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<ClientResult[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
