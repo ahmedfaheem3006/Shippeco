@@ -5,7 +5,7 @@ import {
   ClipboardList, CheckCircle2, Clock, Trash2,
   Download, FileSpreadsheet, RefreshCw, Search,
   Lock, CreditCard, Edit, Plus, ChevronLeft, ChevronRight,
-  Shield, Hash,
+  Shield, Hash, Users
 } from 'lucide-react'
 
 function formatNum(n: number): string {
@@ -214,16 +214,34 @@ export function AuditLogPage() {
           ))}
         </div>
 
-        <div className="relative w-full lg:w-96">
-          <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
-            type="text"
-            placeholder="ابحث باسم الموظف، البريد، أو نوع العملية..."
-            value={aud.query}
-            onChange={(e) => aud.setQuery(e.target.value)}
-            disabled={aud.loading}
-          />
+        <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          {/* User Dropdown */}
+          <div className="relative min-w-[200px]">
+            <Users size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <select
+              className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all appearance-none cursor-pointer"
+              value={aud.selectedUserId}
+              onChange={(e) => aud.setSelectedUserId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              disabled={aud.loading}
+            >
+              <option value="all">كل الموظفين</option>
+              {aud.users.map(u => (
+                <option key={u.id} value={u.id}>{u.full_name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="relative w-full lg:w-80 xl:w-96">
+            <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+              type="text"
+              placeholder="البحث في العمليات..."
+              value={aud.query}
+              onChange={(e) => aud.setQuery(e.target.value)}
+              disabled={aud.loading}
+            />
+          </div>
         </div>
       </div>
 

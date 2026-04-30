@@ -45,6 +45,7 @@ async function fetchAuditLogs(params: {
   limit: number
   action?: string
   search?: string
+  user_id?: number
 }) {
   var qs = new URLSearchParams({
     page: String(params.page),
@@ -55,6 +56,9 @@ async function fetchAuditLogs(params: {
   }
   if (params.search) {
     qs.set('search', params.search)
+  }
+  if (params.user_id) {
+    qs.set('user_id', String(params.user_id))
   }
 
   var result = await api.get('/audit-log?' + qs) as any
@@ -116,8 +120,10 @@ export function useAuditLogPage() {
   const [status, setStatus] = useState<string | null>(null)
 
   const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [users, setUsers] = useState<Array<{ id: number; full_name: string; email: string }>>([])
   const [query, setQuery] = useState('')
   const [type, setType] = useState<AuditTypeFilter>('all')
+  const [selectedUserId, setSelectedUserId] = useState<number | 'all'>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, pages: 1 })
 
@@ -133,11 +139,13 @@ export function useAuditLogPage() {
           limit: PAGE_SIZE,
           action: type !== 'all' ? type : undefined,
           search: query || undefined,
+          user_id: selectedUserId !== 'all' ? selectedUserId : undefined,
         })
 
         setEntries(data.logs)
         setPagination(data.pagination)
         setServerStats(data.stats || {})
+        setCurrentPage(data.pagination.page)
       } catch (e: any) {
         console.error('[AuditLog] Error:', e.message)
         setError(e.message || 'فشل تحميل السجل')
@@ -146,13 +154,30 @@ export function useAuditLogPage() {
         setLoading(false)
       }
     },
-    [currentPage, type, query],
+    [type, query, selectedUserId],
   )
+
+  // Fetch users for dropdown
+  useEffect(() => {
+    async function loadUsers() {
+      try {
+        const res = await api.get('/audit-log/users') as any
+        if (res && res.data) {
+          setUsers(res.data)
+        } else if (Array.isArray(res)) {
+          setUsers(res)
+        }
+      } catch (e) {
+        console.error('Failed to load audit users:', e)
+      }
+    }
+    void loadUsers()
+  }, [])
 
     // Auto-fetch on mount and when filters change
   useEffect(function() {
     fetchData(1)
-  }, [type, query])
+  }, [type, query, selectedUserId])
 
   const refresh = useCallback(async () => {
     setCurrentPage(1)
@@ -253,7 +278,10 @@ export function useAuditLogPage() {
 
   const onSetQuery = useCallback((q: string) => {
     setQuery(q)
-    setCurrentPage(1)
+  }, [])
+
+  const onSetSelectedUserId = useCallback((id: number | 'all') => {
+    setSelectedUserId(id)
   }, [])
 
   const onSetPage = useCallback((pg: number) => {
@@ -295,6 +323,10 @@ export function useAuditLogPage() {
     type,
     setType: onSetType,
     typeOptions,
+    
+    users,
+    selectedUserId,
+    setSelectedUserId: onSetSelectedUserId,
 
     entries: displayEntries,
     rawEntries: entries,
