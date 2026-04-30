@@ -51,8 +51,12 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
     setOpen(true)
     try {
       const res = await api.get(`/clients/search?q=${encodeURIComponent(q)}`)
-      if (res.data?.success) {
-        setResults(res.data.data || [])
+      // ApiClient already unwraps success/data, so res IS the array
+      if (Array.isArray(res)) {
+        setResults(res)
+      } else if (res?.data && Array.isArray(res.data)) {
+        // Fallback for safety if it's not unwrapped for some reason
+        setResults(res.data)
       }
     } catch (e) {
       console.error('Failed to search clients:', e)
