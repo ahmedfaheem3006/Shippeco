@@ -128,8 +128,8 @@ export function useSettingsPage() {
         setUsers([]);
       }
 
-      // ── Process sync info ──
-      if (syncResult.status === 'fulfilled' && syncResult.value) {
+      // ── Process sync info (Only if not already set, to keep it stable) ──
+      if (!syncInfo && syncResult.status === 'fulfilled' && syncResult.value) {
         const d = syncResult.value?.data || syncResult.value;
         console.log('[Settings] Sync status:', d);
         setSyncInfo({
@@ -309,7 +309,11 @@ export function useSettingsPage() {
       
       if (total > 0) {
         setConnDaftra({ ok: true, text: `متصل — ${total.toLocaleString()} فاتورة في قاعدة البيانات` });
-        setSyncInfo(prev => prev ? { ...prev, total_invoices: total } : { last_recent_sync: null, total_invoices: total, cron_enabled: true });
+        setSyncInfo(prev => ({
+          last_recent_sync: new Date().toISOString(),
+          total_invoices: total,
+          cron_enabled: prev?.cron_enabled ?? true
+        }));
       } else {
         setConnDaftra({ ok: false, text: 'لا توجد فواتير في قاعدة البيانات' });
       }
