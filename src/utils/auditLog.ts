@@ -1,6 +1,6 @@
-import type { AuditEntry, AuditEntryType } from './models'
-
-const TYPES: AuditEntryType[] = ['login', 'create', 'update', 'delete', 'import', 'export', 'payment_link', 'paid']
+import type { AuditEntry } from './models'
+export type AuditEntryType = 'login' | 'create' | 'update' | 'delete' | 'import' | 'export' | 'payment_link' | 'paid' | 'sync'
+const TYPES: AuditEntryType[] = ['login', 'create', 'update', 'delete', 'import', 'export', 'payment_link', 'paid', 'sync']
 
 function isAuditType(value: unknown): value is AuditEntryType {
   return typeof value === 'string' && (TYPES as string[]).includes(value)
@@ -58,6 +58,7 @@ export function formatAuditType(type: AuditEntryType) {
   if (type === 'import') return '📥 استيراد'
   if (type === 'export') return '📤 تصدير'
   if (type === 'payment_link') return '💳 رابط دفع'
+  if (type === 'sync') return '🔄 مزامنة'
   return '✅ سداد'
 }
 
@@ -87,6 +88,7 @@ export function computeAuditSummary(entries: AuditEntry[]) {
     export: 0,
     payment_link: 0,
     paid: 0,
+    sync: 0,
   }
   for (const e of entries) counts[e.type] += 1
   const lastAt = entries.length ? entries[0].at : ''

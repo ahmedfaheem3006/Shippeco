@@ -243,6 +243,7 @@ export function useAuditLogPage() {
     { key: 'export' as AuditTypeFilter, label: '📤 تصدير' },
     { key: 'payment_link' as AuditTypeFilter, label: '💳 رابط دفع' },
     { key: 'paid' as AuditTypeFilter, label: '✅ سداد' },
+    { key: 'sync' as AuditTypeFilter, label: '🔄 مزامنة' },
   ], [])
 
   const onSetType = useCallback((t: AuditTypeFilter) => {

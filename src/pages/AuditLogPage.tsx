@@ -86,6 +86,7 @@ function getActionStyle(action: string): { icon: typeof Lock; color: string } {
     export: { icon: FileSpreadsheet, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800/30' },
     payment_link: { icon: CreditCard, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800/30' },
     paid: { icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/30' },
+    sync: { icon: RefreshCw, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/30' },
   }
   return map[action] || { icon: ClipboardList, color: 'text-gray-500 bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700' }
 }
@@ -213,12 +214,12 @@ export function AuditLogPage() {
           ))}
         </div>
 
-        <div className="relative w-full lg:w-80">
+        <div className="relative w-full lg:w-96">
           <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
-            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2 pr-10 pl-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
             type="text"
-            placeholder="بحث بالمستخدم أو الوصف أو الكيان..."
+            placeholder="ابحث باسم الموظف، البريد، أو نوع العملية..."
             value={aud.query}
             onChange={(e) => aud.setQuery(e.target.value)}
             disabled={aud.loading}
@@ -242,14 +243,14 @@ export function AuditLogPage() {
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-right border-collapse whitespace-nowrap min-w-[900px]">
-            <thead className="sticky top-0 bg-gray-50 dark:bg-slate-900 z-10 border-b border-gray-200 dark:border-slate-700">
-              <tr className="text-gray-500 text-[11px] uppercase font-bold tracking-wider">
-                <th className="p-4 w-40">الوقت والتاريخ</th>
-                <th className="p-4 w-28">المستخدم</th>
-                <th className="p-4 w-28">العملية</th>
-                <th className="p-4 w-28">الكيان</th>
-                <th className="p-4">الوصف</th>
-                <th className="p-4 w-56">التفاصيل</th>
+            <thead className="sticky top-0 bg-gray-100 dark:bg-slate-900 z-10 border-b border-gray-200 dark:border-slate-700">
+              <tr className="text-gray-500 text-[10px] uppercase font-black tracking-widest">
+                <th className="p-4 text-right w-44">📅 الوقت والتاريخ</th>
+                <th className="p-4 text-right w-48">👤 المستخدم المنفذ</th>
+                <th className="p-4 text-right w-36">🛠️ العملية</th>
+                <th className="p-4 text-right w-36">📦 الكيان</th>
+                <th className="p-4 text-right">📝 الوصف والنشاط</th>
+                <th className="p-4 text-right w-64">🔍 البيانات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
@@ -343,8 +344,11 @@ export function AuditLogPage() {
           <span className="px-3 py-1 bg-red-50 border border-red-200 rounded-lg text-red-600 flex items-center gap-1">
             <Trash2 size={10} /> {formatNum(aud.getTypeCount('delete'))}
           </span>
-          <span className="px-3 py-1 bg-blue-50 border border-blue-200 rounded-lg text-blue-600 flex items-center gap-1">
+          <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 rounded-lg text-blue-600 dark:text-blue-400 flex items-center gap-1">
             <Lock size={10} /> {formatNum(aud.getTypeCount('login'))}
+          </span>
+          <span className="px-3 py-1 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/30 rounded-lg text-orange-600 dark:text-orange-400 flex items-center gap-1">
+            <RefreshCw size={10} /> {formatNum(aud.getTypeCount('sync'))}
           </span>
         </div>
       </div>
