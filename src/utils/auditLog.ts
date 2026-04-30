@@ -1,5 +1,4 @@
-import type { AuditEntry } from './models'
-export type AuditEntryType = 'login' | 'create' | 'update' | 'delete' | 'import' | 'export' | 'payment_link' | 'paid' | 'sync'
+import type { AuditEntry, AuditEntryType } from './models'
 const TYPES: AuditEntryType[] = ['login', 'create', 'update', 'delete', 'import', 'export', 'payment_link', 'paid', 'sync']
 
 function isAuditType(value: unknown): value is AuditEntryType {

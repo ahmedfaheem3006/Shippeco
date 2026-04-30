@@ -125,6 +125,7 @@ export type AuditEntryType =
   | 'export'
   | 'payment_link'
   | 'paid'
+  | 'sync'
 
 export type AuditEntry = {
   id: string
