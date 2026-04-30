@@ -8,7 +8,7 @@ export type CalcPiece = {
   h: number
 }
 
-function toKg(weight: number, unitSystem: UnitSystem) {
+export function toKg(weight: number, unitSystem: UnitSystem) {
   return unitSystem === 'imperial' ? weight / 2.20462 : weight
 }
 

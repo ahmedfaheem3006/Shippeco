@@ -43,10 +43,7 @@ function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
-function computeVolumetricWeight(l: number, w: number, h: number) {
-  const v = (l * w * h) / 5000
-  return Number.isFinite(v) ? v : 0
-}
+
 
 function calcKindToLegacyService(kind: CalcKind): LegacyService {
   if (kind === 'local') return 'domestic'
