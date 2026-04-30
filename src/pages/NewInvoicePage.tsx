@@ -18,6 +18,7 @@ import {
   Banknote, Weight, Ruler
 } from 'lucide-react'
 import { SearchableClientInput } from '../components/shared/SearchableClientInput'
+import { SearchableSelect } from '../components/shared/SearchableSelect'
 
 type CalcKind = 'economy' | 'local' | 'import' | 'export'
 
@@ -328,22 +329,22 @@ export function NewInvoicePage() {
 
               <div className={styles.field}>
                 <label className={styles.fieldLabel}><MapPin size={12} /> المسار — من</label>
-                <select
-                  className={styles.fieldSelect}
-                  value={routeFromValue} onChange={(e) => setRouteFromUser(e.target.value)}
-                >
-                  {countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
-                </select>
+                <SearchableSelect
+                  options={countryOptions}
+                  value={routeFromValue}
+                  onChange={(val) => setRouteFromUser(val)}
+                  placeholder="اختر الدولة..."
+                />
               </div>
 
               <div className={styles.field}>
                 <label className={styles.fieldLabel}><MapPin size={12} /> المسار — إلى</label>
-                <select
-                  className={styles.fieldSelect}
-                  value={routeToValue} onChange={(e) => setRouteToUser(e.target.value)}
-                >
-                  {countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
-                </select>
+                <SearchableSelect
+                  options={countryOptions}
+                  value={routeToValue}
+                  onChange={(val) => setRouteToUser(val)}
+                  placeholder="اختر الدولة..."
+                />
               </div>
 
               <div className={styles.field}>
