@@ -44,8 +44,6 @@ export function useCalculatorPage() {
   const [kind, setKind] = useState<CalcKind>('import')
   const legacyService = useMemo(() => kindToLegacyService(kind), [kind])
 
-  const routeFromFixed = false
-  const routeToFixed = false
   const [routeFromUser, setRouteFromUser] = useState(DEFAULT_FOREIGN)
   const [routeToUser, setRouteToUser] = useState(DEFAULT_FOREIGN)
 

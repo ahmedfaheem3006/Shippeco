@@ -14,7 +14,7 @@ import {
   DownloadCloud, UploadCloud, MapPin,
   Box, Truck, AlertCircle, CheckCircle2,
   ArrowRight, FileText, User, CreditCard,
-  Package, Hash, Phone, Calendar, ClipboardList,
+  Package, Hash, Calendar, ClipboardList,
   Banknote, Weight, Ruler
 } from 'lucide-react'
 import { SearchableClientInput } from '../components/shared/SearchableClientInput'
@@ -126,8 +126,6 @@ export function NewInvoicePage() {
   )
 
   const legacyService = useMemo(() => calcKindToLegacyService(calcKind), [calcKind])
-  const routeFromFixed = false
-  const routeToFixed = false
   const routeFromValue = routeFromUser
   const routeToValue = routeToUser
   const zoneInfo = useMemo(

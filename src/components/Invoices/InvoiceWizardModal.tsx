@@ -130,8 +130,6 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
   )
 
   const legacyService = useMemo(() => calcKindToLegacyService(calcKind), [calcKind])
-  const routeFromFixed = false
-  const routeToFixed = false
   const routeFromValue = routeFromUser
   const routeToValue = routeToUser
   const zoneInfo = useMemo(
