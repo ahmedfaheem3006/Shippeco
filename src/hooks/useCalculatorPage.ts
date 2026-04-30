@@ -44,13 +44,13 @@ export function useCalculatorPage() {
   const [kind, setKind] = useState<CalcKind>('import')
   const legacyService = useMemo(() => kindToLegacyService(kind), [kind])
 
-  const routeFromFixed = kind === 'export' || kind === 'local'
-  const routeToFixed = kind === 'import' || kind === 'economy' || kind === 'local'
+  const routeFromFixed = false
+  const routeToFixed = false
   const [routeFromUser, setRouteFromUser] = useState(DEFAULT_FOREIGN)
   const [routeToUser, setRouteToUser] = useState(DEFAULT_FOREIGN)
 
-  const routeFrom = routeFromFixed ? SA : routeFromUser
-  const routeTo = routeToFixed ? SA : routeToUser
+  const routeFrom = routeFromUser
+  const routeTo = routeToUser
 
   const [pieces, setPieces] = useState<PieceInput[]>([{ qty: '1', weight: '', l: '', w: '', h: '' }])
   const [dimUnit, setDimUnit] = useState<'metric' | 'imperial'>('metric')

@@ -17,6 +17,7 @@ import {
   Package, Hash, Phone, Calendar, ClipboardList,
   Banknote, Weight, Ruler
 } from 'lucide-react'
+import { SearchableClientInput } from '../components/shared/SearchableClientInput'
 
 type CalcKind = 'economy' | 'local' | 'import' | 'export'
 
@@ -125,10 +126,10 @@ export function NewInvoicePage() {
   )
 
   const legacyService = useMemo(() => calcKindToLegacyService(calcKind), [calcKind])
-  const routeFromFixed = calcKind === 'export' || calcKind === 'local'
-  const routeToFixed = calcKind === 'import' || calcKind === 'economy' || calcKind === 'local'
-  const routeFromValue = routeFromFixed ? SA : routeFromUser
-  const routeToValue = routeToFixed ? SA : routeToUser
+  const routeFromFixed = false
+  const routeToFixed = false
+  const routeFromValue = routeFromUser
+  const routeToValue = routeToUser
   const zoneInfo = useMemo(
     () => getZoneInfoLegacy(legacyService, routeFromValue, routeToValue),
     [legacyService, routeFromValue, routeToValue],
@@ -331,7 +332,7 @@ export function NewInvoicePage() {
                 <label className={styles.fieldLabel}><MapPin size={12} /> المسار — من</label>
                 <select
                   className={styles.fieldSelect}
-                  value={routeFromValue} disabled={routeFromFixed} onChange={(e) => setRouteFromUser(e.target.value)}
+                  value={routeFromValue} onChange={(e) => setRouteFromUser(e.target.value)}
                 >
                   {countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
                 </select>
@@ -341,7 +342,7 @@ export function NewInvoicePage() {
                 <label className={styles.fieldLabel}><MapPin size={12} /> المسار — إلى</label>
                 <select
                   className={styles.fieldSelect}
-                  value={routeToValue} disabled={routeToFixed} onChange={(e) => setRouteToUser(e.target.value)}
+                  value={routeToValue} onChange={(e) => setRouteToUser(e.target.value)}
                 >
                   {countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
                 </select>
@@ -537,15 +538,14 @@ export function NewInvoicePage() {
             </div>
             <div className={styles.sectionTitle}>بيانات العميل</div>
           </div>
-          <div className={styles.sectionBody}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}><User size={12} /> اسم العميل <span className={styles.fieldRequired}>*</span></label>
-              <input className={styles.fieldInput} value={draft.client} onChange={(e) => setDraft((p) => ({ ...p, client: e.target.value }))} placeholder="الاسم الثلاثي" />
-            </div>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}><Phone size={12} /> رقم الجوال <span className={styles.fieldRequired}>*</span></label>
-              <input className={`${styles.fieldInput} ${styles.fieldMono}`} value={draft.phone} onChange={(e) => setDraft((p) => ({ ...p, phone: e.target.value }))} placeholder="05XXXXXXXX" dir="ltr" style={{ textAlign: 'left' }} />
-            </div>
+          <div className={styles.sectionBody} style={{ gridTemplateColumns: '1fr' }}>
+            <SearchableClientInput
+              nameValue={draft.client}
+              phoneValue={draft.phone}
+              onNameChange={(val) => setDraft((p) => ({ ...p, client: val }))}
+              onPhoneChange={(val) => setDraft((p) => ({ ...p, phone: val }))}
+              onSelect={(name, phone) => setDraft((p) => ({ ...p, client: name, phone: phone }))}
+            />
           </div>
         </div>
 
@@ -639,8 +639,6 @@ export function NewInvoicePage() {
                 <option value="">بدون مسار / قيد الانتظار</option>
                 <option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option>
                 <option value="سداد إلكتروني">عبر روابط الدفع (Paymob)</option>
-                <option value="دفع نقدي">كاش بالفرع</option>
-                <option value="تحويل محفظة رقمية">Apple Pay / STC Pay</option>
               </select>
             </div>
           </div>

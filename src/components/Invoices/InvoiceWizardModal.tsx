@@ -130,10 +130,10 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
   )
 
   const legacyService = useMemo(() => calcKindToLegacyService(calcKind), [calcKind])
-  const routeFromFixed = calcKind === 'export' || calcKind === 'local'
-  const routeToFixed = calcKind === 'import' || calcKind === 'economy' || calcKind === 'local'
-  const routeFromValue = routeFromFixed ? SA : routeFromUser
-  const routeToValue = routeToFixed ? SA : routeToUser
+  const routeFromFixed = false
+  const routeToFixed = false
+  const routeFromValue = routeFromUser
+  const routeToValue = routeToUser
   const zoneInfo = useMemo(
     () => getZoneInfoLegacy(legacyService, routeFromValue, routeToValue),
     [legacyService, routeFromValue, routeToValue],
@@ -278,8 +278,8 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">المسار — من</label>
                   <select
-                    className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50"
-                    value={routeFromValue} disabled={routeFromFixed} onChange={(e) => setRouteFromUser(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50"
+                    value={routeFromValue} onChange={(e) => setRouteFromUser(e.target.value)}
                   >
                     {countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
                   </select>
@@ -287,8 +287,8 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">المسار — إلى</label>
                   <select
-                    className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50"
-                    value={routeToValue} disabled={routeToFixed} onChange={(e) => setRouteToUser(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50"
+                    value={routeToValue} onChange={(e) => setRouteToUser(e.target.value)}
                   >
                     {countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
                   </select>
