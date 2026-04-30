@@ -64,15 +64,17 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
   const handleNameChange = (val: string) => {
     setHasSelected(false)
     onNameChange(val)
+    const trimmed = val.trim()
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    searchTimeoutRef.current = setTimeout(() => searchClients(val), 300)
+    searchTimeoutRef.current = setTimeout(() => searchClients(trimmed), 300)
   }
 
   const handlePhoneChange = (val: string) => {
     setHasSelected(false)
     onPhoneChange(val)
+    const trimmed = val.trim()
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    searchTimeoutRef.current = setTimeout(() => searchClients(val), 300)
+    searchTimeoutRef.current = setTimeout(() => searchClients(trimmed), 300)
   }
 
   const handleSelect = (name: string, phone: string) => {
