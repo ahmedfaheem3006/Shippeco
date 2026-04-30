@@ -9,6 +9,7 @@ import {
   DownloadCloud, UploadCloud, MapPin, 
   Box, Truck, AlertCircle
 } from 'lucide-react'
+import { SearchableClientInput } from '../shared/SearchableClientInput'
 
 type Prefill = {
   price?: string
@@ -390,13 +391,14 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
               </div>
 
               <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                 <div className="flex flex-col gap-1.5">
-                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">اسم العميل *</label>
-                   <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none" value={draft.client} onChange={(e) => setDraft((p) => ({ ...p, client: e.target.value }))} placeholder="الاسم الثلاثي" />
-                 </div>
-                 <div className="flex flex-col gap-1.5">
-                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">رقم الجوال *</label>
-                   <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.phone} onChange={(e) => setDraft((p) => ({ ...p, phone: e.target.value }))} placeholder="05XXXXXXXX" dir="ltr" />
+                 <div className="sm:col-span-2">
+                   <SearchableClientInput
+                     nameValue={draft.client}
+                     phoneValue={draft.phone}
+                     onNameChange={(val) => setDraft((p) => ({ ...p, client: val }))}
+                     onPhoneChange={(val) => setDraft((p) => ({ ...p, phone: val }))}
+                     onSelect={(name, phone) => setDraft((p) => ({ ...p, client: name, phone: phone }))}
+                   />
                  </div>
                  
                  <div className="flex flex-col gap-1.5">
@@ -456,7 +458,7 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                  <div className="flex flex-col gap-1.5">
                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">مسار إتمام الدفع</label>
                    <select className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50" value={draft.payment} onChange={(e) => setDraft((p) => ({ ...p, payment: e.target.value }))}>
-                     <option value="">بدون مسار / قيد الانتظار</option><option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option><option value="سداد إلكتروني">عبر روابط الدفع (Paymob / بوابة)</option><option value="دفع نقدي">كاش بالفرع</option><option value="تحويل محفظة رقمية">Apple Pay / STC Pay مباشر</option>
+                      <option value="">بدون مسار / قيد الانتظار</option><option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option><option value="سداد إلكتروني">عبر روابط الدفع (Paymob)</option>
                    </select>
                  </div>
                  

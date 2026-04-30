@@ -3,6 +3,7 @@ import {
   Calculator, Zap, Home, DownloadCloud, UploadCloud, MapPin,
   Box, CheckCircle2, RotateCcw, AlertCircle, Package, Hash, Weight, Ruler
 } from 'lucide-react'
+import { SearchableSelect } from '../components/shared/SearchableSelect'
 import styles from './NewInvoicePage.module.css'
 
 export function CalculatorPage() {
@@ -60,22 +61,24 @@ export function CalculatorPage() {
 
             <div className={styles.field}>
               <label className={styles.fieldLabel}><MapPin size={12} /> المسار — من</label>
-              <select
-                className={styles.fieldSelect}
-                value={calc.routeFrom} disabled={calc.routeFromFixed} onChange={(e) => calc.setRouteFromUser(e.target.value)}
-              >
-                {calc.countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
-              </select>
+              <SearchableSelect
+                options={calc.countryOptions}
+                value={calc.routeFrom}
+                onChange={calc.setRouteFromUser}
+                disabled={calc.routeFromFixed}
+                placeholder="اختر الدولة..."
+              />
             </div>
 
             <div className={styles.field}>
               <label className={styles.fieldLabel}><MapPin size={12} /> المسار — إلى</label>
-              <select
-                className={styles.fieldSelect}
-                value={calc.routeTo} disabled={calc.routeToFixed} onChange={(e) => calc.setRouteToUser(e.target.value)}
-              >
-                {calc.countryOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
-              </select>
+              <SearchableSelect
+                options={calc.countryOptions}
+                value={calc.routeTo}
+                onChange={calc.setRouteToUser}
+                disabled={calc.routeToFixed}
+                placeholder="اختر الدولة..."
+              />
             </div>
 
             <div className={styles.field}>
@@ -113,7 +116,13 @@ export function CalculatorPage() {
             </div>
 
             <div className={styles.field}>
-              <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد (سم) — طول × عرض × ارتفاع</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className={styles.fieldLabel} style={{ marginBottom: 0 }}><Ruler size={12} /> الأبعاد — طول × عرض × ارتفاع</label>
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
+                  <button type="button" onClick={() => calc.setDimUnit('metric')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'metric' ? 'bg-white dark:bg-slate-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>سم (cm)</button>
+                  <button type="button" onClick={() => calc.setDimUnit('imperial')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'imperial' ? 'bg-white dark:bg-slate-600 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>إنش (inch)</button>
+                </div>
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 <input className={styles.fieldInput} value={calc.pieces[0].l} onChange={(e) => calc.updatePiece(0, { l: e.target.value })} inputMode="decimal" placeholder="ط" dir="ltr" />
                 <input className={styles.fieldInput} value={calc.pieces[0].w} onChange={(e) => calc.updatePiece(0, { w: e.target.value })} inputMode="decimal" placeholder="ع" dir="ltr" />

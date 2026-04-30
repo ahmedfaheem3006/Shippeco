@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppLayout } from '../components/AppLayout/useAppLayout'
 import { InvoiceAddItemModal } from '../components/Invoices/InvoiceAddItemModal'
@@ -17,7 +17,7 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw,
+  RotateCcw, X,
 } from 'lucide-react'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
@@ -46,6 +46,8 @@ export function InvoicesPage() {
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
   const [addItemInvoiceId, setAddItemInvoiceId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Client Profile State ──
   // (Overlay moved to external ClientsPage)
@@ -207,6 +209,22 @@ export function InvoicesPage() {
     })()
   }
 
+  const showToast = useCallback((type: 'success' | 'error', message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ type, message })
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null)
+      if (type === 'success') window.location.reload()
+    }, 15000)
+  }, [])
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    const wasSuccess = toast?.type === 'success'
+    setToast(null)
+    if (wasSuccess) window.location.reload()
+  }, [toast])
+
   // ══════════════════════════════════════════
   // WIZARD SAVE — Update sends only clean DB fields
   // ══════════════════════════════════════════
@@ -250,14 +268,14 @@ export function InvoicesPage() {
           console.log(`[Invoices] ✅ Created new invoice`)
         }
 
-        await syncFromDb()
         setWizardOpen(false)
         setEditingInvoiceId(null)
         setWizardInitialDraft(undefined)
         setWizardTitle(undefined)
+        showToast('success', editingInvoiceId ? `✅ تم تحديث الفاتورة #${id} بنجاح` : '✅ تم إنشاء الفاتورة بنجاح')
       } catch (e: any) {
         console.error('[Invoices] ❌ Save failed:', e)
-        window.alert(e?.message || 'فشل في حفظ الفاتورة')
+        showToast('error', e?.message || 'فشل في حفظ الفاتورة')
       } finally {
         setMutating(false)
       }
@@ -291,6 +309,16 @@ export function InvoicesPage() {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-lg w-[90%] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl border animate-in slide-in-from-top-2 duration-300 ${toast.type === 'success' ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800/40 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300'}`}>
+          {toast.type === 'success' ? <CheckCircle2 size={20} className="shrink-0" /> : <AlertCircle size={20} className="shrink-0" />}
+          <span className="flex-1 text-sm font-bold">{toast.message}</span>
+          <button type="button" onClick={dismissToast} className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0">
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {/* Action Bar */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">

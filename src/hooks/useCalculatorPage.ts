@@ -53,6 +53,7 @@ export function useCalculatorPage() {
   const routeTo = routeToFixed ? SA : routeToUser
 
   const [pieces, setPieces] = useState<PieceInput[]>([{ qty: '1', weight: '', l: '', w: '', h: '' }])
+  const [dimUnit, setDimUnit] = useState<'metric' | 'imperial'>('metric')
   const [fuelPct, setFuelPct] = useState(30)
   const [profitPct, setProfitPct] = useState(50)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +64,7 @@ export function useCalculatorPage() {
     [],
   )
 
-  const totals = useMemo(() => computeTotals(pieces), [pieces])
+  const totals = useMemo(() => computeTotals(pieces, dimUnit), [pieces, dimUnit])
 
   const zoneInfo = useMemo(() => getZoneInfoLegacy(legacyService, routeFrom, routeTo), [legacyService, routeFrom, routeTo])
 
@@ -175,6 +176,12 @@ export function useCalculatorPage() {
     updatePiece,
     addPiece,
     removePiece,
+
+    dimUnit,
+    setDimUnit: (u: 'metric' | 'imperial') => {
+      setDimUnit(u)
+      setResult(null)
+    },
 
     fuelPct,
     setFuelPct: (v: number) => {

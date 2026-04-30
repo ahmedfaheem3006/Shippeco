@@ -1,4 +1,4 @@
-import { computeChargeableWeightKg, computeVolumetricWeightKg, type CalcPiece } from './chargeableWeight'
+import { computeChargeableWeightKg, computeVolumetricWeightKg, type CalcPiece, type UnitSystem } from './chargeableWeight'
 
 export type CalcKind = 'economy' | 'local' | 'import' | 'export'
 
@@ -25,14 +25,14 @@ export function toCalcPieces(inputs: readonly PieceInput[]): CalcPiece[] {
   }))
 }
 
-export function computeTotals(inputs: readonly PieceInput[]) {
+export function computeTotals(inputs: readonly PieceInput[], unitSystem: UnitSystem = 'metric') {
   const pieces = toCalcPieces(inputs)
   const actualKg = pieces.reduce((s, p) => s + (p.weight > 0 ? p.weight * p.qty : 0), 0)
   const volumetricKg = pieces.reduce((s, p) => {
-    const vw = computeVolumetricWeightKg(p, 'metric')
+    const vw = computeVolumetricWeightKg(p, unitSystem)
     return s + (vw > 0 ? vw * p.qty : 0)
   }, 0)
-  const chargeableKg = computeChargeableWeightKg(pieces, 'metric')
+  const chargeableKg = computeChargeableWeightKg(pieces, unitSystem)
   return { pieces, actualKg, volumetricKg, chargeableKg }
 }
 
