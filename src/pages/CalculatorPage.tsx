@@ -65,7 +65,6 @@ export function CalculatorPage() {
                 options={calc.countryOptions}
                 value={calc.routeFrom}
                 onChange={calc.setRouteFromUser}
-                disabled={calc.routeFromFixed}
                 placeholder="اختر الدولة..."
               />
             </div>
@@ -76,7 +75,6 @@ export function CalculatorPage() {
                 options={calc.countryOptions}
                 value={calc.routeTo}
                 onChange={calc.setRouteToUser}
-                disabled={calc.routeToFixed}
                 placeholder="اختر الدولة..."
               />
             </div>

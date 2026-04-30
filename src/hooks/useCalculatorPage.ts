@@ -154,8 +154,6 @@ export function useCalculatorPage() {
     },
     legacyService,
 
-    routeFromFixed,
-    routeToFixed,
     routeFrom,
     routeTo,
     routeFromUser,
