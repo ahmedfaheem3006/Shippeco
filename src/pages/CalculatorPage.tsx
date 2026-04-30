@@ -102,7 +102,7 @@ export function CalculatorPage() {
           </div>
           <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
             <div className={styles.field}>
-              <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي (كجم)</label>
+              <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي ({calc.dimUnit === 'metric' ? 'كجم' : 'باوند'})</label>
               <input
                 className={`${styles.fieldInput} ${styles.fieldMono}`}
                 value={calc.pieces[0].weight}
@@ -114,7 +114,13 @@ export function CalculatorPage() {
             </div>
 
             <div className={styles.field}>
-              <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد (سم) — طول × عرض × ارتفاع</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد ({calc.dimUnit === 'metric' ? 'سم' : 'إنش'}) — ط × ع × ر</label>
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg border border-gray-200 dark:border-slate-700">
+                  <button type="button" onClick={() => calc.setDimUnit('metric')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'metric' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>سم</button>
+                  <button type="button" onClick={() => calc.setDimUnit('imperial')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'imperial' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>إنش</button>
+                </div>
+              </div>
               <div className={styles.dimsGrid}>
                 <input className={styles.dimsInput} value={calc.pieces[0].l} onChange={(e) => calc.updatePiece(0, { l: e.target.value })} inputMode="decimal" placeholder="ط" dir="ltr" />
                 <input className={styles.dimsInput} value={calc.pieces[0].w} onChange={(e) => calc.updatePiece(0, { w: e.target.value })} inputMode="decimal" placeholder="ع" dir="ltr" />

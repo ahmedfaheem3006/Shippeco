@@ -7,6 +7,7 @@ import { createNewInvoiceDraftInput, toInvoiceFromDraft } from '../utils/invoice
 import { COUNTRIES } from '../legacy/dhlData'
 import { computeLegacyPrice, getZoneInfoLegacy, type LegacyService } from '../utils/dhlLegacyPricing'
 import { invoiceService } from '../services/invoiceService'
+import { computeVolumetricWeightKg, toKg, type UnitSystem } from '../utils/chargeableWeight'
 
 import styles from './NewInvoicePage.module.css'
 import {
@@ -99,6 +100,7 @@ export function NewInvoicePage() {
   const [calcQty, setCalcQty] = useState('1')
   const [calcFuelPct, setCalcFuelPct] = useState(30)
   const [calcMarginPct, setCalcMarginPct] = useState(50)
+  const [calcDimUnit, setCalcDimUnit] = useState<UnitSystem>('metric')
   const [calcResult, setCalcResult] = useState<CalcResult | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
   const priceRef = useRef<HTMLInputElement | null>(null)
@@ -143,8 +145,15 @@ export function NewInvoicePage() {
     const l = Number(calcLength) || 0; const w = Number(calcWidth) || 0; const h = Number(calcHeight) || 0
     const qty = Math.max(1, Math.floor(Number(calcQty) || 1))
     const hasDims = l > 0 && w > 0 && h > 0
-    const volumetric = hasDims ? computeVolumetricWeight(l, w, h) : 0
-    const chargeW = (hasDims ? Math.max(actualW, volumetric) : actualW) * qty
+
+    // Convert actual weight if imperial
+    const actualKg = toKg(actualW, calcDimUnit)
+    
+    // Calculate volumetric weight (already converts to Kg inside the function)
+    const volumetricKg = hasDims ? computeVolumetricWeightKg({ qty: 1, weight: 0, l, w, h }, calcDimUnit) : 0
+    
+    // Chargeable weight per piece is max(actual, volumetric)
+    const chargeW = Math.max(actualKg, volumetricKg) * qty
 
     const r = computeLegacyPrice({ service: legacyService, from: routeFromValue, to: routeToValue, chargeW, fuelPct: calcFuelPct, profitPct: calcMarginPct })
 
@@ -167,10 +176,11 @@ export function NewInvoicePage() {
     const detailsLines = [
       `من: ${fromLabel}`, `إلى: ${toLabel}`, zoneLine, `وزن المحاسبة: ${wt}`, `عدد الطرود: ${qty}`
     ]
-    if (hasDims) detailsLines.push(`الأبعاد: ${l} × ${w} × ${h} سم`)
+    if (hasDims) detailsLines.push(`الأبعاد: ${l} × ${w} × ${h} ${calcDimUnit === 'metric' ? 'سم' : 'إنش'}`)
     detailsLines.push('---', `أساسي: ${r.baseRate.toFixed(2)} ر.س  وقود: +${r.fuelAmt.toFixed(2)} ر.س  GoGreen: +${r.goGreen.toFixed(2)} ر.س`)
 
-    const dimsStr = hasDims ? `${l} × ${w} × ${h} سم` : ''
+    const unitLabel = calcDimUnit === 'metric' ? 'سم' : 'إنش'
+    const dimsStr = hasDims ? `${l} × ${w} × ${h} ${unitLabel}` : ''
     setDraft((p) => ({
       ...p, price: r.total.toFixed(2), dhlCost: r.baseRate.toFixed(2), weight: round2(chargeW).toFixed(2), dimensions: dimsStr, details: detailsLines.join('\n'), itemType: 'شحن دولي', carrier: 'DHL Express'
     }))
@@ -370,7 +380,7 @@ export function NewInvoicePage() {
             </div>
             <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
               <div className={styles.field}>
-                <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي (كجم)</label>
+                <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي ({calcDimUnit === 'metric' ? 'كجم' : 'باوند'})</label>
                 <input
                   className={`${styles.fieldInput} ${styles.fieldMono}`}
                   value={calcWeight}
@@ -382,7 +392,13 @@ export function NewInvoicePage() {
               </div>
 
               <div className={styles.field}>
-                <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد (سم) — طول × عرض × ارتفاع</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد ({calcDimUnit === 'metric' ? 'سم' : 'إنش'}) — ط × ع × ر</label>
+                  <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <button type="button" onClick={() => setCalcDimUnit('metric')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calcDimUnit === 'metric' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>سم</button>
+                    <button type="button" onClick={() => setCalcDimUnit('imperial')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calcDimUnit === 'imperial' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>إنش</button>
+                  </div>
+                </div>
                 <div className={styles.dimsGrid}>
                   <input className={`${styles.dimsInput}`} value={calcLength} onChange={(e) => setCalcLength(e.target.value)} inputMode="decimal" placeholder="ط" dir="ltr" />
                   <input className={`${styles.dimsInput}`} value={calcWidth} onChange={(e) => setCalcWidth(e.target.value)} inputMode="decimal" placeholder="ع" dir="ltr" />
