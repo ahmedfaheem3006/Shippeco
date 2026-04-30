@@ -70,7 +70,7 @@ export function SearchableSelect({ options, value, onChange, disabled, placehold
       </button>
 
       {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl max-h-[400px] flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+        <div className="absolute z-[100] w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-2xl max-h-[60vh] md:max-h-[400px] flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 left-0 right-0">
           <div className="p-2 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 text-gray-500 dark:text-gray-400">
             <Search size={14} className="shrink-0" />
             <input

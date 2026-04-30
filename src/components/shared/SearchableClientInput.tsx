@@ -133,7 +133,7 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
 
       {/* Dropdown Results */}
       {open && (
-        <div className="absolute top-[calc(100%-8px)] mt-1 w-full z-[100] bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in zoom-in-95 duration-150">
+        <div className="absolute top-[calc(100%-8px)] left-0 right-0 mt-1 w-full z-[100] bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-2xl max-h-[60vh] md:max-h-80 overflow-y-auto animate-in zoom-in-95 duration-150">
           {loading ? (
             <div className="flex items-center justify-center p-6 text-gray-500 dark:text-gray-400">
               <Loader2 size={24} className="animate-spin text-indigo-500" />
@@ -145,14 +145,14 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
                 <button
                   key={idx}
                   type="button"
-                  className="w-full text-right px-3 py-2.5 hover:bg-indigo-50 dark:hover:bg-slate-700/50 rounded-md transition-colors flex justify-between items-center group"
+                  className="w-full text-right px-3 py-2.5 hover:bg-indigo-50 dark:hover:bg-slate-700/50 rounded-md transition-colors flex flex-wrap justify-between items-center gap-2 group"
                   onClick={() => handleSelect(r.name, r.phone)}
                 >
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{r.name}</span>
+                  <div className="flex flex-col items-start min-w-0 flex-1">
+                    <span className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate w-full">{r.name}</span>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">عميل مسجل مسبقاً</span>
                   </div>
-                  <span className="text-xs font-mono font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-900 px-2 py-1 rounded" dir="ltr">{r.phone}</span>
+                  <span className="text-xs font-mono font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-900 px-2 py-1 rounded shrink-0" dir="ltr">{r.phone}</span>
                 </button>
               ))}
             </div>
