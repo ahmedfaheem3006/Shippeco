@@ -13,18 +13,18 @@ export function buildPaymobWaMessage(input: { name: string; amount: number; desc
   const url = String(input.url ?? '').trim()
 
   const lines: string[] = []
-  lines.push(`مرحباً ${name} 👋`)
+  lines.push(`مرحباً ${name} \u{1F44B}`)
   lines.push('')
   lines.push('إليك رابط الدفع الآمن عبر Paymob:')
   lines.push('')
-  lines.push(`💰 المبلغ: ${amount.toFixed(2)} ريال`)
-  if (desc && desc !== 'خدمة شحن') lines.push(`📦 ${desc}`)
+  lines.push(`\u{1F4B0} المبلغ: ${amount.toFixed(2)} ريال`)
+  if (desc && desc !== 'خدمة شحن') lines.push(`\u{1F4E6} ${desc}`)
   lines.push('')
-  lines.push('💳 رابط الدفع الآمن:')
+  lines.push('\u{1F4B3} رابط الدفع الآمن:')
   lines.push(url)
   lines.push('')
-  lines.push('يمكنك الدفع بـ 💳 بطاقة ائتمانية أو مدى أو 🍎 Apple Pay')
-  lines.push('شيب بيك 🚀')
+  lines.push('يمكنك الدفع بـ \u{1F4B3} بطاقة ائتمانية أو مدى أو \u{1F34E} Apple Pay')
+  lines.push('شيب بيك \u{1F680}')
 
   return lines.join('\n')
 }

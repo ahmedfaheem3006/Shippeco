@@ -6,58 +6,58 @@ export type WaTemplateKey = 'paid' | 'unpaid' | 'collection' | 'payment_link'
 export type WaTemplates = Record<WaTemplateKey, string>
 
 const WA_DEFAULT_TEMPLATES: WaTemplates = {
-  paid: `مرحباً {اسم_العميل} 👋
+  paid: `مرحباً {اسم_العميل} \u{1F44B}
 
-✅ *تم إصدار بوليصة شحنتك بنجاح!*
+\u{2705} *تم إصدار بوليصة شحنتك بنجاح!*
 
-📦 *رقم AWB:* \`{رقم_الشحنة}\`
-🚚 *الناقل:* {الناقل}
+\u{1F4E6} *رقم AWB:* \`{رقم_الشحنة}\`
+\u{1F69A} *الناقل:* {الناقل}
 
-🔗 *تتبع الشحنة:*
+\u{1F517} *تتبع الشحنة:*
 {رابط_التتبع}
 
-📌 في حال اختلاف الوزن عند DHL يُطبَّق الفرق وفق الشروط.
+\u{1F4CC} في حال اختلاف الوزن عند DHL يُطبَّق الفرق وفق الشروط.
 
-شيب بيك تتمنى لك شحناً موفقاً 🌟`,
-  unpaid: `مرحباً {اسم_العميل} 👋
+شيب بيك تتمنى لك شحناً موفقاً \u{1F31F}`,
+  unpaid: `مرحباً {اسم_العميل} \u{1F44B}
 
-نشكرك على تواصلك مع شيب بيك 🚀
+نشكرك على تواصلك مع شيب بيك \u{1F680}
 
-🧾 *الفاتورة رقم:* #{رقم_الفاتورة}
-💰 *المبلغ:* {المبلغ} ر.س
-⏳ *الحالة:* بانتظار الدفع
+\u{1F9FE} *الفاتورة رقم:* #{رقم_الفاتورة}
+\u{1F4B0} *المبلغ:* {المبلغ} ر.س
+\u{23F3} *الحالة:* بانتظار الدفع
 {رابط_الدفع}
 
-⚠️ سيتم إرسال بوليصة الشحن بعد إتمام الدفع.
+\u{26A0} سيتم إرسال بوليصة الشحن بعد إتمام الدفع.
 
-شكراً لثقتك 🌟`,
-  collection: `مرحباً {اسم_العميل} 👋
+شكراً لثقتك \u{1F31F}`,
+  collection: `مرحباً {اسم_العميل} \u{1F44B}
 
-نود تذكيرك بفاتورة مستحقة لدى شيب بيك 🧾
+نود تذكيرك بفاتورة مستحقة لدى شيب بيك \u{1F9FE}
 
-🔖 *رقم الفاتورة:* #{رقم_الفاتورة}
-📦 *رقم الشحنة:* {رقم_الشحنة}
-💰 *المبلغ المستحق:* *{المتبقي} ر.س*
-💰 *المدفوع:* {المدفوع} ر.س من {المبلغ} ر.س
-📅 *التاريخ:* {التاريخ}
-⏳ *الحالة:* مدفوع جزئياً
+\u{1F516} *رقم الفاتورة:* #{رقم_الفاتورة}
+\u{1F4E6} *رقم الشحنة:* {رقم_الشحنة}
+\u{1F4B0} *المبلغ المستحق:* *{المتبقي} ر.س*
+\u{1F4B0} *المدفوع:* {المدفوع} ر.س من {المبلغ} ر.س
+\u{1F4C5} *التاريخ:* {التاريخ}
+\u{23F3} *الحالة:* مدفوع جزئياً
 {رابط_الدفع}
 
-نأمل منكم سرعة التسوية. شكراً لثقتكم 🌟
+نأمل منكم سرعة التسوية. شكراً لثقتكم \u{1F31F}
 شيب بيك`,
-  payment_link: `مرحباً {اسم_العميل} 👋
+  payment_link: `مرحباً {اسم_العميل} \u{1F44B}
 
 يسعدنا خدمتك! إليك رابط دفع فاتورتك:
 
-🧾 رقم الفاتورة: #{رقم_الفاتورة}
-📦 رقم الشحنة: {رقم_الشحنة}
-💰 المبلغ: {المبلغ} ريال
+\u{1F9FE} رقم الفاتورة: #{رقم_الفاتورة}
+\u{1F4E6} رقم الشحنة: {رقم_الشحنة}
+\u{1F4B0} المبلغ: {المبلغ} ريال
 
-💳 رابط الدفع الآمن:
+\u{1F4B3} رابط الدفع الآمن:
 {رابط_الدفع}
 
-يمكنك الدفع بالبطاقة الائتمانية أو مدى 🔒
-شكراً لتعاملكم مع شيب بيك 🚀`,
+يمكنك الدفع بالبطاقة الائتمانية أو مدى \u{1F512}
+شكراً لتعاملكم مع شيب بيك \u{1F680}`,
 }
 
 export const WA_TEMPLATE_META: Array<{
@@ -68,10 +68,18 @@ export const WA_TEMPLATE_META: Array<{
   tone: 'green' | 'gold' | 'red' | 'blue'
   statusMatch: string
 }> = [
-  { key: 'paid', title: 'إرسال بوليصة', sub: 'بعد الدفع وإصدار AWB', icon: '📦', tone: 'green', statusMatch: 'paid' },
-  { key: 'unpaid', title: 'طلب دفع', sub: 'قبل الدفع — بانتظار التحويل', icon: '💰', tone: 'gold', statusMatch: 'unpaid' },
-  { key: 'collection', title: 'مطالبة بالمتبقي', sub: 'تذكير بمبلغ متبقي — جزئية', icon: '🔔', tone: 'red', statusMatch: 'partial' },
-  { key: 'payment_link', title: 'رابط دفع Paymob', sub: 'إرسال رابط الدفع الإلكتروني', icon: '💳', tone: 'blue', statusMatch: '' },
+export const WA_TEMPLATE_META: Array<{
+  key: WaTemplateKey
+  title: string
+  sub: string
+  icon: string
+  tone: 'green' | 'gold' | 'red' | 'blue'
+  statusMatch: string
+}> = [
+  { key: 'paid', title: 'إرسال بوليصة', sub: 'بعد الدفع وإصدار AWB', icon: '\u{1F4E6}', tone: 'green', statusMatch: 'paid' },
+  { key: 'unpaid', title: 'طلب دفع', sub: 'قبل الدفع — بانتظار التحويل', icon: '\u{1F4B0}', tone: 'gold', statusMatch: 'unpaid' },
+  { key: 'collection', title: 'مطالبة بالمتبقي', sub: 'تذكير بمبلغ متبقي — جزئية', icon: '\u{1F514}', tone: 'red', statusMatch: 'partial' },
+  { key: 'payment_link', title: 'رابط دفع Paymob', sub: 'إرسال رابط الدفع الإلكتروني', icon: '\u{1F4B3}', tone: 'blue', statusMatch: '' },
 ]
 
 export const WA_TEMPLATE_VARIABLES: Array<{ token: string; label: string }> = [
@@ -104,7 +112,10 @@ export function normalizeWaTemplates(input: unknown): WaTemplates {
   const out: WaTemplates = { ...base }
   for (const k of Object.keys(base) as WaTemplateKey[]) {
     const v = obj[k]
-    if (typeof v === 'string') out[k] = v
+    if (typeof v === 'string') {
+      // Final fix: remove any replacement characters (U+FFFD) that might be in localStorage from previous corrupt sessions
+      out[k] = v.replace(/\ufffd/g, '')
+    }
   }
   return out
 }
@@ -120,10 +131,6 @@ export function writeWaTemplatesCache(templates: WaTemplates) {
   if (typeof localStorage === 'undefined') return false
   return writeJson(storageKeys.waTemplates, templates, localStorage)
 }
-
-// ══════════════════════════════════════════
-// Smart Template Selection based on invoice status
-// ══════════════════════════════════════════
 
 export function getSmartTemplateKey(inv: Invoice): WaTemplateKey {
   const status = inv.status

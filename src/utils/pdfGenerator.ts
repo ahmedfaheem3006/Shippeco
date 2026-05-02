@@ -353,12 +353,12 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
         // After print dialog, open WhatsApp
         setTimeout(() => {
           const msg = [
-            `📄 *فاتورة #${safe(inv.invoice_number || inv.id)}*`,
-            `👤 ${inv.receiver || inv.client || '—'}`,
-            `💰 الإجمالي: ${formatCurrency(total)} ﷼`,
-            remaining > 0 ? `🔴 المستحق: ${formatCurrency(remaining)} ﷼` : '✅ مدفوعة بالكامل',
+            `\u{1F4C4} *فاتورة #${safe(inv.invoice_number || inv.id)}*`,
+            `\u{1F464} ${inv.receiver || inv.client || '—'}`,
+            `\u{1F4B0} الإجمالي: ${formatCurrency(total)} \u{FDFC}`,
+            remaining > 0 ? `\u{1F534} المستحق: ${formatCurrency(remaining)} \u{FDFC}` : '\u{2705} مدفوعة بالكامل',
             '',
-            '📎 الفاتورة PDF تم تحميلها — يرجى إرفاقها',
+            '\u{1F4CE} الفاتورة PDF تم تحميلها — يرجى إرفاقها',
           ].join('\n')
 
           const cleanMsg = msg.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim()

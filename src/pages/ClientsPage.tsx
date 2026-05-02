@@ -902,7 +902,7 @@ function ClientProfilePage({
                       '',
                       `الإجمالي المتبقي: ${formatSar(totalUnpaid)}`,
                       '',
-                      'شكراً لتعاملكم معنا 🙏',
+                      'شكراً لتعاملكم معنا \u{1F64F}',
                       'شيب بك للشحن',
                     ].join('\n');
                     openWhatsApp(client.phone!, msg);
@@ -927,7 +927,7 @@ function ClientProfilePage({
                       '',
                       'نرجو التكرم بسداد المبلغ في أقرب وقت.',
                       '',
-                      'شكراً لتعاملكم — شيب بك للشحن 📦',
+                      'شكراً لتعاملكم — شيب بك للشحن \u{1F4E6}',
                     ].join('\n');
                     openWhatsApp(client.phone!, msg);
                   }}
