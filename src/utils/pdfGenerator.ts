@@ -364,8 +364,8 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
           const cleanMsg = msg.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim()
           const encoded = encodeURIComponent(cleanMsg)
           const waUrl = cleanPhone
-            ? `https://wa.me/${cleanPhone}?text=${encoded}`
-            : `https://wa.me/?text=${encoded}`
+            ? `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encoded}`
+            : `https://api.whatsapp.com/send/?text=${encoded}`
           window.open(waUrl, '_blank')
         }, 1000)
       }, 600)

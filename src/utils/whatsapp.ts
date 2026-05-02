@@ -91,10 +91,13 @@ export function formatWAPhone(p: string): string {
 export function openWhatsApp(phone: string, msg: string): boolean {
   const wa = formatWAPhone(phone)
   if (!wa) return false
-  // Strip \r (carriage return) from Windows CRLF line endings — these get
-  // encoded as %0D and can corrupt emoji rendering on some WhatsApp clients.
+  // Strip \r (carriage return) from Windows CRLF line endings
   const cleanMsg = msg.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim()
-  const url = `https://wa.me/${wa}?text=${encodeURIComponent(cleanMsg)}`
+  
+  // Use api.whatsapp.com instead of wa.me. The wa.me redirector has a known bug
+  // on WhatsApp Desktop for Windows where it corrupts emojis during redirect.
+  const url = `https://api.whatsapp.com/send/?phone=${wa}&text=${encodeURIComponent(cleanMsg)}`
+  
   window.open(url, '_blank', 'noopener,noreferrer')
   return true
 }
