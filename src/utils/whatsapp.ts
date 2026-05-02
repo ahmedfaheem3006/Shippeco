@@ -91,7 +91,10 @@ export function formatWAPhone(p: string): string {
 export function openWhatsApp(phone: string, msg: string): boolean {
   const wa = formatWAPhone(phone)
   if (!wa) return false
-  const url = `https://wa.me/${wa}?text=${encodeURIComponent(msg)}`
+  // Strip \r (carriage return) from Windows CRLF line endings — these get
+  // encoded as %0D and can corrupt emoji rendering on some WhatsApp clients.
+  const cleanMsg = msg.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim()
+  const url = `https://wa.me/${wa}?text=${encodeURIComponent(cleanMsg)}`
   window.open(url, '_blank', 'noopener,noreferrer')
   return true
 }

@@ -361,7 +361,8 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
             '📎 الفاتورة PDF تم تحميلها — يرجى إرفاقها',
           ].join('\n')
 
-          const encoded = encodeURIComponent(msg)
+          const cleanMsg = msg.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim()
+          const encoded = encodeURIComponent(cleanMsg)
           const waUrl = cleanPhone
             ? `https://wa.me/${cleanPhone}?text=${encoded}`
             : `https://wa.me/?text=${encoded}`

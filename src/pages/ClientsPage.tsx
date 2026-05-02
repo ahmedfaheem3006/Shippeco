@@ -5,6 +5,7 @@ import {
   SEGMENT_COLORS,
 } from "../hooks/useClientsPage";
 import type { ClientRecord, ClientProfileInvoice } from "../services/dbService";
+import { openWhatsApp } from "../utils/whatsapp";
 import {
   Users,
   Download,
@@ -173,6 +174,122 @@ const EXTENDED_SEGMENT_COLORS: Record<string, string> = {
 /* ══════════════════════════════════════════════ */
 /*              PDF GENERATION                    */
 /* ══════════════════════════════════════════════ */
+
+function generateUnpaidClientPDF(
+  client: ClientRecord,
+  unpaidInvoices: ClientProfileInvoice[],
+  totalUnpaid: number,
+) {
+  const sorted = [...unpaidInvoices].sort((a, b) => {
+    if ((b.date || '') > (a.date || '')) return 1;
+    if ((b.date || '') < (a.date || '')) return -1;
+    return 0;
+  });
+
+  const today = new Date().toLocaleDateString('ar-SA', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const statusMap: Record<string, { label: string; color: string; bg: string }> = {
+    partial: { label: 'جزئية', color: '#D97706', bg: '#FFFBEB' },
+    unpaid:  { label: 'غير مدفوعة', color: '#DC2626', bg: '#FEF2F2' },
+  };
+
+  const rows = sorted.map((inv, idx) => {
+    const st   = realStatus(inv);
+    const paid = realPaid(inv);
+    const rem  = realRemaining(inv);
+    const si   = statusMap[st] || statusMap.unpaid;
+    return `
+      <tr style="border-bottom:1px solid #E2E8F0;${idx % 2 === 1 ? 'background:#FFF5F5;' : ''}">
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;color:#4F46E5;font-size:12px;">#${inv.daftra_id || inv.id}</td>
+        <td style="padding:10px 12px;font-size:11px;color:#64748B;">${(inv.date || '').slice(0, 10)}</td>
+        <td style="padding:10px 12px;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;color:${si.color};background:${si.bg};">${si.label}</span></td>
+        <td style="padding:10px 12px;font-size:11px;color:#64748B;">${inv.awb || '—'}</td>
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#1E293B;">${safe(inv.price).toLocaleString('en-US')} SAR</td>
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#10B981;">${paid > 0 ? paid.toLocaleString('en-US') + ' SAR' : '—'}</td>
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:800;font-size:12px;color:#EF4444;">${rem.toLocaleString('en-US')} SAR</td>
+      </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>كشف فواتير غير مدفوعة — ${client.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;600;700;800&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Cairo','Inter',sans-serif; background:#fff; color:#1E293B; }
+  @page { size:A4; margin:12mm; }
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body style="padding:32px;">
+
+<!-- Header -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #EF4444;">
+  <div>
+    <h1 style="font-size:24px;font-weight:800;color:#EF4444;">كشف الفواتير غير المدفوعة</h1>
+    <p style="font-size:12px;color:#64748B;margin-top:4px;">تاريخ الإصدار: ${today}</p>
+  </div>
+  <div style="text-align:left;">
+    <div style="font-size:20px;font-weight:900;color:#4F46E5;">شيب بك</div>
+    <div style="font-size:11px;color:#94A3B8;">SHIPPECO — Shipping Management</div>
+  </div>
+</div>
+
+<!-- Client Summary -->
+<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    <div style="font-size:11px;color:#EF4444;font-weight:700;margin-bottom:4px;">العميل</div>
+    <div style="font-size:18px;font-weight:800;color:#1E293B;">${client.name}</div>
+    ${client.phone ? `<div style="font-size:12px;color:#64748B;margin-top:4px;">${client.phone}</div>` : ''}
+  </div>
+  <div style="text-align:center;">
+    <div style="font-size:11px;color:#EF4444;font-weight:700;margin-bottom:4px;">عدد الفواتير المستحقة</div>
+    <div style="font-size:28px;font-weight:900;color:#DC2626;">${sorted.length}</div>
+  </div>
+  <div style="text-align:left;">
+    <div style="font-size:11px;color:#EF4444;font-weight:700;margin-bottom:4px;">إجمالي المستحق</div>
+    <div style="font-size:24px;font-weight:900;color:#DC2626;font-family:'Inter',monospace;">${Math.round(totalUnpaid).toLocaleString('en-US')} SAR</div>
+  </div>
+</div>
+
+<!-- Table -->
+<table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+  <thead>
+    <tr style="background:#FEF2F2;border-bottom:2px solid #FECACA;">
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">رقم الفاتورة</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">التاريخ</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">الحالة</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">رقم البوليصة</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">الإجمالي</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">المدفوع</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#EF4444;">المتبقي</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>
+
+<!-- Footer Total -->
+<div style="display:flex;justify-content:flex-end;">
+  <div style="background:#FEF2F2;border:2px solid #EF4444;border-radius:12px;padding:16px 28px;text-align:center;min-width:220px;">
+    <div style="font-size:12px;font-weight:700;color:#EF4444;margin-bottom:6px;">إجمالي المبالغ المستحقة</div>
+    <div style="font-size:26px;font-weight:900;color:#DC2626;font-family:'Inter',monospace;">${Math.round(totalUnpaid).toLocaleString('en-US')} SAR</div>
+    <div style="font-size:11px;color:#94A3B8;margin-top:6px;">يُرجى السداد في أقرب وقت ممكن</div>
+  </div>
+</div>
+
+</body>
+</html>`;
+
+  const pw = window.open('', '_blank', 'width=900,height=1200');
+  if (!pw) { alert('يرجى السماح بالنوافذ المنبثقة'); return; }
+  pw.document.write(html);
+  pw.document.close();
+  pw.onload = () => { setTimeout(() => pw.print(), 600); };
+}
 
 function generateClientPDF(
   client: ClientRecord,
@@ -636,6 +753,11 @@ function ClientProfilePage({
     if (client) generateClientPDF(client, allInvoices);
   }, [client, allInvoices]);
 
+  const handleUnpaidPDF = useCallback(() => {
+    if (client && unpaidInvoices.length > 0)
+      generateUnpaidClientPDF(client, unpaidInvoices, totalUnpaid);
+  }, [client, unpaidInvoices, totalUnpaid]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -741,6 +863,18 @@ function ClientProfilePage({
                 <span className="hidden sm:inline">كشف حساب PDF</span>
                 <span className="sm:hidden">PDF</span>
               </button>
+              {unpaidInvoices.length > 0 && (
+                <button
+                  onClick={handleUnpaidPDF}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold transition-colors shadow-lg shadow-rose-700/20"
+                  type="button"
+                  title={`${unpaidInvoices.length} فاتورة غير مدفوعة — إجمالي ${Math.round(totalUnpaid).toLocaleString('en-US')} SAR`}
+                >
+                  <FileDown size={16} />
+                  <span className="hidden sm:inline">فواتير غير مدفوعة PDF</span>
+                  <span className="sm:hidden">غير مدفوعة</span>
+                </button>
+              )}
               {client.phone && (
                 <a
                   href={waLink(client.phone)}
@@ -753,39 +887,55 @@ function ClientProfilePage({
                 </a>
               )}
               {unpaidInvoices.length > 0 && client.phone && (
-                <a
-                  href={`${waLink(client.phone)}?text=${encodeURIComponent(
-                    `مرحباً ${client.name}،\n\nنود تذكيركم بالمبالغ المستحقة:\n\n` +
-                      unpaidInvoices
-                        .slice(0, 10)
-                        .map(
-                          (inv) =>
-                            `• فاتورة #${inv.daftra_id || inv.id} — ${formatSar(safe(inv.price))} (${realStatus(inv) === "partial" ? `مدفوع ${formatSar(realPaid(inv))}` : "غير مدفوعة"})`,
-                        )
-                        .join("\n") +
-                      `\n\nالإجمالي المتبقي: ${formatSar(totalUnpaid)}\n\nشكراً لتعاملكم معنا 🙏\nشيب بك للشحن`,
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    const msg = [
+                      `مرحباً ${client.name}،`,
+                      '',
+                      'نود تذكيركم بالمبالغ المستحقة:',
+                      '',
+                      ...unpaidInvoices.slice(0, 10).map(
+                        (inv) =>
+                          `• فاتورة #${inv.daftra_id || inv.id} — ${formatSar(safe(inv.price))} (${realStatus(inv) === 'partial' ? `مدفوع ${formatSar(realPaid(inv))}` : 'غير مدفوعة'})`,
+                      ),
+                      '',
+                      `الإجمالي المتبقي: ${formatSar(totalUnpaid)}`,
+                      '',
+                      'شكراً لتعاملكم معنا 🙏',
+                      'شيب بك للشحن',
+                    ].join('\n');
+                    openWhatsApp(client.phone!, msg);
+                  }}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold transition-colors shadow-lg shadow-orange-500/20"
                 >
                   <Send size={16} />
                   <span className="hidden sm:inline">مطالبة واتساب</span>
                   <span className="sm:hidden">مطالبة</span>
-                </a>
+                </button>
               )}
               {unpaidInvoices.length > 0 && client.phone && (
-                <a
-                  href={`${waLink(client.phone)}?text=${encodeURIComponent(
-                    `مرحباً ${client.name}،\n\nمرفق كشف حساب بالفواتير المستحقة.\n\nالإجمالي المتبقي: ${formatSar(totalUnpaid)}\n\nنرجو التكرم بسداد المبلغ في أقرب وقت.\n\nشكراً لتعاملكم — شيب بك للشحن 📦`,
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    const msg = [
+                      `مرحباً ${client.name}،`,
+                      '',
+                      'مرفق كشف حساب بالفواتير المستحقة.',
+                      '',
+                      `الإجمالي المتبقي: ${formatSar(totalUnpaid)}`,
+                      '',
+                      'نرجو التكرم بسداد المبلغ في أقرب وقت.',
+                      '',
+                      'شكراً لتعاملكم — شيب بك للشحن 📦',
+                    ].join('\n');
+                    openWhatsApp(client.phone!, msg);
+                  }}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold transition-colors shadow-lg shadow-indigo-500/20"
                 >
                   <FileText size={16} />
                   <span className="hidden sm:inline">إرسال كشف</span>
-                </a>
+                </button>
               )}
             </div>
           </div>
