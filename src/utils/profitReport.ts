@@ -4,8 +4,8 @@ import type { Invoice } from './models'
    TYPES
    ═══════════════════════════════════════════════════ */
 
-export type ProfitPeriod = 'month' | 'last_month' | 'quarter' | 'year' | 'all' | 'custom'
-export type ProfitTab = 'invoices' | 'clients' | 'monthly'
+export type ProfitPeriod = 'today' | 'this_week' | 'month' | 'last_month' | 'quarter' | 'year' | 'all' | 'custom'
+export type ProfitTab = 'invoices' | 'clients' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 export type ProfitRange = { from: string; to: string; label: string }
 
 export type ProfitInvoiceRow = {
@@ -145,6 +145,18 @@ export function computeProfitRange(period: ProfitPeriod, custom: { from: string;
     const a = fromVal <= toVal ? fromVal : toVal
     const b = fromVal <= toVal ? toVal : fromVal
     return { from: a, to: b, label: `${a} → ${b}` }
+  }
+  if (period === 'today') {
+    return { from: to, to, label: 'اليوم' }
+  }
+  if (period === 'this_week') {
+    const d = new Date(now)
+    const day = d.getDay() // 0 (Sun) to 6 (Sat)
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Adjust to start on Monday or Sunday? Arabic preference usually Sunday or Sat.
+    // Let's go with beginning of current week (Saturday)
+    const sat = new Date(d.setDate(d.getDate() - ((d.getDay() + 1) % 7)))
+    const from = toIsoDate(sat)
+    return { from, to, label: 'هذا الأسبوع' }
   }
   if (period === 'month') {
     const from = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`

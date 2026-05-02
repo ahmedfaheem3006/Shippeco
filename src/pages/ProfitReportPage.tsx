@@ -33,6 +33,8 @@ import s from './ProfitReportPage.module.css'
    ═══════════════════════════════════════════════════ */
 
 const PERIODS: { key: ProfitPeriod; label: string }[] = [
+  { key: 'today', label: 'اليوم' },
+  { key: 'this_week', label: 'هذا الأسبوع' },
   { key: 'month', label: 'هذا الشهر' },
   { key: 'last_month', label: 'الشهر السابق' },
   { key: 'quarter', label: 'آخر 3 أشهر' },
@@ -44,7 +46,10 @@ const PERIODS: { key: ProfitPeriod; label: string }[] = [
 const TABS: { key: ProfitTab; label: string; icon: typeof FileText }[] = [
   { key: 'invoices', label: 'مفصل بالفواتير', icon: FileText },
   { key: 'clients', label: 'مجمع بالعملاء', icon: Users },
+  { key: 'daily', label: 'مجمع بالأيام', icon: CalendarDays },
+  { key: 'weekly', label: 'مجمع بالأسابيع', icon: CalendarDays },
   { key: 'monthly', label: 'مجمع بالشهور', icon: BarChart3 },
+  { key: 'yearly', label: 'مجمع بالسنوات', icon: BarChart3 },
 ]
 
 function profitColorClass(val: number | null | undefined, isText = true): string {
@@ -267,14 +272,26 @@ export function ProfitReportPage() {
       ? rep.totalPages
       : rep.tab === 'clients'
         ? rep.totalClientPages
-        : Math.ceil(rep.monthlyRows.length / rep.pageSize) || 1
+        : rep.tab === 'daily'
+          ? Math.ceil(rep.dailyRows.length / rep.pageSize) || 1
+          : rep.tab === 'weekly'
+            ? Math.ceil(rep.weeklyRows.length / rep.pageSize) || 1
+            : rep.tab === 'monthly'
+              ? Math.ceil(rep.monthlyRows.length / rep.pageSize) || 1
+              : Math.ceil(rep.yearlyRows.length / rep.pageSize) || 1
 
   const activeTotalItems =
     rep.tab === 'invoices'
       ? rep.totalFiltered
       : rep.tab === 'clients'
         ? rep.allClientRows.length
-        : rep.monthlyRows.length
+        : rep.tab === 'daily'
+          ? rep.dailyRows.length
+          : rep.tab === 'weekly'
+            ? rep.weeklyRows.length
+            : rep.tab === 'monthly'
+              ? rep.monthlyRows.length
+              : rep.yearlyRows.length
 
   return (
     <div className={s.pageWrap}>
@@ -461,7 +478,7 @@ export function ProfitReportPage() {
               placeholder="بحث بالعميل أو رقم الفاتورة أو AWB..."
               value={rep.query}
               onChange={(e) => rep.setQuery(e.target.value)}
-              disabled={rep.loading}
+              // Remove disabled={rep.loading} to prevent focus loss during instant search
             />
           </div>
         </div>
@@ -640,12 +657,12 @@ export function ProfitReportPage() {
             </table>
           )}
 
-          {/* ── MONTHLY TAB ── */}
-          {rep.tab === 'monthly' && (
+          {/* ── AGGREGATED TIME TABS (Daily, Weekly, Monthly, Yearly) ── */}
+          {['daily', 'weekly', 'monthly', 'yearly'].includes(rep.tab) && (
             <table className={s.table}>
               <thead>
                 <tr>
-                  <th className={s.th}>الشهر</th>
+                  <th className={s.th}>الفترة</th>
                   <th className={s.th}>عدد الفواتير</th>
                   <th className={s.th}>الإيرادات</th>
                   <th className={s.th}>التكلفة</th>
@@ -654,13 +671,27 @@ export function ProfitReportPage() {
                 </tr>
               </thead>
               <tbody>
-                {rep.monthlyRows.length ? (
-                  rep.monthlyRows.map((r) => (
+                {(() => {
+                  const rows = rep.tab === 'daily' ? rep.dailyRows : 
+                               rep.tab === 'weekly' ? rep.weeklyRows :
+                               rep.tab === 'monthly' ? rep.monthlyRows : rep.yearlyRows;
+                  
+                  if (!rows.length) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className={s.emptyState}>
+                          {rep.loading ? 'جاري التحميل...' : 'لا توجد نتائج'}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return rows.map((r) => (
                     <tr key={r.month}>
                       <td className={s.td} style={{ fontWeight: 700 }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <CalendarDays size={14} style={{ color: 'var(--muted)' }} />
-                          {formatMonthLabel(r.month)}
+                          {rep.tab === 'monthly' ? formatMonthLabel(r.month) : r.month}
                         </span>
                       </td>
                       <td className={`${s.td} ${s.mono}`}>
@@ -698,19 +729,8 @@ export function ProfitReportPage() {
                         </span>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className={s.emptyState}>
-                      <RefreshCw
-                        size={24}
-                        style={{ margin: '0 auto 8px', display: 'block' }}
-                        className={rep.loading ? 'animate-spin' : ''}
-                      />
-                      {rep.loading ? 'جاري التحميل...' : 'لا توجد نتائج'}
-                    </td>
-                  </tr>
-                )}
+                  ));
+                })()}
               </tbody>
             </table>
           )}

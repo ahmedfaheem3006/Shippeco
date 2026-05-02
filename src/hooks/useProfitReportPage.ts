@@ -190,7 +190,10 @@ export function useProfitReportPage() {
   const [serverSummary, setServerSummary] = useState<ProfitSummary | null>(null)
   const [invoiceRows, setInvoiceRows] = useState<ProfitInvoiceRow[]>([])
   const [clientRows, setClientRows] = useState<ClientProfitRow[]>([])
+  const [dailyRows, setDailyRows] = useState<MonthlyProfitRow[]>([])
+  const [weeklyRows, setWeeklyRows] = useState<MonthlyProfitRow[]>([])
   const [monthlyRows, setMonthlyRows] = useState<MonthlyProfitRow[]>([])
+  const [yearlyRows, setYearlyRows] = useState<MonthlyProfitRow[]>([])
   const [chartData, setChartData] = useState<ProfitChartPoint[]>([])
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, pages: 1 })
 
@@ -198,9 +201,18 @@ export function useProfitReportPage() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [tab, setTab] = useState<ProfitTab>('invoices')
   const [localOnly, setLocalOnly] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
+
+  // ── Debounce Search Query ──
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [query])
 
   const range = useMemo(() => computeProfitRange(period, { from, to }), [from, period, to])
 
@@ -269,23 +281,54 @@ export function useProfitReportPage() {
         if (data.chartData) setChartData(data.chartData)
         if (data.clientRows) setClientRows(data.clientRows)
 
-        if (data.chartData) {
-          setMonthlyRows(
-            data.chartData
-              .map((c: any) => ({
-                month: c.label,
-                count: c.count || 0,
-                revenue: c.revenue || 0,
-                cost: c.cost || 0,
-                profit: c.profit || 0,
-                hasCostCount: 0,
-                marginPct:
-                  c.revenue > 0 && c.cost > 0
-                    ? ((c.revenue - c.cost) / c.revenue) * 100
-                    : null,
+        if (data.clientRows) setClientRows(data.clientRows)
+
+        if (data.invoices) {
+          const invoices = data.invoices as any[]
+          const group = (sliceLen: number | ((d: string) => string)) => {
+            const map = new Map<string, any>()
+            invoices.forEach((inv) => {
+              const d = inv.date || ''
+              let key = ''
+              if (typeof sliceLen === 'function') {
+                key = sliceLen(d)
+              } else if (sliceLen === 10.1) {
+                // Special case for Weekly
+                const date = new Date(d)
+                if (Number.isNaN(date.getTime())) {
+                  key = 'N/A'
+                } else {
+                  const day = date.getDay()
+                  const diff = date.getDate() - day + (day === 0 ? -6 : 1) // Sunday start adjustment
+                  const start = new Date(date.setDate(diff))
+                  key = `Week: ${start.toISOString().slice(0, 10)}`
+                }
+              } else {
+                key = d.slice(0, sliceLen)
+              }
+              
+              if (!key) return
+              const cur = map.get(key) || { month: key, count: 0, revenue: 0, cost: 0, profit: 0 }
+              cur.count++
+              cur.revenue += Number(inv.price) || 0
+              if (Number(inv.dhlCost) > 0) {
+                cur.cost += Number(inv.dhlCost)
+                cur.profit += (Number(inv.price) || 0) - (Number(inv.dhlCost) || 0)
+              }
+              map.set(key, cur)
+            })
+            return [...map.values()]
+              .map((r) => ({
+                ...r,
+                marginPct: r.revenue > 0 && r.cost > 0 ? (r.profit / r.revenue) * 100 : null,
               }))
-              .sort((a: any, b: any) => b.month.localeCompare(a.month)),
-          )
+              .sort((a, b) => b.month.localeCompare(a.month))
+          }
+
+          setDailyRows(group(10))
+          setMonthlyRows(group(7))
+          setYearlyRows(group(4))
+          setWeeklyRows(group(10.1)) // 10.1 is our internal flag for Weekly grouping
         }
 
         if (data.pagination) setPagination(data.pagination)
@@ -296,7 +339,7 @@ export function useProfitReportPage() {
         setLoading(false)
       }
     },
-    [range.from, range.to, localOnly, query, currentPage],
+    [range.from, range.to, localOnly, debouncedQuery, currentPage],
   )
 
   const refresh = useCallback(async () => {
@@ -386,7 +429,8 @@ export function useProfitReportPage() {
     range, summary, summaryCards,
     invoiceRows, allInvoiceRows: invoiceRows,
     clientRows, allClientRows: clientRows,
-    monthlyRows, chartData, exportReport,
+    dailyRows, weeklyRows, monthlyRows, yearlyRows,
+    chartData, exportReport,
     currentPage, setCurrentPage: onSetPage,
     totalPages: pagination.pages,
     totalClientPages: Math.ceil(clientRows.length / PAGE_SIZE) || 1,
