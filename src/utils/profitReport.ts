@@ -169,13 +169,13 @@ export function computeProfitRange(period: ProfitPeriod, custom: { from: string;
   }
   if (period === 'quarter') {
     const from = toIsoDate(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000))
-    return { from, to, label: 'آخر 3 أشهر' }
+    return { from, to: farFuture, label: 'آخر 3 أشهر' }
   }
   if (period === 'year') {
     const from = `${now.getFullYear()}-01-01`
-    return { from, to, label: 'هذه السنة' }
+    return { from, to: farFuture, label: 'هذه السنة' }
   }
-  return { from: '2020-01-01', to: '2099-12-31', label: 'كل الفترات' }
+  return { from: '2020-01-01', to: farFuture, label: 'كل الفترات' }
 }
 
 /* ═══════════════════════════════════════════════════
