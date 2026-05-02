@@ -137,28 +137,30 @@ function pad2(n: number) {
 export function computeProfitRange(period: ProfitPeriod, custom: { from: string; to: string }): ProfitRange {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
-  const to = toIsoDate(now)
+  const today = toIsoDate(now)
+  // Fix: To include invoices created TODAY, we should set the 'to' parameter to a far date
+  // or at least tomorrow, because server-side comparisons often exclude the current day's time.
+  const farFuture = '2099-12-31'
 
   if (period === 'custom') {
     const fromVal = custom.from || '2020-01-01'
-    const toVal = custom.to || '2099-12-31'
+    const toVal = custom.to || farFuture
     const a = fromVal <= toVal ? fromVal : toVal
     const b = fromVal <= toVal ? toVal : fromVal
     return { from: a, to: b, label: `${a} → ${b}` }
   }
   if (period === 'today') {
-    return { from: to, to, label: 'اليوم' }
+    return { from: today, to: farFuture, label: 'اليوم' }
   }
   if (period === 'this_week') {
     const d = new Date(now)
-    // Let's go with beginning of current week (Saturday)
     const sat = new Date(d.setDate(d.getDate() - ((d.getDay() + 1) % 7)))
     const from = toIsoDate(sat)
-    return { from, to, label: 'هذا الأسبوع' }
+    return { from, to: farFuture, label: 'هذا الأسبوع' }
   }
   if (period === 'month') {
     const from = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`
-    return { from, to, label: 'هذا الشهر' }
+    return { from, to: farFuture, label: 'هذا الشهر' }
   }
   if (period === 'last_month') {
     const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
