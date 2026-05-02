@@ -6,6 +6,7 @@ import {
   computeProfitRange,
   formatSar,
   toProfitExportRows,
+  isLocalInvoice,
   type ProfitPeriod,
   type ProfitTab,
   type ProfitInvoiceRow,
@@ -85,7 +86,7 @@ async function fetchProfitData(params: {
 
   // Filter local only
   if (params.local_only) {
-    invoices = invoices.filter((inv: any) => !Number(inv.daftra_id || inv.daftraId || 0))
+    invoices = invoices.filter((inv: any) => isLocalInvoice(inv))
   }
 
   // Exclude returned
@@ -272,7 +273,7 @@ export function useProfitReportPage() {
                 marginPct,
                 hasCost,
                 losing: hasCost && (profit ?? 0) < 0,
-                isLocal: !inv.daftra_id,
+                isLocal: isLocalInvoice(inv),
               }
             }),
           )

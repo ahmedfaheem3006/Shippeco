@@ -200,13 +200,20 @@ function n(value: unknown): number {
 }
 
 /** Check if invoice was created locally (not from Daftra sync) */
-function isLocalInvoice(inv: Invoice): boolean {
-  // Local invoices have source='local' or no daftra_id, or created_via='manual'
+export function isLocalInvoice(inv: Invoice): boolean {
+  const invNum = String((inv as any).invoiceNumber || (inv as any).invoice_number || '').toUpperCase()
+  
+  // Explicit request: Local invoices have "DH" in the number
+  if (invNum.startsWith('DH')) return true
+
+  // Fallbacks
   if ((inv as any).source === 'local') return true
   if ((inv as any).created_via === 'manual') return true
+  
   // If daftra_id is missing or 0, it's local
   const daftraId = n((inv as any).daftra_id || (inv as any).daftraId)
   if (!daftraId) return true
+  
   return false
 }
 
