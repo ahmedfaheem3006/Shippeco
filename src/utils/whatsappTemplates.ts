@@ -68,14 +68,6 @@ export const WA_TEMPLATE_META: Array<{
   tone: 'green' | 'gold' | 'red' | 'blue'
   statusMatch: string
 }> = [
-export const WA_TEMPLATE_META: Array<{
-  key: WaTemplateKey
-  title: string
-  sub: string
-  icon: string
-  tone: 'green' | 'gold' | 'red' | 'blue'
-  statusMatch: string
-}> = [
   { key: 'paid', title: 'إرسال بوليصة', sub: 'بعد الدفع وإصدار AWB', icon: '\u{1F4E6}', tone: 'green', statusMatch: 'paid' },
   { key: 'unpaid', title: 'طلب دفع', sub: 'قبل الدفع — بانتظار التحويل', icon: '\u{1F4B0}', tone: 'gold', statusMatch: 'unpaid' },
   { key: 'collection', title: 'مطالبة بالمتبقي', sub: 'تذكير بمبلغ متبقي — جزئية', icon: '\u{1F514}', tone: 'red', statusMatch: 'partial' },
