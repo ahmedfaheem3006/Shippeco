@@ -151,8 +151,6 @@ export function computeProfitRange(period: ProfitPeriod, custom: { from: string;
   }
   if (period === 'this_week') {
     const d = new Date(now)
-    const day = d.getDay() // 0 (Sun) to 6 (Sat)
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Adjust to start on Monday or Sunday? Arabic preference usually Sunday or Sat.
     // Let's go with beginning of current week (Saturday)
     const sat = new Date(d.setDate(d.getDate() - ((d.getDay() + 1) % 7)))
     const from = toIsoDate(sat)
