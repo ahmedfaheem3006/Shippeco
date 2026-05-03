@@ -811,22 +811,33 @@ export function InvoicesPage() {
               ) : taskHistory.length > 0 ? (
                 taskHistory.map((msg, idx) => {
                   const isMe = String(msg.data?.senderId) === String(user?.id);
+                  const sName = msg.sender_name || 'موظف';
+                  const rName = msg.recipient_name || 'موظف';
+
                   return (
-                    <div key={msg.id || idx} className={`flex ${isMe ? 'justify-start' : 'justify-end'} animate-in fade-in slide-in-from-bottom-2`}>
-                      <div className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${
+                    <div key={msg.id || idx} className={`flex flex-col ${isMe ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-2 mb-4`}>
+                      <div className="flex items-center gap-2 mb-1 px-1">
+                        <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
+                          {sName}
+                        </span>
+                        <span className="text-[9px] text-gray-400 font-medium">
+                          • {timeAgo(msg.created_at)}
+                        </span>
+                      </div>
+                      
+                      <div className={`max-w-[90%] rounded-2xl px-4 py-3 shadow-md ${
                         isMe 
-                          ? 'bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 text-gray-900 dark:text-white rounded-tr-none' 
+                          ? 'bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-900/30 text-gray-900 dark:text-white rounded-tr-none' 
                           : 'bg-indigo-600 text-white rounded-tl-none'
                       }`}>
-                        <div className="flex items-center justify-between gap-4 mb-1">
-                          <span className={`text-[10px] font-bold ${isMe ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-100'}`}>
-                            {isMe ? 'أنا' : msg.recipient_name || 'موظف'}
-                          </span>
-                          <span className={`text-[9px] opacity-70 ${isMe ? 'text-gray-400' : 'text-indigo-200'}`}>
-                            {timeAgo(msg.created_at)}
-                          </span>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{msg.message}</p>
+                      </div>
+
+                      <div className={`mt-2 flex ${isMe ? 'justify-start' : 'justify-end'}`}>
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full border border-indigo-100 dark:border-indigo-800/30 text-[10px] font-bold shadow-sm hover:scale-105 transition-transform cursor-default">
+                          <User size={10} />
+                          موجه إلى: {rName}
                         </div>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
                       </div>
                     </div>
                   );
