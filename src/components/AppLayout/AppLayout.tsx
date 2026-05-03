@@ -26,6 +26,7 @@ const NOTIF_CONFIG: Record<string, {
   sync_complete:   { icon: ClipboardCheck, color: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',       route: '/settings' },
   report_ready:    { icon: BarChart3,      color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400', route: '/reports' },
   reconcile:       { icon: ClipboardList,  color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400', route: '/reconcile' },
+  task:            { icon: ClipboardList,  color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400', route: '/invoices' },
   default:         { icon: Bell,           color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400', route: '/dashboard' },
 };
 
@@ -99,7 +100,12 @@ export function AppLayout() {
     }
 
     setNotifOpen(false);
-    navigate(targetRoute);
+    
+    if (n.type === 'task' && n.data?.invoiceId) {
+      navigate('/invoices', { state: { invoiceId: String(n.data.invoiceId), openTask: true } });
+    } else {
+      navigate(targetRoute);
+    }
   };
 
   const bottomNavItem = (path: string, Icon: any, label: string) => {
