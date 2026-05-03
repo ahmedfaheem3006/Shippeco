@@ -17,7 +17,7 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw, X,
+  RotateCcw, X, ListTodo, User
 } from 'lucide-react'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
@@ -48,6 +48,54 @@ export function InvoicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Task Modal State ──
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [taskInvoice, setTaskInvoice] = useState<Invoice | null>(null)
+  const [usersList, setUsersList] = useState<{id: number, full_name: string, role: string}[]>([])
+  const [taskRecipientId, setTaskRecipientId] = useState('')
+  const [taskNotes, setTaskNotes] = useState('')
+  const [taskLoading, setTaskLoading] = useState(false)
+
+  const handleOpenTaskModal = async (inv: Invoice) => {
+    setTaskInvoice(inv)
+    setTaskModalOpen(true)
+    setTaskNotes('')
+    setTaskRecipientId('')
+    setTaskLoading(true)
+    try {
+      const { api } = await import('../utils/apiClient')
+      const res = await api.get('/users/list')
+      setUsersList(res.data?.data || [])
+    } catch (e: any) {
+      console.error('[Invoices] Failed to load users for tasks', e)
+    } finally {
+      setTaskLoading(false)
+    }
+  }
+
+  const handleSendTask = async () => {
+    if (!taskRecipientId || !taskNotes.trim() || !taskInvoice) return
+    setTaskLoading(true)
+    try {
+      const { api } = await import('../utils/apiClient')
+      await api.post('/notifications/send', {
+        recipientId: taskRecipientId,
+        message: taskNotes,
+        data: { 
+          invoiceId: taskInvoice.id, 
+          invoiceNumber: taskInvoice.invoice_number || taskInvoice.daftra_id || taskInvoice.id 
+        }
+      })
+      setTaskModalOpen(false)
+      window.alert('تم إرسال المهمة بنجاح')
+    } catch (err: any) {
+      console.error('[Invoices] Send task failed', err)
+      window.alert(err.response?.data?.error || 'حدث خطأ أثناء الإرسال')
+    } finally {
+      setTaskLoading(false)
+    }
+  }
 
   // ── Client Profile State ──
   // (Overlay moved to external ClientsPage)
@@ -523,6 +571,7 @@ export function InvoicesPage() {
                           <div className="flex items-center gap-0.5">
                             <ActionBtn icon={Eye} label="عرض" onClick={() => handleView(String(inv.id))} color="blue" />
                             <ActionBtn icon={Edit3} label="تعديل" onClick={() => handleEdit(String(inv.id))} color="yellow" />
+                            <ActionBtn icon={ListTodo} label="إرسال مهمة" onClick={() => handleOpenTaskModal(inv)} color="gray" />
                             <ActionBtn icon={Plus} label="إضافة بند" onClick={() => handleAddItem(String(inv.id))} color="green" />
                             {inv.phone && (
                               <ActionBtn icon={MessageSquare} label="واتساب" onClick={() => handleCollect(String(inv.id))} color="whatsapp" disabled={mutating} />
@@ -594,6 +643,7 @@ export function InvoicesPage() {
                   <div className="flex items-center gap-1 pt-2 border-t border-gray-100 dark:border-slate-700">
                     <ActionBtn icon={Eye} label="عرض" onClick={() => handleView(String(inv.id))} color="blue" />
                     <ActionBtn icon={Edit3} label="تعديل" onClick={() => handleEdit(String(inv.id))} color="yellow" />
+                    <ActionBtn icon={ListTodo} label="إرسال مهمة" onClick={() => handleOpenTaskModal(inv)} color="gray" />
                     <ActionBtn icon={Plus} label="إضافة بند" onClick={() => handleAddItem(String(inv.id))} color="green" />
                     {inv.phone && (
                       <ActionBtn icon={MessageSquare} label="واتساب" onClick={() => handleCollect(String(inv.id))} color="whatsapp" disabled={mutating} />
@@ -688,6 +738,71 @@ export function InvoicesPage() {
           })()
         }}
       />
+      {/* Task Modal */}
+      {taskModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={() => setTaskModalOpen(false)}>
+          <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700/50 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-gray-900 dark:text-white">
+                <div className="p-1.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg text-indigo-600 dark:text-indigo-400">
+                  <ListTodo size={18} />
+                </div>
+                <h3 className="font-bold">إرسال مهمة للفاتورة #{taskInvoice?.invoice_number || taskInvoice?.daftra_id || taskInvoice?.id}</h3>
+              </div>
+              <button onClick={() => setTaskModalOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <User size={14} /> تحديد الموظف
+                </label>
+                <select
+                  value={taskRecipientId}
+                  onChange={(e) => setTaskRecipientId(e.target.value)}
+                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  disabled={taskLoading}
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {usersList.map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <FileText size={14} /> ملاحظات
+                </label>
+                <textarea
+                  value={taskNotes}
+                  onChange={(e) => setTaskNotes(e.target.value)}
+                  placeholder="اكتب ملاحظاتك هنا..."
+                  className="w-full h-32 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+                  disabled={taskLoading}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 dark:border-slate-700/50 bg-gray-50/50 dark:bg-slate-800/50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTaskModalOpen(false)}
+                className="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleSendTask}
+                disabled={taskLoading || !taskRecipientId || !taskNotes.trim()}
+                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm shadow-indigo-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {taskLoading ? 'جاري الإرسال...' : 'إرسال المهمة'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

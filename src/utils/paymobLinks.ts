@@ -23,9 +23,8 @@ export function buildPaymobWaMessage(input: { name: string; amount: number; desc
   lines.push('\u{1F4B3} رابط الدفع الآمن:')
   lines.push(url)
   lines.push('')
-  lines.push('يمكنك الدفع بـ \u{1F4B3} بطاقة ائتمانية أو مدى أو \u{1F34E} Apple Pay')
+  lines.push('يمكنك الدفع بـ \u{1F4B3} بطاقة ائتمانية أو مدى')
   lines.push('شيب بيك \u{1F680}')
 
   return lines.join('\n')
 }
-

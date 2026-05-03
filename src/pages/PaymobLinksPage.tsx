@@ -488,7 +488,6 @@ export function PaymobLinksPage() {
                 disabled={busy}>
                 <option value="PL">رابط دفع سريع (PL)</option>
                 <option value="WEB">بطاقة ائتمان مدى/فيزا (WEB)</option>
-                <option value="APAY">Apple Pay</option>
               </select>
             </div>
           </div>
