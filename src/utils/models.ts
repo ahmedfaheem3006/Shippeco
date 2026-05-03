@@ -1,6 +1,7 @@
 export type UserRole = 'admin' | 'accountant' | 'employee' | 'viewer'
 
 export type SessionUser = {
+  id: number
   username: string
   name?: string
   role: UserRole

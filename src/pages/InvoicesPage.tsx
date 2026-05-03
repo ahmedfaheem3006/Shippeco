@@ -7,6 +7,7 @@ import { InvoiceWizardModal } from '../components/Invoices/InvoiceWizardModal'
 import { useLegacyInvoicesPage } from '../hooks/useLegacyInvoicesPage'
 import { useInvoicesStore } from '../hooks/useInvoicesStore'
 import { invoiceService } from '../services/invoiceService'
+import { useAuthStore } from '../hooks/useAuthStore'
 import type { Invoice } from '../utils/models'
 import type { InvoiceDraftInput } from '../utils/invoiceWizard'
 import { toDraftFromInvoice, toInvoiceFromDraft } from '../utils/invoiceWizard'
@@ -53,6 +54,7 @@ export function InvoicesPage() {
   const location = useLocation()
 
   const storeInvoices = useInvoicesStore((s) => s.invoices)
+  const user = useAuthStore((s) => s.user)
   const [mutating, setMutating] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardKey, setWizardKey] = useState(0)

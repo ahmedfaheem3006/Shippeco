@@ -47,7 +47,13 @@ export function useLoginPage() {
       }
 
       const { user, token } = response
-      setUser({ username: user.email, name: user.full_name || user.name, role: user.role, status: user.status }, token)
+      setUser({ 
+        id: user.id, 
+        username: user.email, 
+        name: user.full_name || user.name, 
+        role: user.role, 
+        status: user.status 
+      }, token)
       
       if (user.status !== 'approved') {
          setError('حسابك قيد المراجعة أو معطل، يرجى التواصل مع الإدارة')
