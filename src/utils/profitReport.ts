@@ -23,6 +23,7 @@ export type ProfitInvoiceRow = {
   hasCost: boolean
   losing: boolean
   isLocal: boolean
+  raw?: any
 }
 
 export type ProfitSummary = {

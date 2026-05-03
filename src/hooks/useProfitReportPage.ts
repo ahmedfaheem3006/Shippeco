@@ -274,6 +274,7 @@ export function useProfitReportPage() {
                 hasCost,
                 losing: hasCost && (profit ?? 0) < 0,
                 isLocal: isLocalInvoice(inv),
+                raw: inv,
               }
             }),
           )
@@ -404,6 +405,7 @@ export function useProfitReportPage() {
             status: inv.status || 'unpaid', date: inv.date || '—', price,
             cost: hasCost ? cost : null, profit, marginPct, hasCost,
             losing: hasCost && (profit ?? 0) < 0, isLocal: !inv.daftra_id,
+            raw: inv,
           }
         })
         const rows = toProfitExportRows(allRows)
