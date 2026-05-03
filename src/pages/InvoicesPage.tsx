@@ -66,7 +66,7 @@ export function InvoicesPage() {
     try {
       const { api } = await import('../utils/apiClient')
       const res = await api.get('/users/list')
-      setUsersList(res.data?.data || [])
+      setUsersList(Array.isArray(res) ? res : res.data || [])
     } catch (e: any) {
       console.error('[Invoices] Failed to load users for tasks', e)
     } finally {
