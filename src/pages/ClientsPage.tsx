@@ -45,6 +45,8 @@ import {
   Building2,
   FileDown,
   Inbox,
+  Edit3,
+  Trash2,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════ */
@@ -717,10 +719,12 @@ function ClientProfilePage({
   profile,
   loading,
   onClose,
+  cli,
 }: {
   profile: any;
   loading: boolean;
   onClose: () => void;
+  cli: any;
 }) {
   const [invoiceFilter, setInvoiceFilter] = useState<string>("all");
   const client: ClientRecord | null = profile?.client || null;
@@ -854,6 +858,39 @@ function ClientProfilePage({
             </div>
             {/* Actions */}
             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              {/* Management Actions */}
+              <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newNotes = window.prompt("تعديل ملاحظات العميل:", client.notes || "");
+                    if (newNotes !== null) {
+                      void cli.updateClient(client.id, { notes: newNotes });
+                    }
+                  }}
+                  className="p-2.5 rounded-xl bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400 transition-all"
+                  title="تعديل الملاحظات"
+                >
+                  <Edit3 size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (client.total_invoices > 0) {
+                      window.alert("لا يمكن حذف عميل لديه فواتير مرتبطة. يرجى حذف الفواتير أولاً.");
+                      return;
+                    }
+                    if (window.confirm(`هل أنت متأكد من حذف العميل "${client.name}" نهائياً؟`)) {
+                      void cli.deleteClient(client.id);
+                    }
+                  }}
+                  className="p-2.5 rounded-xl bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-all"
+                  title="حذف العميل"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+
               <button
                 onClick={handlePDF}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors shadow-lg shadow-red-500/20"
@@ -863,16 +900,18 @@ function ClientProfilePage({
                 <span className="hidden sm:inline">كشف حساب PDF</span>
                 <span className="sm:hidden">PDF</span>
               </button>
-              <button
-                onClick={handleUnpaidPDF}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold transition-colors shadow-lg shadow-rose-700/20"
-                type="button"
-                title={unpaidInvoices.length > 0 ? `${unpaidInvoices.length} فاتورة غير مدفوعة — إجمالي ${Math.round(totalUnpaid).toLocaleString('en-US')} SAR` : 'لا توجد فواتير غير مدفوعة'}
-              >
-                <FileDown size={16} />
-                <span className="hidden sm:inline">فواتير غير مدفوعة PDF</span>
-                <span className="sm:hidden">غير مدفوعة</span>
-              </button>
+              {unpaidInvoices.length > 0 && (
+                <button
+                  onClick={handleUnpaidPDF}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold transition-colors shadow-lg shadow-rose-700/20"
+                  type="button"
+                  title={`${unpaidInvoices.length} فاتورة غير مدفوعة — إجمالي ${Math.round(totalUnpaid).toLocaleString('en-US')} SAR`}
+                >
+                  <FileDown size={16} />
+                  <span className="hidden sm:inline">فواتير غير مدفوعة PDF</span>
+                  <span className="sm:hidden">غير مدفوعة</span>
+                </button>
+              )}
               {client.phone && (
                 <a
                   href={waLink(client.phone)}
@@ -884,7 +923,7 @@ function ClientProfilePage({
                   <span className="hidden sm:inline">واتساب</span>
                 </a>
               )}
-              {client.phone && (
+              {unpaidInvoices.length > 0 && client.phone && (
                 <button
                   type="button"
                   onClick={() => {
@@ -912,7 +951,7 @@ function ClientProfilePage({
                   <span className="sm:hidden">مطالبة</span>
                 </button>
               )}
-              {client.phone && (
+              {unpaidInvoices.length > 0 && client.phone && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1218,6 +1257,7 @@ export function ClientsPage() {
         profile={cli.profile}
         loading={cli.profileLoading}
         onClose={cli.closeProfile}
+        cli={cli}
       />
     );
   }

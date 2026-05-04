@@ -371,6 +371,16 @@ export function useClientsPage() {
     openProfile,
     closeProfile,
     updateClient,
+    deleteClient: async (id: string) => {
+      try {
+        await clientService.deleteClient(id);
+        closeProfile();
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "فشل حذف العميل");
+        throw e;
+      }
+    },
     exportClients,
 
     // Helpers

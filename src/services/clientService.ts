@@ -97,6 +97,10 @@ export const clientService = {
     const result = await unifiedService.put(`/clients/${id}`, data);
     return result;
   },
+  async deleteClient(id: string): Promise<any> {
+    const result = await unifiedService.delete(`/clients/${id}`);
+    return result;
+  },
 
   async getCities(): Promise<any> {
     const result: any = await unifiedService.get('/clients/cities');
