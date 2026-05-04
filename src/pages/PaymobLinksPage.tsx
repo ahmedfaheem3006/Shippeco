@@ -130,22 +130,24 @@ export function PaymobLinksPage() {
         setWorkerStatus({ ok, text: ok ? 'متصل' : 'غير متصل' });
       } catch { setWorkerStatus({ ok: false, text: 'غير متصل' }); }
 
-      // Load links
-      await loadLinks();
-      await loadStats();
+      // Load initial data
+      void loadLinks();
+      void loadStats();
     })();
+  }, []); // Only once on mount
 
-    // Polling for updates every 30s if there are pending links
+  // Polling for updates every 30s if there are pending links
+  useEffect(() => {
+    const hasPending = links.some(l => l.status === 'pending');
+    if (!hasPending) return;
+
     const timer = setInterval(() => {
-      const hasPending = links.some(l => l.status === 'pending');
-      if (hasPending) {
-        void loadLinks();
-        void loadStats();
-      }
+      void loadLinks();
+      void loadStats();
     }, 30000);
 
     return () => clearInterval(timer);
-  }, [loadLinks, loadStats, links]);
+  }, [links, loadLinks, loadStats]);
 
   const loadLinks = useCallback(async (status?: string) => {
     setLinksLoading(true);

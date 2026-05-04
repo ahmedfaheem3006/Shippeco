@@ -6,6 +6,7 @@ import {
 } from "../hooks/useClientsPage";
 import type { ClientRecord, ClientProfileInvoice } from "../services/dbService";
 import { openWhatsApp } from "../utils/whatsapp";
+import { createPaymentLink } from "../services/paymobService";
 import {
   Users,
   Download,
@@ -726,7 +727,7 @@ function ClientProfilePage({
   cli: any;
 }) {
   const [invoiceFilter, setInvoiceFilter] = useState<string>("all");
-  const [selectedInvs, setSelectedInvs] = useState<number[]>([]);
+  const [selectedInvs, setSelectedInvs] = useState<string[]>([]);
   const [creatingLink, setCreatingLink] = useState(false);
   const client: ClientRecord | null = profile?.client || null;
   const allInvoices: ClientProfileInvoice[] = profile?.invoices || [];
@@ -763,7 +764,7 @@ function ClientProfilePage({
       generateUnpaidClientPDF(client, unpaidInvoices, totalUnpaid);
   }, [client, unpaidInvoices, totalUnpaid]);
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = (id: string) => {
     setSelectedInvs(prev => 
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
@@ -791,7 +792,7 @@ function ClientProfilePage({
     setCreatingLink(true);
     try {
       const res = await createPaymentLink({
-        invoice_ids: selectedInvs,
+        invoice_ids: selectedInvs.map(id => Number(id)),
         amount: total,
         client_name: client.name,
         client_phone: client.phone || '0500000000',
@@ -806,8 +807,7 @@ function ClientProfilePage({
     } catch (err: any) {
       alert(err.message || "فشل إنشاء الرابط");
     } finally {
-      setCreatingLink(true); // Temporary to show loading
-      setTimeout(() => setCreatingLink(false), 2000);
+      setCreatingLink(false);
     }
   };
 
