@@ -863,19 +863,6 @@ function ClientProfilePage({
                 <button
                   type="button"
                   onClick={() => {
-                    const newNotes = window.prompt("تعديل ملاحظات العميل:", client.notes || "");
-                    if (newNotes !== null) {
-                      void cli.updateClient(client.id, { notes: newNotes });
-                    }
-                  }}
-                  className="p-2.5 rounded-xl bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400 transition-all"
-                  title="تعديل الملاحظات"
-                >
-                  <Edit3 size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
                     if (client.total_invoices > 0) {
                       window.alert("لا يمكن حذف عميل لديه فواتير مرتبطة. يرجى حذف الفواتير أولاً.");
                       return;
