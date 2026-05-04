@@ -863,18 +863,16 @@ function ClientProfilePage({
                 <span className="hidden sm:inline">كشف حساب PDF</span>
                 <span className="sm:hidden">PDF</span>
               </button>
-              {unpaidInvoices.length > 0 && (
-                <button
-                  onClick={handleUnpaidPDF}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold transition-colors shadow-lg shadow-rose-700/20"
-                  type="button"
-                  title={`${unpaidInvoices.length} فاتورة غير مدفوعة — إجمالي ${Math.round(totalUnpaid).toLocaleString('en-US')} SAR`}
-                >
-                  <FileDown size={16} />
-                  <span className="hidden sm:inline">فواتير غير مدفوعة PDF</span>
-                  <span className="sm:hidden">غير مدفوعة</span>
-                </button>
-              )}
+              <button
+                onClick={handleUnpaidPDF}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-bold transition-colors shadow-lg shadow-rose-700/20"
+                type="button"
+                title={unpaidInvoices.length > 0 ? `${unpaidInvoices.length} فاتورة غير مدفوعة — إجمالي ${Math.round(totalUnpaid).toLocaleString('en-US')} SAR` : 'لا توجد فواتير غير مدفوعة'}
+              >
+                <FileDown size={16} />
+                <span className="hidden sm:inline">فواتير غير مدفوعة PDF</span>
+                <span className="sm:hidden">غير مدفوعة</span>
+              </button>
               {client.phone && (
                 <a
                   href={waLink(client.phone)}
@@ -886,7 +884,7 @@ function ClientProfilePage({
                   <span className="hidden sm:inline">واتساب</span>
                 </a>
               )}
-              {unpaidInvoices.length > 0 && client.phone && (
+              {client.phone && (
                 <button
                   type="button"
                   onClick={() => {
@@ -914,7 +912,7 @@ function ClientProfilePage({
                   <span className="sm:hidden">مطالبة</span>
                 </button>
               )}
-              {unpaidInvoices.length > 0 && client.phone && (
+              {client.phone && (
                 <button
                   type="button"
                   onClick={() => {
