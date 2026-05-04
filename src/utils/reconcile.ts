@@ -76,8 +76,9 @@ export type DhlShipmentRow = {
 export function normalizeAwb(value: unknown) {
   return String(value || '')
     .trim()
-    .replace(/[\s-]/g, '')
-    .toUpperCase()
+    .replace(/[^a-zA-Z0-9]/g, '') // Remove ALL non-alphanumeric (spaces, dots, dashes, etc.)
+    .replace(/^AWB/i, '')
+    .toUpperCase();
 }
 
 function paymentStatus(inv: Invoice) {
@@ -195,6 +196,15 @@ export function buildReconcileReport(
     }
   })
 
+  // Correctly calculate total platform amount by summing unique invoices
+  const uniqueInvoices = new Map<string, number>()
+  results.forEach(r => {
+    if (r.platform_data?.invoice_no) {
+      uniqueInvoices.set(r.platform_data.invoice_no, r.platform_data.summary_total || 0)
+    }
+  })
+  const totalPlatformCorrect = Array.from(uniqueInvoices.values()).reduce((a, b) => a + b, 0)
+
   return {
     filename: opts.filename,
     total_shipments: opts.shipments.length,
@@ -202,8 +212,8 @@ export function buildReconcileReport(
     with_discrepancies: withDisc,
     not_found: notFound,
     total_dhl_amount: totalDhl,
-    total_platform_amount: totalPlatform,
-    total_difference: totalPlatform - totalDhl,
+    total_platform_amount: totalPlatformCorrect,
+    total_difference: totalPlatformCorrect - totalDhl,
     results,
   }
 }
