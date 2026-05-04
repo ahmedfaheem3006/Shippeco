@@ -96,6 +96,10 @@ export type Invoice = {
 
   // ═══ حالة المسودة ═══
   isDraft?: boolean
+
+  // ═══ تعيين الموظف ═══
+  assigned_to?: number
+  assigned_employee_name?: string
 }
 
 export type PlatformSettings = {

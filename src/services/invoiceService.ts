@@ -191,6 +191,12 @@ export const invoiceService = {
     if (result?.data) return result.data;
     return result;
   },
+  
+  async assignInvoice(id: string, employeeId: number | null): Promise<any> {
+    const { api } = await import('../utils/apiClient');
+    const result = await api.post(`/invoices/${id}/assign`, { employeeId });
+    return result;
+  },
 };
 
 // ══════════════════════════════════════════════
@@ -286,6 +292,8 @@ function mapRailwayToCloudflare(result: any): Invoice {
     dimensions: result.dimensions || '',
     status,
     isDraft: false,
+    assigned_to: result.assigned_to,
+    assigned_employee_name: result.assigned_employee_name,
   } as Invoice;
 }
 

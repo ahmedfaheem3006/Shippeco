@@ -72,6 +72,7 @@ export function InvoicesPage() {
   const [taskInvoice, setTaskInvoice] = useState<Invoice | null>(null)
   const [usersList, setUsersList] = useState<{id: number, full_name: string, role: string}[]>([])
   const [taskRecipientId, setTaskRecipientId] = useState('')
+  const [taskResponsibleId, setTaskResponsibleId] = useState('')
   const [taskNotes, setTaskNotes] = useState('')
   const [taskLoading, setTaskLoading] = useState(false)
   const [taskHistory, setTaskHistory] = useState<any[]>([])
@@ -81,6 +82,7 @@ export function InvoicesPage() {
     setTaskModalOpen(true)
     setTaskNotes('')
     setTaskRecipientId('')
+    setTaskResponsibleId(inv.assigned_to ? String(inv.assigned_to) : '')
     setTaskLoading(true)
     try {
       const { api } = await import('../utils/apiClient')
@@ -121,6 +123,17 @@ export function InvoicesPage() {
       window.alert(err.response?.data?.error || 'حدث خطأ أثناء الإرسال')
     } finally {
       setTaskLoading(false)
+    }
+  }
+
+  const handleAssignResponsible = async (employeeId: string) => {
+    if (!taskInvoice) return
+    setTaskResponsibleId(employeeId)
+    try {
+      await invoiceService.assignInvoice(taskInvoice.id, employeeId ? parseInt(employeeId, 10) : null)
+      void syncFromDb(false) 
+    } catch (err: any) {
+      console.error('[Invoices] Assign responsible failed', err)
     }
   }
 
@@ -520,7 +533,7 @@ export function InvoicesPage() {
               <table className="w-full text-right border-collapse" style={{ minWidth: 1000 }}>
                 <thead>
                   <tr className="bg-gray-50 dark:bg-slate-900/60 border-b border-gray-200 dark:border-slate-700">
-                    {['الفاتورة', 'العميل', 'الجوال', 'الناقل', 'التفاصيل', 'المبلغ', 'المدفوع', 'المتبقي', 'الحالة', 'التاريخ', 'إجراءات'].map((h) => (
+                    {['الفاتورة', 'العميل', 'المسؤول', 'الجوال', 'الناقل', 'التفاصيل', 'المبلغ', 'المدفوع', 'المتبقي', 'الحالة', 'التاريخ', 'إجراءات'].map((h) => (
                       <th key={h} className="px-3 py-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
@@ -562,6 +575,17 @@ export function InvoicesPage() {
                           >
                             {inv.client || '—'}
                           </button>
+                        </td>
+
+                        <td className="px-3 py-3">
+                          {inv.assigned_employee_name ? (
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800/30">
+                              <User size={10} />
+                              {inv.assigned_employee_name}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-gray-300 dark:text-slate-600">—</span>
+                          )}
                         </td>
 
                         <td className="px-3 py-3 font-inter text-xs text-gray-500 dark:text-gray-400 direction-ltr" dir="ltr">
@@ -653,6 +677,12 @@ export function InvoicesPage() {
                         #{inv.invoice_number || inv.daftra_id || inv.id} · {displayDate(inv.date)}
                         {inv.awb && <span className="text-blue-500 mr-1">· AWB: {inv.awb}</span>}
                       </div>
+                      {inv.assigned_employee_name && (
+                        <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                          <User size={10} />
+                          المسؤول: {inv.assigned_employee_name}
+                        </div>
+                      )}
                     </div>
                     {statusBadge(inv)}
                   </div>
@@ -866,6 +896,22 @@ export function InvoicesPage() {
                       disabled={taskLoading}
                     >
                       <option value="">-- اختر الموظف --</option>
+                      {usersList.map((u) => (
+                        <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mr-1">
+                      <CheckCircle2 size={14} className="text-green-500" /> الموظف المسؤول
+                    </label>
+                    <select
+                      value={taskResponsibleId}
+                      onChange={(e) => handleAssignResponsible(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
+                      disabled={taskLoading}
+                    >
+                      <option value="">-- غير محدد --</option>
                       {usersList.map((u) => (
                         <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
                       ))}
