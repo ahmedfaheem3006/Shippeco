@@ -8,8 +8,10 @@ import {
   Phone, Package, Truck, DollarSign, FileText, Send,
   Edit3, Trash2, Plus, Calendar, Hash, CreditCard,
   ArrowUpRight, ArrowDownRight, User, MapPin, Box, Scale,
-  Loader2, RefreshCw
+  Loader2, RefreshCw, CreditCard as PaymobIcon
 } from 'lucide-react'
+import { createPaymentLink } from '../../services/paymobService'
+import { api } from '../../utils/apiClient'
 
 type Props = {
   open: boolean
@@ -56,6 +58,8 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [loadingFull, setLoadingFull] = useState(false)
   const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
+  const [creatingLink, setCreatingLink] = useState(false)
+  const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   // الفاتورة النهائية المعروضة
   const displayInv = fullInvoice ?? invoice
@@ -137,6 +141,55 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     finally { setEnriching(false) }
   }
 
+  const handlePaymob = async () => {
+    if (!displayInv) return
+    
+    if (displayInv.status === 'paid') {
+      setLocalToast({ type: 'error', message: 'الفاتورة مدفوعة بالفعل!' })
+      setTimeout(() => setLocalToast(null), 3000)
+      return
+    }
+
+    if (displayInv.status === 'returned') {
+      setLocalToast({ type: 'error', message: 'الفاتورة مرتجعة، لا يمكن الدفع.' })
+      setTimeout(() => setLocalToast(null), 3000)
+      return
+    }
+
+    setCreatingLink(true)
+    try {
+      const res = await createPaymentLink({
+        invoice_id: String(displayInv.id),
+        amount: remainingAmount,
+        client_name: displayInv.client,
+        client_phone: displayInv.phone || '0500000000',
+        description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
+      })
+
+      if (res.payment_url_full || res.payment_url) {
+        const url = res.payment_url_full || res.payment_url
+        window.open(url!, '_blank')
+        setLocalToast({ type: 'success', message: 'تم إنشاء رابط الدفع وفتحه بنجاح' })
+        
+        // Audit: generate paymob link
+        try {
+          await api.post('/audit/write', {
+            action: 'payment_link',
+            entityType: 'invoice',
+            entityId: parseInt(String(displayInv.id), 10),
+            newData: { amount: remainingAmount, url }
+          })
+        } catch { /* silent */ }
+      }
+    } catch (err: any) {
+      console.error('[Paymob] Error:', err)
+      setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء رابط الدفع' })
+    } finally {
+      setCreatingLink(false)
+      setTimeout(() => setLocalToast(null), 4000)
+    }
+  }
+
   const items = useMemo(() => (displayInv ? getInvItems(displayInv) : []), [displayInv])
   const total = useMemo(() => {
     // Use invoice total first (from DB), fallback to items sum
@@ -172,6 +225,18 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true">
       <div className={styles.modal}>
+
+        {/* Local Toast */}
+        {localToast && (
+          <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[300] px-6 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${
+            localToast.type === 'success' 
+              ? 'bg-green-600 text-white border-green-500' 
+              : 'bg-red-600 text-white border-red-500'
+          }`}>
+            {localToast.type === 'success' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+            <span className="font-bold text-sm">{localToast.message}</span>
+          </div>
+        )}
 
         {/* ═══ Header ═══ */}
         <div className={styles.header}>
@@ -449,6 +514,24 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
           </button>
           <button type="button" className={styles.btnPrimary} onClick={onEdit}>
             <Edit3 size={14} style={{ display: 'inline', marginLeft: 4 }} /> {displayInv.isDraft ? 'إكمال' : 'تعديل'}
+          </button>
+          
+          <button 
+            type="button" 
+            onClick={handlePaymob}
+            disabled={creatingLink}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:grayscale"
+            style={{ 
+              background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+              boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)'
+            }}
+          >
+            {creatingLink ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <PaymobIcon size={16} />
+            )}
+            رابط Paymob
           </button>
           <div style={{ flex: 1 }} />
           <button type="button" className={styles.btnDanger} onClick={onDelete}>
