@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { createPaymentLink } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
+import { useAuthStore } from '../../hooks/useAuthStore'
 
 type Props = {
   open: boolean
@@ -61,6 +62,9 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [creatingLink, setCreatingLink] = useState(false)
   const [copied, setCopied] = useState(false)
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  const user = useAuthStore(s => s.user)
+  const isAdmin = user?.role === 'admin'
 
   // الفاتورة النهائية المعروضة
   const displayInv = fullInvoice ?? invoice
@@ -538,11 +542,20 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             </div>
           </div>
 
-          {/* ─── ملاحظات ─── */}
           {displayInv.details && (
             <div style={{ marginTop: 12 }} className="bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700 p-3">
-              <div className="text-[10px] font-bold text-gray-400 mb-1 flex items-center gap-1"><FileText size={10} /> ملاحظات</div>
+              <div className="text-[10px] font-bold text-gray-400 mb-1 flex items-center gap-1"><FileText size={10} /> تفاصيل إضافية</div>
               <div className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{displayInv.details}</div>
+            </div>
+          )}
+
+          {/* ─── ملاحظات الإدارة (Admins Only) ─── */}
+          {isAdmin && displayInv.notes && (
+            <div style={{ marginTop: 12 }} className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-xl p-3">
+              <div className="text-[10px] font-bold text-amber-600 mb-1 flex items-center gap-1">🔒 ملاحظات الإدارة (خاصة)</div>
+              <div className="text-xs text-amber-700 dark:text-amber-400 font-mono leading-relaxed whitespace-pre-wrap">
+                {displayInv.notes}
+              </div>
             </div>
           )}
         </div>

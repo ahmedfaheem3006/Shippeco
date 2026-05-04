@@ -341,10 +341,11 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                     `من: ${fromLabel}`, `إلى: ${toLabel}`, zoneLine, `وزن المحاسبة: ${wt}`, `عدد الطرود: ${qty}`
                   ]
                   if (hasDims) detailsLines.push(`الأبعاد: ${l} × ${w} × ${h} سم`)
-                  detailsLines.push('---', `أساسي: ${r.baseRate.toFixed(2)} ر.س  وقود: +${r.fuelAmt.toFixed(2)} ر.س  GoGreen: +${r.goGreen.toFixed(2)} ر.س`)
+                  
+                  const adminNotes = `أساسي: ${r.baseRate.toFixed(2)} ر.س  وقود: +${r.fuelAmt.toFixed(2)} ر.س  GoGreen: +${r.goGreen.toFixed(2)} ر.س`
 
                   setDraft((p) => ({
-                    ...p, price: r.total.toFixed(2), dhlCost: r.baseRate.toFixed(2), weight: round2(chargeW).toFixed(2), details: detailsLines.join('\n'), itemType: 'شحن دولي', carrier: 'DHL Express'
+                    ...p, price: r.total.toFixed(2), dhlCost: r.baseRate.toFixed(2), weight: round2(chargeW).toFixed(2), details: detailsLines.join('\n'), notes: adminNotes, itemType: 'شحن دولي', carrier: 'DHL Express'
                   }))
                   setMode('calc')
                   setStep(2)

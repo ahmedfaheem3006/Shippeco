@@ -153,6 +153,19 @@ export async function createPaymentLink(
         throw new Error(errorMsg);
       }
 
+    // NEW: Save to Backend DB so it shows in history immediately
+    try {
+      await api.post('/paymob/links', {
+        ...normalizedPayload,
+        payment_url: result.payment_url || result.payment_url_full,
+        payment_url_full: result.payment_url_full || result.payment_url,
+        paymob_order_id: String(result.order_id || ''),
+        client_secret: result.client_secret || '',
+      });
+    } catch (saveErr) {
+      console.warn('[Paymob] Silent save to DB failed:', saveErr);
+    }
+
     return result;
   } catch (workerError) {
     console.warn('[Paymob] Worker failed, trying Backend...', workerError);

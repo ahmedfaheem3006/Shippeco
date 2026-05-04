@@ -311,39 +311,9 @@ export function PaymobLinksPage() {
       const url = String(res?.payment_url || '').trim();
       if (!url) throw new Error(res?.error || 'تعذّر إنشاء رابط الدفع — تأكد من صحة رقم الجوال');
 
-      // Save to local history
-      const newLink: PaymobLink = {
-        id: Date.now(),
-        invoice_id: selectedInvoices.length > 0 ? Number(selectedInvoices[0].id) : null,
-        client_name: name,
-        client_phone: phone,
-        amount: amountNum,
-        description: desc,
-        payment_url: url,
-        payment_url_full: res.payment_url_full || url,
-        paymob_order_id: String(res.order_id || ''),
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      };
-
-      const updatedLocal = [newLink, ...loadLocalHistory()].slice(0, 50);
-      saveLocalHistory(updatedLocal);
-
-      // Try save to backend silently (don't wait, don't fail)
-      paymobBackend.createLink({
-        invoice_id: selectedInvoices.length === 1 ? Number(selectedInvoices[0].id) : undefined,
-        invoice_ids: selectedInvoices.length > 1 ? selectedInvoices.map(i => Number(i.id)) : undefined,
-        amount: amountNum,
-        client_name: name,
-        client_phone: phone,
-        description: desc,
-        integration_type: integrationType,
-      }).catch(() => {}); // Silent — never fails the UI
-
-      // Reload links
-      setLinks(updatedLocal);
-      setLinksTotal(updatedLocal.length);
-      loadStats().catch(() => {});
+      // Refresh from DB immediately to show the new link
+      await loadLinks();
+      await loadStats();
 
       setResult({ url, orderId: res?.order_id });
 
