@@ -104,7 +104,7 @@ export function PaymobLinksPage() {
   const [invoiceQuery, setInvoiceQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Invoice[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedInvoices, setSelectedInvoices] = useState<Invoice[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -134,7 +134,18 @@ export function PaymobLinksPage() {
       await loadLinks();
       await loadStats();
     })();
-  }, []);
+
+    // Polling for updates every 30s if there are pending links
+    const timer = setInterval(() => {
+      const hasPending = links.some(l => l.status === 'pending');
+      if (hasPending) {
+        void loadLinks();
+        void loadStats();
+      }
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [loadLinks, loadStats, links]);
 
   const loadLinks = useCallback(async (status?: string) => {
     setLinksLoading(true);
@@ -213,20 +224,41 @@ export function PaymobLinksPage() {
 
   /* ── Pick invoice ── */
   const onPickInvoice = (inv: Invoice) => {
-    setSelectedInvoice(inv);
-    setInvoiceQuery(`#${inv.invoice_number || inv.id} — ${inv.client}`);
-    setClientName(inv.client || '');
-    setClientPhone(inv.phone || '');
-    setAmount(String(Number(inv.remaining || inv.price || 0).toFixed(2)));
-    setDescription(inv.details?.slice(0, 200) || 'خدمة شحن');
+    if (selectedInvoices.find(x => x.id === inv.id)) {
+      setShowDropdown(false);
+      setInvoiceQuery('');
+      return;
+    }
+    
+    const newSelected = [...selectedInvoices, inv];
+    setSelectedInvoices(newSelected);
+    
+    if (newSelected.length === 1) {
+      setClientName(inv.client || '');
+      setClientPhone(inv.phone || '');
+    }
+    
+    // Sum up total remaining
+    const total = newSelected.reduce((sum, i) => sum + (i.remaining || i.total || 0), 0);
+    setAmount(total.toFixed(2));
+    
+    setInvoiceQuery('');
     setShowDropdown(false);
     setSearchResults([]);
   };
 
-  const onClearInvoice = () => {
-    setSelectedInvoice(null);
+  const onRemoveInvoice = (id: string | number) => {
+    const newSelected = selectedInvoices.filter(x => x.id !== id);
+    setSelectedInvoices(newSelected);
+    const total = newSelected.reduce((sum, i) => sum + (i.remaining || i.total || 0), 0);
+    setAmount(total.toFixed(2));
+  };
+
+  const onClearInvoices = () => {
+    setSelectedInvoices([]);
     setInvoiceQuery('');
     setSearchResults([]);
+    setAmount('');
   };
 
   /* ── Copy ── */
@@ -263,7 +295,8 @@ export function PaymobLinksPage() {
     try {
       // Create via Worker ONLY
       const res = await createPaymentLink({
-        invoice_id: selectedInvoice ? String(selectedInvoice.id) : undefined,
+        invoice_id: selectedInvoices.length === 1 ? String(selectedInvoices[0].id) : undefined,
+        invoice_ids: selectedInvoices.length > 1 ? selectedInvoices.map(i => Number(i.id)) : undefined,
         amount: amountNum,
         client_name: name,
         client_phone: phone,
@@ -294,7 +327,8 @@ export function PaymobLinksPage() {
 
       // Try save to backend silently (don't wait, don't fail)
       paymobBackend.createLink({
-        invoice_id: selectedInvoice ? Number(selectedInvoice.id) : undefined,
+        invoice_id: selectedInvoices.length === 1 ? Number(selectedInvoices[0].id) : undefined,
+        invoice_ids: selectedInvoices.length > 1 ? selectedInvoices.map(i => Number(i.id)) : undefined,
         amount: amountNum,
         client_name: name,
         client_phone: phone,
@@ -394,9 +428,9 @@ export function PaymobLinksPage() {
             <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
               <Link size={18} className="text-indigo-600 dark:text-indigo-400" /> تفاصيل رابط الدفع المباشر
             </h2>
-            {selectedInvoice ? (
+            {selectedInvoices.length > 0 ? (
               <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800/20 flex items-center gap-1">
-                <FileText size={12} /> فاتورة #{selectedInvoice.invoice_number || selectedInvoice.id}
+                <FileText size={12} /> {selectedInvoices.length} فواتير مختارة
               </span>
             ) : (
               <span className="text-xs font-bold text-gray-500 bg-gray-50 dark:bg-slate-900 px-2 py-1 rounded-lg border border-gray-200 dark:border-slate-700 flex items-center gap-1">
@@ -421,7 +455,7 @@ export function PaymobLinksPage() {
               />
 
               {/* Dropdown */}
-              {showDropdown && !selectedInvoice && invoiceQuery.trim().length >= 2 && (
+              {showDropdown && invoiceQuery.trim().length >= 2 && (
                 <div className="absolute top-[calc(100%+4px)] right-0 left-0 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl max-h-[250px] overflow-y-auto z-50 divide-y divide-gray-100 dark:divide-slate-700/50">
                   {searching ? (
                     <div className="p-4 text-center text-gray-400 text-xs font-bold flex items-center justify-center gap-2">
@@ -434,7 +468,7 @@ export function PaymobLinksPage() {
                         <span className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
                           <span className="font-mono text-xs text-gray-400">#{inv.invoice_number || inv.id}</span>
                           <span>{inv.client}</span>
-                          {inv.phone && <span className="text-[10px] text-gray-400 font-inter">{inv.phone}</span>}
+                          {selectedInvoices.find(x => x.id === inv.id) && <Check size={14} className="text-green-500" />}
                         </span>
                         <span className="font-mono font-bold text-yellow-600">{Number(inv.remaining || inv.price || 0).toFixed(2)} ر.س</span>
                       </button>
@@ -446,13 +480,21 @@ export function PaymobLinksPage() {
               )}
             </div>
 
-            {selectedInvoice && (
-              <div className="flex justify-between items-center bg-indigo-50/50 dark:bg-indigo-900/10 p-2 rounded-lg border border-indigo-200 dark:border-indigo-800/30 mt-1">
-                <span className="text-xs text-gray-500 flex items-center gap-1.5"><CheckCircle2 size={14} className="text-indigo-500" /> سيتم ربط العملية وتحديث حالة الفاتورة تلقائياً</span>
-                <button type="button" onClick={onClearInvoice}
-                  className="text-xs px-2 py-1 text-red-600 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800/30 flex items-center gap-1">
-                  <X size={12} /> إلغاء
-                </button>
+            {selectedInvoices.length > 0 && (
+              <div className="flex flex-col gap-2 mt-1">
+                <div className="flex flex-wrap gap-2">
+                  {selectedInvoices.map((inv) => (
+                    <span key={inv.id} className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800/20 flex items-center gap-1">
+                      #{inv.invoice_number || inv.id}
+                      <button type="button" onClick={() => onRemoveInvoice(inv.id)} className="hover:text-red-500"><X size={10} /></button>
+                    </span>
+                  ))}
+                  <button type="button" onClick={onClearInvoices} className="text-[10px] font-bold text-red-600 hover:underline">مسح الكل</button>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <CheckCircle2 size={14} className="text-indigo-500" />
+                  <span>سيتم ربط {selectedInvoices.length} فواتير بهذا الرابط</span>
+                </div>
               </div>
             )}
           </div>

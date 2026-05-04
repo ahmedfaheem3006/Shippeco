@@ -8,7 +8,8 @@ import type { PaymobLink, PaymobStats } from '../utils/models';
 export type PaymobPingResponse = { status?: string; message?: string; time?: string };
 
 export type CreatePaymentRequest = {
-  invoice_id?: string;
+  invoice_id?: string | number;
+  invoice_ids?: number[];
   amount: number;
   client_name: string;
   client_phone: string;

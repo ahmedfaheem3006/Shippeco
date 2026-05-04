@@ -726,6 +726,8 @@ function ClientProfilePage({
   cli: any;
 }) {
   const [invoiceFilter, setInvoiceFilter] = useState<string>("all");
+  const [selectedInvs, setSelectedInvs] = useState<number[]>([]);
+  const [creatingLink, setCreatingLink] = useState(false);
   const client: ClientRecord | null = profile?.client || null;
   const allInvoices: ClientProfileInvoice[] = profile?.invoices || [];
   const monthly: Array<{ month: string; revenue: number; count: number }> =
@@ -760,6 +762,54 @@ function ClientProfilePage({
     if (client && unpaidInvoices.length > 0)
       generateUnpaidClientPDF(client, unpaidInvoices, totalUnpaid);
   }, [client, unpaidInvoices, totalUnpaid]);
+
+  const toggleSelect = (id: number) => {
+    setSelectedInvs(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAll = () => {
+    if (selectedInvs.length === invoices.length) {
+      setSelectedInvs([]);
+    } else {
+      setSelectedInvs(invoices.map(i => i.id));
+    }
+  };
+
+  const handleBulkPaymob = async () => {
+    if (!client || selectedInvs.length === 0 || creatingLink) return;
+    
+    const selectedData = allInvoices.filter(i => selectedInvs.includes(i.id));
+    const total = selectedData.reduce((sum, i) => sum + realRemaining(i), 0);
+    
+    if (total <= 0) {
+      alert("المبلغ الإجمالي يجب أن يكون أكبر من صفر");
+      return;
+    }
+
+    setCreatingLink(true);
+    try {
+      const res = await createPaymentLink({
+        invoice_ids: selectedInvs,
+        amount: total,
+        client_name: client.name,
+        client_phone: client.phone || '0500000000',
+        description: `دفع ${selectedInvs.length} فواتير للعميل ${client.name}`
+      });
+
+      const url = res.payment_url_full || res.payment_url;
+      if (url) {
+        window.open(url, '_blank');
+        setSelectedInvs([]);
+      }
+    } catch (err: any) {
+      alert(err.message || "فشل إنشاء الرابط");
+    } finally {
+      setCreatingLink(true); // Temporary to show loading
+      setTimeout(() => setCreatingLink(false), 2000);
+    }
+  };
 
   if (loading) {
     return (
@@ -1128,6 +1178,14 @@ function ClientProfilePage({
           <table className="w-full text-right border-collapse">
             <thead className="bg-gray-50/80 dark:bg-slate-900/50 border-b border-gray-200 dark:border-slate-700">
               <tr className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="p-3 w-10 text-center">
+                  <input 
+                    type="checkbox" 
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    checked={invoices.length > 0 && selectedInvs.length === invoices.length}
+                    onChange={toggleAll}
+                  />
+                </th>
                 <th className="p-3">رقم الفاتورة</th>
                 <th className="p-3">التاريخ</th>
                 <th className="p-3">الحالة</th>
@@ -1148,8 +1206,17 @@ function ClientProfilePage({
                   return (
                     <tr
                       key={inv.id}
-                      className="hover:bg-gray-50/50 dark:hover:bg-slate-700/30 transition-colors"
+                      className={`transition-colors ${selectedInvs.includes(inv.id) ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : 'hover:bg-gray-50/50 dark:hover:bg-slate-700/30'}`}
+                      onClick={() => toggleSelect(inv.id)}
                     >
+                      <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          checked={selectedInvs.includes(inv.id)}
+                          onChange={() => toggleSelect(inv.id)}
+                        />
+                      </td>
                       <td className="p-3">
                         <span className="font-inter font-bold text-sm text-indigo-600 dark:text-indigo-400">
                           #{inv.daftra_id || inv.id}
@@ -1203,25 +1270,41 @@ function ClientProfilePage({
           const footerPaid = invoices.reduce((s, i) => s + realPaid(i), 0);
           const footerRemaining = invoices.reduce((s, i) => s + realRemaining(i), 0);
           return (
-            <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-900/30 flex flex-wrap items-center gap-4 text-sm font-bold">
-              <span className="text-gray-500">
-                الإيرادات:{" "}
-                <span className="font-inter text-gray-800 dark:text-gray-200">
-                  {formatSar(footerRevenue)}
+            <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-900/30 flex flex-wrap items-center justify-between gap-4 text-sm font-bold">
+              <div className="flex items-center gap-4">
+                <span className="text-gray-500">
+                  الإيرادات:{" "}
+                  <span className="font-inter text-gray-800 dark:text-gray-200">
+                    {formatSar(footerRevenue)}
+                  </span>
                 </span>
-              </span>
-              <span className="text-gray-500">
-                مدفوع:{" "}
-                <span className="font-inter text-green-600">
-                  {formatSar(footerPaid)}
+                <span className="text-gray-500">
+                  مدفوع:{" "}
+                  <span className="font-inter text-green-600">
+                    {formatSar(footerPaid)}
+                  </span>
                 </span>
-              </span>
-              <span className="text-gray-500">
-                متبقي:{" "}
-                <span className="font-inter text-red-600">
-                  {formatSar(footerRemaining)}
+                <span className="text-gray-500">
+                  متبقي:{" "}
+                  <span className="font-inter text-red-600">
+                    {formatSar(footerRemaining)}
+                  </span>
                 </span>
-              </span>
+              </div>
+
+              {selectedInvs.length > 0 && (
+                <button
+                  onClick={handleBulkPaymob}
+                  disabled={creatingLink}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {creatingLink ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
+                  <span>إنشاء رابط دفع ({selectedInvs.length})</span>
+                  <span className="font-inter border-r border-indigo-400 pr-2 mr-2">
+                    {formatSar(invoices.filter(i => selectedInvs.includes(i.id)).reduce((s, i) => s + realRemaining(i), 0))}
+                  </span>
+                </button>
+              )}
             </div>
           );
         })()}
