@@ -120,35 +120,6 @@ export function PaymobLinksPage() {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [checkingPayment, setCheckingPayment] = useState<string | null>(null);
 
-  /* ── Init ── */
-  useEffect(() => {
-    void (async () => {
-      // Ping worker
-      try {
-        const ping = await pingPaymobWorker();
-        const ok = String(ping?.status || '').toLowerCase() === 'ok';
-        setWorkerStatus({ ok, text: ok ? 'متصل' : 'غير متصل' });
-      } catch { setWorkerStatus({ ok: false, text: 'غير متصل' }); }
-
-      // Load initial data
-      void loadLinks();
-      void loadStats();
-    })();
-  }, []); // Only once on mount
-
-  // Polling for updates every 30s if there are pending links
-  useEffect(() => {
-    const hasPending = links.some(l => l.status === 'pending');
-    if (!hasPending) return;
-
-    const timer = setInterval(() => {
-      void loadLinks();
-      void loadStats();
-    }, 30000);
-
-    return () => clearInterval(timer);
-  }, [links, loadLinks, loadStats]);
-
   const loadLinks = useCallback(async (status?: string) => {
     setLinksLoading(true);
     try {
@@ -197,12 +168,43 @@ export function PaymobLinksPage() {
     } catch {}
   }, []);
 
-  useEffect(() => { void loadLinks(filterStatus); }, [filterStatus]);
+  /* ── Init ── */
+  useEffect(() => {
+    void (async () => {
+      // Ping worker
+      try {
+        const ping = await pingPaymobWorker();
+        const ok = String(ping?.status || '').toLowerCase() === 'ok';
+        setWorkerStatus({ ok, text: ok ? 'متصل' : 'غير متصل' });
+      } catch { setWorkerStatus({ ok: false, text: 'غير متصل' }); }
+
+      // Load initial data
+      void loadLinks();
+      void loadStats();
+    })();
+  }, [loadLinks, loadStats]); // Dependency on functions for safety
+
+  // Polling for updates every 30s if there are pending links
+  useEffect(() => {
+    const hasPending = links.some(l => l.status === 'pending');
+    if (!hasPending) return;
+
+    const timer = setInterval(() => {
+      void loadLinks();
+      void loadStats();
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [links, loadLinks, loadStats]);
+
+  useEffect(() => { 
+    void loadLinks(filterStatus); 
+  }, [filterStatus, loadLinks]);
+
 
   /* ── Server-side invoice search with debounce ── */
   const handleSearchChange = useCallback((value: string) => {
     setInvoiceQuery(value);
-    setSelectedInvoice(null);
     setShowDropdown(true);
 
     // Clear previous timer
@@ -312,7 +314,7 @@ export function PaymobLinksPage() {
       // Save to local history
       const newLink: PaymobLink = {
         id: Date.now(),
-        invoice_id: selectedInvoice ? Number(selectedInvoice.id) : null,
+        invoice_id: selectedInvoices.length > 0 ? Number(selectedInvoices[0].id) : null,
         client_name: name,
         client_phone: phone,
         amount: amountNum,
