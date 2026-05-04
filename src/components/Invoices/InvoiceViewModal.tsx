@@ -8,7 +8,7 @@ import {
   Phone, Package, Truck, DollarSign, FileText, Send,
   Edit3, Trash2, Plus, Calendar, Hash, CreditCard,
   ArrowUpRight, ArrowDownRight, User, MapPin, Box, Scale,
-  Loader2, RefreshCw, CreditCard as PaymobIcon
+  Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check
 } from 'lucide-react'
 import { createPaymentLink } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
@@ -59,6 +59,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
   const [creatingLink, setCreatingLink] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   // الفاتورة النهائية المعروضة
@@ -184,6 +185,50 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     } catch (err: any) {
       console.error('[Paymob] Error:', err)
       setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء رابط الدفع' })
+    } finally {
+      setCreatingLink(false)
+      setTimeout(() => setLocalToast(null), 4000)
+    }
+  }
+
+  const handleCopyLink = async () => {
+    if (!displayInv || creatingLink) return
+    
+    if (displayInv.status === 'paid') {
+      setLocalToast({ type: 'error', message: 'الفاتورة مدفوعة بالفعل!' })
+      setTimeout(() => setLocalToast(null), 3000)
+      return
+    }
+
+    setCreatingLink(true)
+    try {
+      const res = await createPaymentLink({
+        invoice_id: String(displayInv.id),
+        amount: remainingAmount,
+        client_name: displayInv.client,
+        client_phone: displayInv.phone || '0500000000',
+        description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
+      })
+
+      const url = res.payment_url_full || res.payment_url
+      if (url) {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع!' })
+        setTimeout(() => setCopied(false), 2000)
+        
+        // Audit
+        try {
+          await api.post('/audit/write', {
+            action: 'payment_link_copy',
+            entityType: 'invoice',
+            entityId: parseInt(String(displayInv.id), 10),
+            newData: { amount: remainingAmount, url }
+          })
+        } catch { /* silent */ }
+      }
+    } catch (err: any) {
+      setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء الرابط' })
     } finally {
       setCreatingLink(false)
       setTimeout(() => setLocalToast(null), 4000)
@@ -531,7 +576,22 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             ) : (
               <PaymobIcon size={16} />
             )}
-            رابط Paymob
+            Paymob
+          </button>
+
+          <button 
+            type="button" 
+            onClick={handleCopyLink}
+            disabled={creatingLink}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all border shadow-sm active:scale-95 disabled:opacity-50"
+            style={{ 
+              backgroundColor: copied ? '#f0fdf4' : '#fff',
+              borderColor: copied ? '#22c55e' : '#e2e8f0',
+              color: copied ? '#16a34a' : '#64748b'
+            }}
+            title="نسخ رابط الدفع"
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
           <div style={{ flex: 1 }} />
           <button type="button" className={styles.btnDanger} onClick={onDelete}>
