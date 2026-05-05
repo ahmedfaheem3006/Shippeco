@@ -185,9 +185,9 @@ export async function createPaymentLink(
         order_id: d.order_id || d.paymob_order_id,
         client_secret: d.client_secret,
       };
-    } catch (backendError) {
-      // Both failed — throw the original Worker error (more informative)
-      const msg = workerError instanceof Error ? workerError.message : 'فشل إنشاء رابط الدفع';
+    } catch (backendError: any) {
+      // Both failed — show the backend error as it's more relevant now
+      const msg = backendError?.message || workerError?.message || 'فشل إنشاء رابط الدفع';
       throw new Error(msg);
     }
   }
