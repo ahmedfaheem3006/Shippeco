@@ -167,7 +167,7 @@ export async function createPaymentLink(
     }
 
     return result;
-  } catch (workerError) {
+  } catch (workerError: any) {
     console.warn('[Paymob] Worker failed, trying Backend...', workerError);
     
     // Fallback: try Backend
