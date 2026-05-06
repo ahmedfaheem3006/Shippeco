@@ -176,9 +176,9 @@ export function ReportsPage() {
         })}
       </div>
 
-      {/* ═══ توزيع الحالات + الرسم البياني + نسبة التحصيل ═══ */}
+      {/* ═══ توزيع الحالات + الرسم البياني + نسبة التحصيل (Commented Out) ═══ */}
+      {/* 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* توزيع الحالات */}
         <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 p-4 sm:p-6 shadow-sm">
           <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white mb-3 sm:mb-5 flex items-center gap-2">
             <Activity className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-indigo-500" /> توزيع الحالات
@@ -203,7 +203,6 @@ export function ReportsPage() {
           </div>
         </div>
 
-        {/* رسم بياني */}
         <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 p-4 sm:p-6 shadow-sm">
           <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white mb-3 sm:mb-5 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-green-500" /> اتجاه الإيرادات
@@ -229,7 +228,6 @@ export function ReportsPage() {
           </div>
         </div>
 
-        {/* نسبة التحصيل */}
         <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 p-4 sm:p-6 shadow-sm flex flex-col">
           <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white mb-3 sm:mb-5 flex items-center gap-2">
             <DollarSign className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-yellow-500" /> نسبة التحصيل
@@ -263,6 +261,7 @@ export function ReportsPage() {
           </div>
         </div>
       </div>
+      */}
 
       {/* ═══ تحليل الناقلين + أكبر العملاء ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">

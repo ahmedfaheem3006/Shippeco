@@ -508,9 +508,9 @@ export function ProfitReportPage() {
         ))}
       </div>
 
-      {/* ═══════════════ CHARTS ═══════════════ */}
+      {/* ═══════════════ CHARTS (Commented Out) ═══════════════ */}
+      {/* 
       <div className={s.chartsGrid}>
-        {/* Bar Chart */}
         <div className={s.chartCard}>
           <div className={s.chartTitle}>
             <BarChart3 size={18} style={{ color: '#6366f1' }} />
@@ -519,7 +519,6 @@ export function ProfitReportPage() {
           <MiniBarChart data={rep.chartData} />
         </div>
 
-        {/* Donut Chart */}
         <div className={s.chartCard}>
           <div className={s.chartTitle}>
             <CircleDollarSign size={18} style={{ color: '#6366f1' }} />
@@ -528,6 +527,7 @@ export function ProfitReportPage() {
           <DonutChart summary={rep.summary} />
         </div>
       </div>
+      */}
 
       {/* ═══════════════ TABLE SECTION ═══════════════ */}
       <div className={s.tableCard}>
