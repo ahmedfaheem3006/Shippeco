@@ -87,6 +87,8 @@ function profitColorClass(val: number | null | undefined, isText = true): string
    MINI BAR CHART (Pure CSS — no library)
    ═══════════════════════════════════════════════════ */
 
+/*
+/*
 function MiniBarChart({ data }: { data: ProfitChartPoint[] }) {
   if (!data.length) {
     return <div className={s.emptyState}>لا توجد بيانات كافية للرسم البياني</div>
@@ -100,7 +102,6 @@ function MiniBarChart({ data }: { data: ProfitChartPoint[] }) {
 
   return (
     <>
-      {/* Legend */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
         {[
           { label: 'الإيرادات', color: '#eab308' },
@@ -149,11 +150,13 @@ function MiniBarChart({ data }: { data: ProfitChartPoint[] }) {
     </>
   )
 }
+*/
 
 /* ═══════════════════════════════════════════════════
    DONUT CHART (Pure SVG)
    ═══════════════════════════════════════════════════ */
 
+/*
 function DonutChart({ summary }: { summary: ReturnType<typeof useProfitReportPage>['summary'] }) {
   const total = summary.revenue || 1
   const segments = [

@@ -5,9 +5,8 @@ import {
   BarChart2, FileSpreadsheet, Download, RefreshCw,
   ChevronRight, ChevronLeft, Search, CheckCircle2,
   AlertCircle, AlertTriangle, CreditCard,
-  TrendingUp, Users, Truck, Package,
-  RotateCcw, ArrowUpRight, ArrowDownRight,
-  DollarSign, Activity,
+  Users, Truck, Package,
+  RotateCcw,
 } from 'lucide-react';
 import { formatSar, formatNum, formatPct } from '../utils/reports';
 
@@ -44,6 +43,7 @@ const TONE_MAP: Record<string, { bg: string; border: string; text: string; iconB
 // ═══════════════════════════════════════════════════════════
 //  Small Components
 // ═══════════════════════════════════════════════════════════
+/*
 function MiniBarChart({ data, maxVal }: { data: number[]; maxVal: number }) {
   if (!data.length) return <div className="text-xs text-gray-400">لا توجد بيانات</div>;
   return (
@@ -59,6 +59,7 @@ function MiniBarChart({ data, maxVal }: { data: number[]; maxVal: number }) {
     </div>
   );
 }
+*/
 
 function StatusDot({ status }: { status: string }) {
   const colors: Record<string, string> = {
