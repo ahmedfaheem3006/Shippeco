@@ -8,7 +8,7 @@ import {
   Package,
   RotateCcw,
 } from 'lucide-react';
-import { formatSar, formatNum, formatPct } from '../utils/reports';
+import { formatSar, formatNum } from '../utils/reports';
 
 // ═══════════════════════════════════════════════════════════
 //  Constants
