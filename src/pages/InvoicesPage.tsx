@@ -18,7 +18,7 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw, X, ListTodo, User, Download, FileJson
+  RotateCcw, X, ListTodo, User, Download
 } from 'lucide-react'
 import { useSettingsStore } from '../hooks/useSettingsStore'
 import { downloadInvoicePDF } from '../utils/pdfGenerator'

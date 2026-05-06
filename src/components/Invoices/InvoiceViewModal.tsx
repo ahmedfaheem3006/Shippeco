@@ -15,7 +15,7 @@ import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
 import { downloadInvoicePDF, shareInvoiceWhatsApp } from '../../utils/pdfGenerator'
-import { Download, MessageCircle, Printer } from 'lucide-react'
+import { Download, MessageCircle } from 'lucide-react'
 
 type Props = {
   open: boolean
