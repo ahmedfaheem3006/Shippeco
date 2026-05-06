@@ -303,19 +303,36 @@ async function generateUnpaidClientPDF(
       document.body.appendChild(container);
 
       const canvas = await html2canvas(container, {
-        scale: 2,
+        scale: 3, // Higher resolution for crystal clear text
         useCORS: true,
         logging: false,
+        backgroundColor: '#ffffff',
       });
 
       document.body.removeChild(container);
 
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pdf = new jspdf('p', 'mm', 'a4');
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      // Additional pages if needed
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
       pdf.save(`unpaid-invoices-${client.name}-${today}.pdf`);
       return;
     }
@@ -517,19 +534,36 @@ async function generateClientPDF(
       document.body.appendChild(container);
 
       const canvas = await html2canvas(container, {
-        scale: 2,
+        scale: 3, // Higher resolution
         useCORS: true,
         logging: false,
+        backgroundColor: '#ffffff',
       });
 
       document.body.removeChild(container);
 
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pdf = new jspdf('p', 'mm', 'a4');
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      // Additional pages
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
       pdf.save(`statement-${client.name}-${today}.pdf`);
       return;
     }

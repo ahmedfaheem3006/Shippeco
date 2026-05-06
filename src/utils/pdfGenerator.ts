@@ -289,11 +289,27 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
       const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF
       if (jspdf) {
         const pdf = new jspdf('p', 'mm', 'a4')
-        const imgData = canvas.toDataURL('image/jpeg', 0.95)
+        const imgData = canvas.toDataURL('image/jpeg', 1.0)
         const pdfWidth = pdf.internal.pageSize.getWidth()
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width
+        const pdfHeight = pdf.internal.pageSize.getHeight()
+        const imgWidth = pdfWidth
+        const imgHeight = (canvas.height * imgWidth) / canvas.width
         
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight)
+        let heightLeft = imgHeight
+        let position = 0
+
+        // First page
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST')
+        heightLeft -= pdfHeight
+
+        // Additional pages
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight
+          pdf.addPage()
+          pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST')
+          heightLeft -= pdfHeight
+        }
+
         const fileName = `invoice-${inv.invoice_number || inv.id}.pdf`
         pdf.save(fileName)
         return // Success!
@@ -414,7 +430,7 @@ async function htmlToCanvas(html: string): Promise<HTMLCanvasElement | null> {
     document.body.appendChild(container)
 
     const canvas = await html2canvas(container, {
-      scale: 2,
+      scale: 3,
       useCORS: true,
       logging: false,
     })
