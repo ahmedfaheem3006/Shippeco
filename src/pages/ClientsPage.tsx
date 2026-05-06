@@ -799,7 +799,6 @@ function ClientProfilePage({
   const [invoiceFilter, setInvoiceFilter] = useState<string>("all");
   const [selectedInvs, setSelectedInvs] = useState<string[]>([]);
   const [creatingLink, setCreatingLink] = useState(false);
-  const user = useSettingsStore(s => s.invoiceTemplate);
   const invoiceTemplate = useSettingsStore(s => s.invoiceTemplate);
   const client: ClientRecord | null = profile?.client || null;
   const allInvoices: ClientProfileInvoice[] = profile?.invoices || [];
