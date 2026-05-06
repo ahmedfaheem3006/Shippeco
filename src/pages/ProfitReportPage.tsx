@@ -3,13 +3,11 @@ import { useProfitReportPage } from '../hooks/useProfitReportPage'
 import {
   formatSar,
   formatNum,
-  formatPct,
   formatMonthLabel,
   statusLabel,
   statusColor,
   type ProfitPeriod,
   type ProfitTab,
-  type ProfitChartPoint,
 } from '../utils/profitReport'
 import {
   CircleDollarSign,
