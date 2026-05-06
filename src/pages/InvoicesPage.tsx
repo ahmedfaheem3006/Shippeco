@@ -641,6 +641,9 @@ export function InvoicesPage() {
                           <div className="flex items-center gap-0.5">
                             <ActionBtn icon={Eye} label="عرض" onClick={() => handleView(String(inv.id))} color="blue" />
                             <ActionBtn icon={Edit3} label="تعديل" onClick={() => handleEdit(String(inv.id))} color="yellow" />
+                            {invoiceTemplate && (
+                              <ActionBtn icon={Download} label="تحميل PDF" onClick={() => downloadInvoicePDF(inv, invoiceTemplate)} color="red" />
+                            )}
                             <ActionBtn icon={ListTodo} label="إرسال مهمة" onClick={() => handleOpenTaskModal(inv)} color="gray" />
                             <ActionBtn icon={Plus} label="إضافة بند" onClick={() => handleAddItem(String(inv.id))} color="green" />
                             {inv.phone && (

@@ -7,6 +7,8 @@ import {
 import type { ClientRecord, ClientProfileInvoice } from "../services/dbService";
 import { openWhatsApp } from "../utils/whatsapp";
 import { createPaymentLink } from "../services/paymobService";
+import { downloadInvoicePDF } from "../utils/pdfGenerator";
+import { useSettingsStore } from "../hooks/useSettingsStore";
 import {
   Users,
   Download,
@@ -177,7 +179,7 @@ const EXTENDED_SEGMENT_COLORS: Record<string, string> = {
 /*              PDF GENERATION                    */
 /* ══════════════════════════════════════════════ */
 
-function generateUnpaidClientPDF(
+async function generateUnpaidClientPDF(
   client: ClientRecord,
   unpaidInvoices: ClientProfileInvoice[],
   totalUnpaid: number,
@@ -286,6 +288,42 @@ function generateUnpaidClientPDF(
 </body>
 </html>`;
 
+  // --- Direct Download via html2canvas ---
+  try {
+    const html2canvas = (window as any).html2canvas;
+    const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF;
+
+    if (html2canvas && jspdf) {
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '794px'; // A4 width in pixels
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      document.body.removeChild(container);
+
+      const pdf = new jspdf('p', 'mm', 'a4');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`unpaid-invoices-${client.name}-${today}.pdf`);
+      return;
+    }
+  } catch (err) {
+    console.warn('[PDF Download] Failed, falling back to print window:', err);
+  }
+
+  // Fallback: Original print window method
   const pw = window.open('', '_blank', 'width=900,height=1200');
   if (!pw) { alert('يرجى السماح بالنوافذ المنبثقة'); return; }
   pw.document.write(html);
@@ -293,7 +331,7 @@ function generateUnpaidClientPDF(
   pw.onload = () => { setTimeout(() => pw.print(), 600); };
 }
 
-function generateClientPDF(
+async function generateClientPDF(
   client: ClientRecord,
   invoices: ClientProfileInvoice[],
 ) {
@@ -381,11 +419,8 @@ function generateClientPDF(
     </p>
   </div>
   <div style="text-align:left;">
-    <div style="background:#4F46E5;color:#fff;padding:6px 18px;border-radius:8px;font-size:16px;font-weight:800;margin-bottom:6px;">
-      كشف حساب شامل
-    </div>
-    <p style="font-size:11px;color:#64748B;font-weight:600;">التاريخ: ${today}</p>
-    <p style="font-size:11px;color:#64748B;">إجمالي الفواتير: ${allInvs.length}</p>
+    <div style="font-size:11px;color:#64748B;font-weight:600;">التاريخ: ${today}</div>
+    <div style="font-size:11px;color:#64748B;">إجمالي الفواتير: ${allInvs.length}</div>
   </div>
 </div>
 
@@ -466,6 +501,41 @@ function generateClientPDF(
 
 </body>
 </html>`;
+
+  // --- Direct Download via html2canvas ---
+  try {
+    const html2canvas = (window as any).html2canvas;
+    const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF;
+
+    if (html2canvas && jspdf) {
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '794px'; 
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      document.body.removeChild(container);
+
+      const pdf = new jspdf('p', 'mm', 'a4');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`statement-${client.name}-${today}.pdf`);
+      return;
+    }
+  } catch (err) {
+    console.warn('[PDF Download] Failed, falling back to print window:', err);
+  }
 
   const win = window.open("", "_blank", "width=900,height=1100");
   if (!win) return;
@@ -729,6 +799,8 @@ function ClientProfilePage({
   const [invoiceFilter, setInvoiceFilter] = useState<string>("all");
   const [selectedInvs, setSelectedInvs] = useState<string[]>([]);
   const [creatingLink, setCreatingLink] = useState(false);
+  const user = useSettingsStore(s => s.invoiceTemplate);
+  const invoiceTemplate = useSettingsStore(s => s.invoiceTemplate);
   const client: ClientRecord | null = profile?.client || null;
   const allInvoices: ClientProfileInvoice[] = profile?.invoices || [];
   const monthly: Array<{ month: string; revenue: number; count: number }> =
@@ -755,13 +827,13 @@ function ClientProfilePage({
 
   const maxRevenue = Math.max(...monthly.map((m) => safe(m.revenue)), 1);
 
-  const handlePDF = useCallback(() => {
-    if (client) generateClientPDF(client, allInvoices);
+  const handlePDF = useCallback(async () => {
+    if (client) await generateClientPDF(client, allInvoices);
   }, [client, allInvoices]);
 
-  const handleUnpaidPDF = useCallback(() => {
+  const handleUnpaidPDF = useCallback(async () => {
     if (client && unpaidInvoices.length > 0)
-      generateUnpaidClientPDF(client, unpaidInvoices, totalUnpaid);
+      await generateUnpaidClientPDF(client, unpaidInvoices, totalUnpaid);
   }, [client, unpaidInvoices, totalUnpaid]);
 
   const toggleSelect = (id: string) => {
@@ -1195,6 +1267,7 @@ function ClientProfilePage({
                 <th className="p-3">البوليصة</th>
                 <th className="p-3">الناقل</th>
                 <th className="p-3">المستلم</th>
+                <th className="p-3">تحميل</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
@@ -1247,6 +1320,21 @@ function ClientProfilePage({
                       </td>
                       <td className="p-3 text-xs text-gray-500 max-w-[150px] truncate">
                         {inv.receiver || "—"}
+                      </td>
+                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => {
+                            if (invoiceTemplate) {
+                              void downloadInvoicePDF(inv as any, invoiceTemplate);
+                            } else {
+                              alert("يرجى ضبط قالب الفاتورة في الإعدادات أولاً");
+                            }
+                          }}
+                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 transition-colors"
+                          title="تحميل PDF"
+                        >
+                          <FileDown size={14} />
+                        </button>
                       </td>
                     </tr>
                   );
