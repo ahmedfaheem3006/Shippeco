@@ -279,8 +279,31 @@ ${themeContent}
 }
 
 // ═══ Download PDF ═══
-export function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
+export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
   const html = generateInvoiceHTML(inv, tmpl)
+  
+  // Try direct download using canvas -> jspdf
+  try {
+    const canvas = await htmlToCanvas(html)
+    if (canvas) {
+      const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF
+      if (jspdf) {
+        const pdf = new jspdf('p', 'mm', 'a4')
+        const imgData = canvas.toDataURL('image/jpeg', 0.95)
+        const pdfWidth = pdf.internal.pageSize.getWidth()
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width
+        
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight)
+        const fileName = `invoice-${inv.invoice_number || inv.id}.pdf`
+        pdf.save(fileName)
+        return // Success!
+      }
+    }
+  } catch (err) {
+    console.warn('[PDF Download] Direct canvas download failed, falling back to print window:', err)
+  }
+
+  // Fallback: Original print window method (reliable)
   const printWindow = window.open('', '_blank', 'width=800,height=1100')
   if (!printWindow) {
     alert('يرجى السماح بالنوافذ المنبثقة لتحميل الـ PDF')

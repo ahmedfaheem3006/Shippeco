@@ -13,6 +13,9 @@ import {
 import { createPaymentLink } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
+import { useSettingsStore } from '../../hooks/useSettingsStore'
+import { downloadInvoicePDF, shareInvoiceWhatsApp } from '../../utils/pdfGenerator'
+import { Download, MessageCircle, Printer } from 'lucide-react'
 
 type Props = {
   open: boolean
@@ -65,6 +68,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
 
   const user = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'admin'
+  const invoiceTemplate = useSettingsStore(s => s.invoiceTemplate)
 
   // الفاتورة النهائية المعروضة
   const displayInv = fullInvoice ?? invoice
@@ -607,6 +611,33 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
           <div style={{ flex: 1 }} />
+
+          {displayInv && invoiceTemplate && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => downloadInvoicePDF(displayInv, invoiceTemplate)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs transition-all active:scale-95"
+                title="تحميل PDF"
+              >
+                <Download size={16} />
+                <span className="hidden sm:inline">PDF</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => shareInvoiceWhatsApp(displayInv, invoiceTemplate)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 font-bold text-xs transition-all active:scale-95"
+                title="مشاركة عبر واتساب"
+              >
+                <MessageCircle size={16} />
+                <span className="hidden sm:inline">واتساب</span>
+              </button>
+            </div>
+          )}
+
+          <div style={{ width: 12 }} />
+
           <button type="button" className={styles.btnDanger} onClick={onDelete}>
             <Trash2 size={14} style={{ display: 'inline', marginLeft: 4 }} /> حذف
           </button>

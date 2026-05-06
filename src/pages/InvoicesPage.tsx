@@ -18,8 +18,10 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw, X, ListTodo, User
+  RotateCcw, X, ListTodo, User, Download, FileJson
 } from 'lucide-react'
+import { useSettingsStore } from '../hooks/useSettingsStore'
+import { downloadInvoicePDF } from '../utils/pdfGenerator'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
 type QuickStatus = 'all' | 'unpaid' | 'partial' | 'paid' | 'returned'
@@ -55,6 +57,7 @@ export function InvoicesPage() {
 
   const storeInvoices = useInvoicesStore((s) => s.invoices)
   const user = useAuthStore((s) => s.user)
+  const invoiceTemplate = useSettingsStore((s) => s.invoiceTemplate)
   const [mutating, setMutating] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardKey, setWizardKey] = useState(0)
@@ -718,6 +721,9 @@ export function InvoicesPage() {
                     <ActionBtn icon={Edit3} label="تعديل" onClick={() => handleEdit(String(inv.id))} color="yellow" />
                     <ActionBtn icon={ListTodo} label="إرسال مهمة" onClick={() => handleOpenTaskModal(inv)} color="gray" />
                     <ActionBtn icon={Plus} label="إضافة بند" onClick={() => handleAddItem(String(inv.id))} color="green" />
+                    {invoiceTemplate && (
+                      <ActionBtn icon={Download} label="تحميل PDF" onClick={() => downloadInvoicePDF(inv, invoiceTemplate)} color="red" />
+                    )}
                     {inv.phone && (
                       <ActionBtn icon={MessageSquare} label="واتساب" onClick={() => handleCollect(String(inv.id))} color="whatsapp" disabled={mutating} />
                     )}
