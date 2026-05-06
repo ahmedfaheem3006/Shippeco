@@ -5,7 +5,7 @@ import {
   BarChart2, FileSpreadsheet, Download, RefreshCw,
   ChevronRight, ChevronLeft, Search, CheckCircle2,
   AlertCircle, AlertTriangle, CreditCard,
-  Users, Truck, Package,
+  Package,
   RotateCcw,
 } from 'lucide-react';
 import { formatSar, formatNum, formatPct } from '../utils/reports';
@@ -264,9 +264,9 @@ export function ReportsPage() {
       </div>
       */}
 
-      {/* ═══ تحليل الناقلين + أكبر العملاء ═══ */}
+      {/* ═══ تحليل الناقلين + أكبر العملاء (Commented Out) ═══ */}
+      {/* 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        {/* تحليل الناقلين */}
         <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 p-4 sm:p-6 shadow-sm">
           <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white mb-3 sm:mb-5 flex items-center gap-2">
             <Truck className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-blue-500" /> تحليل الناقلين
@@ -291,7 +291,6 @@ export function ReportsPage() {
           )}
         </div>
 
-        {/* أكبر العملاء */}
         <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 p-4 sm:p-6 shadow-sm">
           <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white mb-3 sm:mb-5 flex items-center gap-2">
             <Users className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-purple-500" /> أكبر العملاء
@@ -319,6 +318,7 @@ export function ReportsPage() {
           )}
         </div>
       </div>
+      */}
 
       {/* ═══ فلاتر الجدول ═══ */}
       <div className="bg-white dark:bg-slate-800 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm flex flex-col gap-3 sm:gap-4">
