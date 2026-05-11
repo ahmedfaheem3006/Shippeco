@@ -1,7 +1,7 @@
 import { useCalculatorPage } from '../hooks/useCalculatorPage'
 import {
   Calculator, Zap, Home, DownloadCloud, UploadCloud, MapPin,
-  Box, CheckCircle2, RotateCcw, AlertCircle, Package, Hash, Weight, Ruler
+  CheckCircle2, RotateCcw, AlertCircle, Package, Hash, X
 } from 'lucide-react'
 import { SearchableSelect } from '../components/shared/SearchableSelect'
 import styles from './NewInvoicePage.module.css'
@@ -89,6 +89,19 @@ export function CalculatorPage() {
                 <div className={`${styles.zoneBadge} ${styles.zoneBadgeEmpty}`}>Zone —</div>
               )}
             </div>
+
+            <div className={styles.field}>
+              <label className={styles.fieldLabel}><Package size={12} /> نوع الشحنة</label>
+              <select
+                className={styles.fieldInput}
+                value={calc.shipmentType}
+                onChange={(e) => calc.setShipmentType(e.target.value as any)}
+              >
+                <option value="non-doc">بضاعة (Non-Document)</option>
+                <option value="doc">مستندات (Document)</option>
+                <option value="envelope">مغلف (Envelope)</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -101,36 +114,80 @@ export function CalculatorPage() {
             <div className={styles.sectionTitle}>الوزن والأبعاد</div>
           </div>
           <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي ({calc.dimUnit === 'metric' ? 'كجم' : 'باوند'})</label>
-              <input
-                className={`${styles.fieldInput} ${styles.fieldMono}`}
-                value={calc.pieces[0].weight}
-                onChange={(e) => calc.updatePiece(0, { weight: e.target.value })}
-                inputMode="decimal"
-                placeholder="0.0"
-                dir="ltr"
-              />
+            <div className="flex justify-between items-center mb-2">
+              <label className={styles.fieldLabel}>الطرود والأوزان</label>
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg border border-gray-200 dark:border-slate-700">
+                <button type="button" onClick={() => calc.setDimUnit('metric')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'metric' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>سم/كجم</button>
+                <button type="button" onClick={() => calc.setDimUnit('imperial')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'imperial' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>إنش/باوند</button>
+              </div>
             </div>
 
-            <div className={styles.field}>
-              <div className="flex justify-between items-center mb-1">
-                <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد ({calc.dimUnit === 'metric' ? 'سم' : 'إنش'}) — ط × ع × ر</label>
-                <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-0.5 rounded-lg border border-gray-200 dark:border-slate-700">
-                  <button type="button" onClick={() => calc.setDimUnit('metric')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'metric' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>سم</button>
-                  <button type="button" onClick={() => calc.setDimUnit('imperial')} className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-colors ${calc.dimUnit === 'imperial' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>إنش</button>
+            {calc.pieces.map((piece, i) => (
+              <div key={i} className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 mb-3 relative">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-gray-500">طرد #{i + 1}</span>
+                  {calc.pieces.length > 1 && (
+                    <button type="button" onClick={() => calc.removePiece(i)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded-md transition-colors"><X size={14}/></button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1 flex flex-col">
+                    <span className="text-[10px] text-gray-400 mb-1">الوزن ({calc.dimUnit === 'metric' ? 'كجم' : 'باوند'})</span>
+                    <input className={`${styles.fieldInput} ${styles.fieldMono} text-sm py-1.5`} value={piece.weight} onChange={(e) => calc.updatePiece(i, { weight: e.target.value })} inputMode="decimal" placeholder="0.0" dir="ltr" />
+                  </div>
+                  <div className="flex-1 flex flex-col">
+                    <span className="text-[10px] text-gray-400 mb-1">الكمية</span>
+                    <input className={`${styles.fieldInput} ${styles.fieldMono} text-sm py-1.5`} value={piece.qty} onChange={(e) => calc.updatePiece(i, { qty: e.target.value })} inputMode="numeric" placeholder="1" dir="ltr" />
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 mb-1">الأبعاد ({calc.dimUnit === 'metric' ? 'سم' : 'إنش'}) ط × ع × ر</span>
+                  <div className={styles.dimsGrid}>
+                    <input className={`${styles.dimsInput} py-1.5`} value={piece.l} onChange={(e) => calc.updatePiece(i, { l: e.target.value })} inputMode="decimal" placeholder="طول" dir="ltr" />
+                    <input className={`${styles.dimsInput} py-1.5`} value={piece.w} onChange={(e) => calc.updatePiece(i, { w: e.target.value })} inputMode="decimal" placeholder="عرض" dir="ltr" />
+                    <input className={`${styles.dimsInput} py-1.5`} value={piece.h} onChange={(e) => calc.updatePiece(i, { h: e.target.value })} inputMode="decimal" placeholder="ارتفاع" dir="ltr" />
+                  </div>
                 </div>
               </div>
-              <div className={styles.dimsGrid}>
-                <input className={styles.dimsInput} value={calc.pieces[0].l} onChange={(e) => calc.updatePiece(0, { l: e.target.value })} inputMode="decimal" placeholder="ط" dir="ltr" />
-                <input className={styles.dimsInput} value={calc.pieces[0].w} onChange={(e) => calc.updatePiece(0, { w: e.target.value })} inputMode="decimal" placeholder="ع" dir="ltr" />
-                <input className={styles.dimsInput} value={calc.pieces[0].h} onChange={(e) => calc.updatePiece(0, { h: e.target.value })} inputMode="decimal" placeholder="ر" dir="ltr" />
-              </div>
-            </div>
+            ))}
+            <button type="button" onClick={calc.addPiece} className="w-full py-2 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl text-gray-500 font-bold text-sm mb-4 hover:border-indigo-500 hover:text-indigo-600 transition-colors bg-white dark:bg-slate-800">+ إضافة طرد آخر</button>
 
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}><Box size={12} /> الكمية (طرود)</label>
-              <input className={`${styles.fieldInput} ${styles.fieldMono}`} value={calc.pieces[0].qty} onChange={(e) => calc.updatePiece(0, { qty: e.target.value })} inputMode="numeric" placeholder="1" dir="ltr" />
+            {/* Surcharges */}
+            <div className="mb-4 bg-gray-50 dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+              <div className="px-3 py-2 bg-gray-100/50 dark:bg-slate-800/50 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+                <AlertCircle size={14} className="text-gray-500" />
+                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">رسوم إضافية يدوية (اختياري)</span>
+              </div>
+              <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold text-gray-600 dark:text-gray-400">
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.elevatedRisk} onChange={(e) => calc.setManualSurcharge('elevatedRisk', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Elevated Risk (خطر مرتفع)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.restrictedDestination} onChange={(e) => calc.setManualSurcharge('restrictedDestination', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Restricted Destination (وجهة مقيدة)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.overweight} onChange={(e) => calc.setManualSurcharge('overweight', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Overweight Piece {'>'} 70kg
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.oversize} onChange={(e) => calc.setManualSurcharge('oversize', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Oversize Piece {'>'} 120cm
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.nonConveyable} onChange={(e) => calc.setManualSurcharge('nonConveyable', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Non-Conveyable (غير قابل للحزام)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.nonStackable} onChange={(e) => calc.setManualSurcharge('nonStackable', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Non-Stackable Pallet (طبلية)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
+                  <input type="checkbox" checked={calc.manualSurcharges.remoteArea} onChange={(e) => calc.setManualSurcharge('remoteArea', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  Remote Area (منطقة نائية)
+                </label>
+              </div>
             </div>
 
             <div className={styles.rangeGroup}>
@@ -175,14 +232,22 @@ export function CalculatorPage() {
               <div className={styles.calcResult}>
                 <span className={styles.calcResultLabel}>الزون الجغرافي</span>
                 <span className={styles.calcResultValue}>Zone {calc.result.zoneLabel}</span>
+                <span className={styles.calcResultLabel}>الوزن الفعلي / الحجمي</span>
+                <span className={styles.calcResultValue} dir="ltr">{calc.result.actualKg} kg / {calc.result.volumetricKg} kg</span>
                 <span className={styles.calcResultLabel}>وزن المحاسبة</span>
-                <span className={styles.calcResultValue}>{calc.result.chargeableKg} كجم</span>
+                <span className={styles.calcResultValue} dir="ltr">{calc.result.chargeableKg} kg</span>
                 <span className={styles.calcResultLabel}>تكلفة DHL الأساسية</span>
                 <span className={styles.calcResultValue}>{calc.result.baseRate.toFixed(2)} ر.س</span>
                 <span className={styles.calcResultLabel}>رسوم الوقود ({calc.result.fuelPct}%)</span>
                 <span className={styles.calcResultValue} style={{ color: '#dc2626' }}>+{calc.result.fuelAmt.toFixed(2)} ر.س</span>
                 <span className={styles.calcResultLabel}>رسوم GoGreen المناخية</span>
                 <span className={styles.calcResultValue} style={{ color: '#16a34a' }}>+{calc.result.goGreen.toFixed(2)} ر.س</span>
+                {calc.result.surcharges.totalSurcharges > 0 && (
+                  <>
+                    <span className={styles.calcResultLabel}>رسوم إضافية (Surcharges)</span>
+                    <span className={styles.calcResultValue} style={{ color: '#d97706' }}>+{calc.result.surcharges.totalSurcharges.toFixed(2)} ر.س</span>
+                  </>
+                )}
                 <span className={styles.calcResultLabel}>صافي الربح المُقدر ({calc.result.profitPct}%)</span>
                 <span className={styles.calcResultValue} style={{ color: '#6366f1' }}>+{calc.result.markup.toFixed(2)} ر.س</span>
               </div>
