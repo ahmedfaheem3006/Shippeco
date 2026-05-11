@@ -431,6 +431,48 @@ export function ReconcilePage() {
     return all.filter((r: any) => r.status === dhlFilter)
   }, [dhlJob.result, dhlFilter])
 
+  const dynamicDhlReport = useMemo(() => {
+    if (!dhlJob.result) return null;
+    const rpt = dhlJob.result;
+    const results = rpt.results as any[];
+    
+    let totalDaftra = 0;
+    let matched = 0;
+    let discrepancy = 0;
+    let notFound = 0;
+
+    results.forEach(r => {
+      const awb = r.airwaybill_number;
+      const manual = dhlManualEdits[awb];
+      const dhlCharge = r.dhl_data?.total_charge || 0;
+      const daftraTotal = manual?.daftraTotal !== undefined && manual?.daftraTotal !== null 
+        ? manual.daftraTotal 
+        : (r.daftra_data?.summary_total || 0);
+      
+      totalDaftra += daftraTotal;
+
+      // Recalculate status for counts if manual edit exists
+      if (manual && manual.daftraTotal !== null) {
+        const diff = Math.abs(daftraTotal - dhlCharge);
+        if (diff < 1.0) matched++;
+        else discrepancy++;
+      } else {
+        if (r.status === 'matched') matched++;
+        else if (r.status === 'discrepancy') discrepancy++;
+        else if (r.status === 'not_found_in_daftra' || r.status === 'daftra_error') notFound++;
+      }
+    });
+
+    return {
+      ...rpt,
+      total_daftra_amount: totalDaftra,
+      total_difference: totalDaftra - rpt.total_dhl_amount,
+      matched,
+      with_discrepancies: discrepancy,
+      not_found: notFound,
+    };
+  }, [dhlJob.result, dhlManualEdits]);
+
   const csvSelectedDetail = useMemo(() => {
     if (!csvDetail.open || !csvDetail.awb || !csvReport) return null
     return csvReport.results.find(r => r.airwaybill_number === csvDetail.awb) ?? null
@@ -551,7 +593,7 @@ export function ReconcilePage() {
      Results Table (shared layout, different data)
      ═══════════════════════════════════════════════════════ */
   const ResultsView = ({ mode }: { mode: 'dhl' | 'csv' }) => {
-    const rpt = mode === 'dhl' ? dhlJob.result : csvReport
+    const rpt = mode === 'dhl' ? dynamicDhlReport : csvReport
     if (!rpt) return null
 
     const activeFilter = mode === 'dhl' ? dhlFilter : csvFilter
@@ -1291,7 +1333,27 @@ export function ReconcilePage() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 w-full md:w-auto">
+                        <button 
+                          onClick={() => {
+                            if (h.details) {
+                              setDhlJob({
+                                jobId: 'history-' + h.id,
+                                status: 'done',
+                                step: 'complete',
+                                progress: 100,
+                                result: h.details,
+                                error: null,
+                                totalTime: 'سجل تاريخي'
+                              });
+                              setHistoryModalOpen(false);
+                            } else {
+                              alert('لا يوجد تفاصيل لهذه المطابقة');
+                            }
+                          }}
+                          className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl border border-blue-100 dark:border-blue-800/30 hover:bg-blue-100 transition-all font-bold text-[10px] whitespace-nowrap"
+                        >
+                          عرض الجدول
+                        </button>
                         <select 
                           value={h.assigned_client_id || ''}
                           onChange={async (e) => {

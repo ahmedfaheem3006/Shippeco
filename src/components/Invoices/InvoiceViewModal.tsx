@@ -166,6 +166,12 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     }
 
     setCreatingLink(true)
+    let newWindow: Window | null = null;
+    // On some mobile browsers, window.open must be called directly in the click event
+    if (window.innerWidth < 768) {
+      newWindow = window.open('', '_blank');
+    }
+
     try {
       const res = await createPaymentLink({
         invoice_id: String(displayInv.id),
@@ -177,7 +183,11 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
 
       if (res.payment_url_full || res.payment_url) {
         const url = res.payment_url_full || res.payment_url
-        window.open(url!, '_blank')
+        if (newWindow) {
+          newWindow.location.href = url!;
+        } else {
+          window.open(url!, '_blank')
+        }
         setLocalToast({ type: 'success', message: 'تم إنشاء رابط الدفع وفتحه بنجاح' })
         
         // Audit: generate paymob link
@@ -220,7 +230,21 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
 
       const url = res.payment_url_full || res.payment_url
       if (url) {
-        await navigator.clipboard.writeText(url)
+        try {
+          await navigator.clipboard.writeText(url)
+        } catch (err) {
+          // Fallback for mobile/non-secure context
+          const textArea = document.createElement("textarea");
+          textArea.value = url;
+          document.body.appendChild(textArea);
+          textArea.select();
+          try {
+            document.execCommand('copy');
+          } catch (copyErr) {
+            console.error('Fallback copy failed', copyErr);
+          }
+          document.body.removeChild(textArea);
+        }
         setCopied(true)
         setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع!' })
         setTimeout(() => setCopied(false), 2000)
