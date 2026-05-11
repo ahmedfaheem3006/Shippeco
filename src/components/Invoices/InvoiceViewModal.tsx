@@ -10,7 +10,7 @@ import {
   ArrowUpRight, ArrowDownRight, User, MapPin, Box, Scale,
   Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check
 } from 'lucide-react'
-import { createPaymentLink } from '../../services/paymobService'
+import { createPaymentLink, checkPayment } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
@@ -25,6 +25,7 @@ type Props = {
   onAddItem: () => void
   onCollect: () => void
   onDelete: () => void
+  onRefresh?: () => void
 }
 
 function getInvItems(inv: Invoice): InvoiceItem[] {
@@ -58,7 +59,7 @@ function StatusBadge({ status }: { status: Invoice['status'] }) {
   return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30"><Circle size={14} /> بانتظار الدفع</span>
 }
 
-export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, onCollect, onDelete }: Props) {
+export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, onCollect, onDelete, onRefresh }: Props) {
   const [loadingFull, setLoadingFull] = useState(false)
   const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)

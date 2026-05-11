@@ -776,6 +776,7 @@ export function InvoicesPage() {
         onEdit={() => { if (viewInvoiceId) { handleEdit(viewInvoiceId); setViewInvoiceId(null) } }}
         onCollect={() => { if (viewInvoiceId) { handleCollect(viewInvoiceId); setViewInvoiceId(null) } }}
         onDelete={() => { if (viewInvoiceId) { handleDelete(viewInvoiceId); setViewInvoiceId(null) } }}
+        onRefresh={() => syncFromDb(false)}
       />
 
       <InvoiceAddItemModal
