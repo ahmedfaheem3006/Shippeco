@@ -14,14 +14,34 @@ import {
 /* ═══ Helpers ═══ */
 async function copyText(value: string) {
   if (!value) return false;
-  try { await navigator.clipboard.writeText(value); return true; } catch {
+  let success = false;
+
+  // Try direct fallback first on mobile
+  if (window.innerWidth < 768) {
     try {
       const el = document.createElement('textarea');
       el.value = value; el.style.position = 'fixed'; el.style.left = '-9999px';
-      document.body.appendChild(el); el.select(); document.execCommand('copy');
-      document.body.removeChild(el); return true;
-    } catch { return false; }
+      document.body.appendChild(el); el.focus(); el.select(); 
+      success = document.execCommand('copy');
+      document.body.removeChild(el);
+    } catch { success = false; }
   }
+
+  if (!success) {
+    try { 
+      await navigator.clipboard.writeText(value); 
+      success = true; 
+    } catch {
+      try {
+        const el = document.createElement('textarea');
+        el.value = value; el.style.position = 'fixed'; el.style.left = '-9999px';
+        document.body.appendChild(el); el.select(); 
+        success = document.execCommand('copy');
+        document.body.removeChild(el);
+      } catch { success = false; }
+    }
+  }
+  return success;
 }
 
 function formatDate(d: string | null | undefined) {

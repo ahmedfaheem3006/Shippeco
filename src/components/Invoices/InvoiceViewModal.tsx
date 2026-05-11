@@ -230,24 +230,51 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
 
       const url = res.payment_url_full || res.payment_url
       if (url) {
-        try {
-          await navigator.clipboard.writeText(url)
-        } catch (err) {
-          // Fallback for mobile/non-secure context
+        let success = false;
+        // On mobile, navigator.clipboard often fails due to strict permission/context rules.
+        // We use the textarea fallback as a primary or reliable secondary.
+        if (window.innerWidth < 768) {
           const textArea = document.createElement("textarea");
           textArea.value = url;
+          textArea.style.position = "fixed";
+          textArea.style.left = "-9999px";
+          textArea.style.top = "0";
           document.body.appendChild(textArea);
+          textArea.focus();
           textArea.select();
           try {
-            document.execCommand('copy');
+            success = document.execCommand('copy');
           } catch (copyErr) {
-            console.error('Fallback copy failed', copyErr);
+            console.error('Mobile fallback copy failed', copyErr);
           }
           document.body.removeChild(textArea);
         }
-        setCopied(true)
-        setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع!' })
-        setTimeout(() => setCopied(false), 2000)
+
+        if (!success) {
+          try {
+            await navigator.clipboard.writeText(url);
+            success = true;
+          } catch (err) {
+            const textArea = document.createElement("textarea");
+            textArea.value = url;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+              success = document.execCommand('copy');
+            } catch (copyErr) {
+              console.error('Final fallback copy failed', copyErr);
+            }
+            document.body.removeChild(textArea);
+          }
+        }
+        
+        if (success) {
+          setCopied(true)
+          setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع!' })
+          setTimeout(() => setCopied(false), 2000)
+        } else {
+          setLocalToast({ type: 'error', message: 'فشل النسخ تلقائياً، يرجى نسخ الرابط يدوياً' })
+        }
         
         // Audit
         try {
@@ -619,6 +646,42 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             )}
             Paymob
           </button>
+
+          {displayInv.status === 'unpaid' && (
+            <button 
+              type="button" 
+              title="فحص حالة الدفع"
+              onClick={async () => {
+                setCreatingLink(true);
+                try {
+                  // Find if there's a pending link for this invoice in the backend
+                  const res = await api.get<any>(`/paymob/links?status=pending&limit=10`);
+                  const links = res?.data?.links || res?.links || [];
+                  const link = links.find((l: any) => Number(l.invoice_id) === Number(displayInv.id));
+                  
+                  if (link && link.paymob_order_id) {
+                    const check = await checkPayment(link.paymob_order_id);
+                    if (check.paid) {
+                      setLocalToast({ type: 'success', message: '✅ تم تأكيد الدفع وتحديث الفاتورة!' });
+                      if (onRefresh) onRefresh();
+                    } else {
+                      setLocalToast({ type: 'error', message: '⏳ لم يتم الدفع بعد عبر هذا الرابط' });
+                    }
+                  } else {
+                    setLocalToast({ type: 'error', message: 'لا يوجد رابط دفع معلق لهذه الفاتورة' });
+                  }
+                } catch (e) {
+                  setLocalToast({ type: 'error', message: 'فشل فحص الحالة' });
+                } finally {
+                  setCreatingLink(false);
+                }
+              }}
+              disabled={creatingLink}
+              className="p-2.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-xl border border-amber-200 dark:border-amber-800/30 hover:bg-amber-100 transition-all disabled:opacity-50"
+            >
+              {creatingLink ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            </button>
+          )}
 
           <button 
             type="button" 
