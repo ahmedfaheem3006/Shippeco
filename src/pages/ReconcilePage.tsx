@@ -205,6 +205,31 @@ export function ReconcilePage() {
 
   const user = useAuthStore((s) => s.user)
 
+  // ── History Modal ──
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
+  const [historyList, setHistoryList] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  const loadHistory = async () => {
+    setHistoryLoading(true)
+    try {
+      const data = await reconcileApiService.getHistory(50, 0)
+      setHistoryList(data)
+      // Also load users list for the client assignment dropdown
+      if (usersList.length === 0) {
+        try {
+          const { api } = await import('../utils/apiClient')
+          const uRes = await api.get('/users/list')
+          setUsersList(Array.isArray(uRes) ? uRes : uRes.data || [])
+        } catch {}
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
   const handleOpenTaskModal = async (platData: any) => {
     if (!platData || (!platData.id && !platData.invoice_id)) {
       window.alert('لا يوجد معرف للفاتورة في قاعدة البيانات');
@@ -570,6 +595,11 @@ export function ReconcilePage() {
           <FinCard value={formatCurrency(platAmount)} label={platAmountLabel} colorClass="text-indigo-600 dark:text-indigo-400" />
           <FinCard value={formatCurrency(Math.abs(rpt.total_difference))} label="الفرق 📊"
             colorClass={rpt.total_difference > 0.01 ? 'text-red-600' : rpt.total_difference < -0.01 ? 'text-green-600' : 'text-yellow-600'} highlight />
+          <FinCard 
+            value={rpt.total_dhl_amount > 0 ? ((platAmount - rpt.total_dhl_amount) / rpt.total_dhl_amount * 100).toFixed(1) + '%' : '0%'} 
+            label="هامش الربح الكلي %" 
+            colorClass={(platAmount - rpt.total_dhl_amount) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} 
+          />
         </div>
 
         {/* Filter */}
@@ -593,7 +623,8 @@ export function ReconcilePage() {
                   <th className="p-3">المنشأ</th>
                   <th className="p-3">الوجهة</th>
                   <th className="p-3">العميل</th>
-                  <th className="p-3">وزن DHL</th>
+                  <th className="p-3">الوزن الفعلي</th>
+                  <th className="p-3">وزن الفوترة</th>
                   <th className="p-3 text-yellow-600">سعر DHL</th>
                   <th className="p-3 text-indigo-600">{isDhl ? 'سعر دفترة' : 'سعر المنصة'}</th>
                   <th className="p-3">الفرق</th>
@@ -611,10 +642,13 @@ export function ReconcilePage() {
                   const platTotal = isDhl
                     ? (manual?.daftraTotal ?? r.daftra_data?.summary_total)
                     : platData?.summary_total
-                  const diff = r.total_financial_difference ?? 0
+                  
+                  const dhlCharge = dhlData?.total_charge || 0
+                  const diff = platTotal != null ? platTotal - dhlCharge : (r.total_financial_difference ?? 0)
                   const diffClass = diff > 0.01 ? 'text-green-600' : diff < -0.01 ? 'text-red-600' : 'text-gray-400'
                   const diffText = Math.abs(diff) > 0.01 ? `${diff > 0 ? '+' : ''}${formatCurrency(diff)}` : '—'
-                  const pm = r.profit_margin_pct
+                  
+                  const pm = dhlCharge > 0 && platTotal != null ? ((platTotal - dhlCharge) / dhlCharge * 100) : r.profit_margin_pct
                   const clientName = isDhl ? (manual?.client || r.daftra_data?.client_name || '—') : (platData?.client_name || '—')
                   const payStatus = isDhl ? (manual?.paymentStatus || r.daftra_data?.payment_status) : platData?.payment_status
 
@@ -627,7 +661,8 @@ export function ReconcilePage() {
                       <td className="p-3"><span className="bg-gray-50 dark:bg-slate-900 px-2 py-1 rounded text-xs font-bold border border-gray-200 dark:border-slate-700">{dhlData?.destination_code || '—'}</span></td>
                       <td className="p-3 text-sm font-bold max-w-[140px] truncate" title={clientName}>{clientName}</td>
                       <td className="p-3 text-sm text-gray-500">{dhlData?.weight_kg || 0} كجم</td>
-                      <td className="p-3 font-bold text-yellow-600">{formatCurrency(dhlData?.total_charge)}</td>
+                      <td className="p-3 text-sm font-bold text-gray-700 dark:text-gray-300">{dhlData?.chargeable_weight || dhlData?.weight_kg || 0} كجم</td>
+                      <td className="p-3 font-bold text-yellow-600">{formatCurrency(dhlCharge)}</td>
                       <td className="p-3 font-bold text-indigo-600">{platTotal != null ? formatCurrency(platTotal) : '—'}</td>
                       <td className={`p-3 font-black ${diffClass}`}>{diffText}</td>
                       <td className="p-3 text-sm">{pm != null ? <span className={`font-bold ${pm >= 0 ? 'text-green-600' : 'text-red-600'}`}>{pm > 0 ? '+' : ''}{typeof pm === 'number' ? pm.toFixed(1) : pm}%</span> : '—'}</td>
@@ -652,7 +687,7 @@ export function ReconcilePage() {
                   )
                 }) : (
                   <tr>
-                    <td colSpan={13} className="p-16 text-center text-gray-400">
+                    <td colSpan={14} className="p-16 text-center text-gray-400">
                       <Search size={40} className="mx-auto mb-3 opacity-30" />
                       <p className="font-bold text-lg">لا توجد نتائج في هذه الفئة</p>
                     </td>
@@ -711,6 +746,15 @@ export function ReconcilePage() {
             {backfillLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             استعادة البولايص المفقودة
           </button>
+
+          <button 
+            className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 border border-indigo-100 dark:border-indigo-800/30 hover:bg-indigo-600 hover:text-white rounded-xl shadow-sm transition-all"
+            onClick={() => { setHistoryModalOpen(true); void loadHistory(); }}
+          >
+            <ListTodo size={16} />
+            الفواتير السابقة
+          </button>
+
 
           <button className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-gray-500 bg-gray-50 dark:bg-slate-900 hover:text-red-600 hover:bg-red-50 rounded-xl border border-gray-200 dark:border-slate-700 transition-all disabled:opacity-50"
             onClick={resetAll} disabled={csvBusy || dhlJob.status === 'uploading'}>
@@ -1104,6 +1148,171 @@ export function ReconcilePage() {
                 </div>
                 <p className="text-[10px] text-gray-400 text-center font-medium">Ctrl + Enter للإرسال السريع</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Edit Modal (Manual Override) ─── */}
+      {editModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setEditModal({ open: false, awb: null })} />
+          <div className="relative bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="p-5 border-b border-gray-100 dark:border-slate-700/50 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <Edit3 size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">تعديل يدوي</h3>
+                  <p className="text-[11px] text-gray-500 font-medium font-mono mt-0.5">{editModal.awb}</p>
+                </div>
+              </div>
+              <button onClick={() => setEditModal({ open: false, awb: null })} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500">اسم العميل</label>
+                <input value={editFields.client} onChange={e => setEditFields(p => ({ ...p, client: e.target.value }))}
+                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500">الوزن (كجم)</label>
+                <input type="number" value={editFields.weight} onChange={e => setEditFields(p => ({ ...p, weight: e.target.value }))}
+                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold font-mono" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500">سعر دفترة (ر.س)</label>
+                <input type="number" value={editFields.daftraTotal} onChange={e => setEditFields(p => ({ ...p, daftraTotal: e.target.value }))}
+                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold font-mono" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500">حالة الدفع</label>
+                <select value={editFields.paymentStatus} onChange={e => setEditFields(p => ({ ...p, paymentStatus: e.target.value }))}
+                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold">
+                  <option value="">-- غير محدد --</option>
+                  <option value="0">غير مدفوع</option>
+                  <option value="1">جزئي</option>
+                  <option value="2">مدفوع</option>
+                </select>
+              </div>
+
+              {/* Live Preview */}
+              {editFields.daftraTotal && editModal.awb && (() => {
+                const r = dhlJob.result?.results?.find((x: any) => x.airwaybill_number === editModal.awb)
+                const dhlCharge = r?.dhl_data?.total_charge || 0
+                const newDaftra = parseFloat(editFields.daftraTotal) || 0
+                const newDiff = newDaftra - dhlCharge
+                const newMargin = dhlCharge > 0 ? ((newDaftra - dhlCharge) / dhlCharge * 100) : 0
+                return (
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/30 rounded-xl p-3 space-y-1">
+                    <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">معاينة مباشرة</p>
+                    <div className="flex justify-between text-xs font-bold">
+                      <span className="text-gray-500">سعر DHL:</span>
+                      <span className="text-yellow-600 font-mono">{formatCurrency(dhlCharge)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-bold">
+                      <span className="text-gray-500">سعر دفترة:</span>
+                      <span className="text-indigo-600 font-mono">{formatCurrency(newDaftra)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-bold">
+                      <span className="text-gray-500">الفرق:</span>
+                      <span className={`font-mono ${newDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>{newDiff > 0 ? '+' : ''}{formatCurrency(newDiff)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-bold">
+                      <span className="text-gray-500">الهامش:</span>
+                      <span className={`font-mono ${newMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{newMargin > 0 ? '+' : ''}{newMargin.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={saveEdit}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all">
+                  حفظ التعديلات
+                </button>
+                <button onClick={() => setEditModal({ open: false, awb: null })}
+                  className="px-6 py-3 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-slate-600 transition-all">
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── History Modal (Previous Invoices) ─── */}
+      {historyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHistoryModalOpen(false)} />
+          <div className="relative bg-white dark:bg-slate-800 w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700">
+            <div className="p-5 border-b border-gray-100 dark:border-slate-700/50 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <ListTodo size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">الفواتير السابقة</h3>
+                  <p className="text-[11px] text-gray-500 font-medium mt-0.5">سجل مطابقات فواتير DHL السابقة المحفوظة في قاعدة البيانات</p>
+                </div>
+              </div>
+              <button onClick={() => setHistoryModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30 dark:bg-slate-900/20">
+              {historyLoading ? (
+                <div className="flex justify-center items-center py-12">
+                  <Loader2 size={32} className="animate-spin text-indigo-500" />
+                </div>
+              ) : historyList.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 font-bold">لا يوجد فواتير سابقة</div>
+              ) : (
+                <div className="space-y-3">
+                  {historyList.map(h => (
+                    <div key={h.id} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-bold text-sm text-gray-900 dark:text-white">{h.file_name}</span>
+                          <span className="text-[10px] bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-400 font-mono">{new Date(h.upload_date).toLocaleString('ar-EG')}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-xs font-bold text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-1.5"><span className="text-indigo-500">DHL:</span> <span className="font-mono">{Number(h.total_dhl_amount).toFixed(2)} ر.س</span></div>
+                          <div className="flex items-center gap-1.5"><span className="text-blue-500">دفترة:</span> <span className="font-mono">{Number(h.total_platform_amount).toFixed(2)} ر.س</span></div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-500">الفرق:</span> 
+                            <span className={`font-mono ${Number(h.difference) < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                              {Number(h.difference) > 0 ? '+' : ''}{Number(h.difference).toFixed(2)} ر.س
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 w-full md:w-auto">
+                        <select 
+                          value={h.assigned_client_id || ''}
+                          onChange={async (e) => {
+                            const val = e.target.value ? Number(e.target.value) : null;
+                            try {
+                              await reconcileApiService.assignClient(h.id, val);
+                              setHistoryList(prev => prev.map(x => x.id === h.id ? { ...x, assigned_client_id: val } : x));
+                            } catch(err) { console.error(err); alert('فشل تعيين العميل'); }
+                          }}
+                          className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold min-w-[150px]"
+                        >
+                          <option value="">-- تعيين عميل --</option>
+                          {usersList.map(u => (
+                            <option key={u.id} value={u.id}>{u.full_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

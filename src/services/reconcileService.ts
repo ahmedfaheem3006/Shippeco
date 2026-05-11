@@ -80,4 +80,26 @@ export const reconcileApiService = {
     const json = await res.json();
     return json?.data ?? json;
   },
+
+  /** Get Reconciliation History */
+  async getHistory(limit = 50, offset = 0): Promise<any[]> {
+    const res = await fetch(`${API}/reconcile/history?limit=${limit}&offset=${offset}`, {
+      headers: getHeaders(false),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error?.message || 'Failed to fetch history');
+    return json?.data ?? json;
+  },
+
+  /** Assign Client to History Record */
+  async assignClient(id: number, clientId: number | null): Promise<any> {
+    const res = await fetch(`${API}/reconcile/history/${id}/assign`, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: JSON.stringify({ clientId }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error?.message || 'Failed to assign client');
+    return json?.data ?? json;
+  },
 };
