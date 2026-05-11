@@ -51,7 +51,7 @@ type DhlJobState = {
   progress: number
   error: string | null
   result: any | null
-  totalTime: number | null
+  totalTime: number | string | null
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -613,7 +613,7 @@ export function ReconcilePage() {
             <span className="text-sm font-bold text-gray-500">{rpt.filename}</span>
             {isDhl && dhlJob.totalTime && (
               <span className="px-3 py-1 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 text-green-600 rounded-lg text-xs font-bold">
-                ⚡ تم في {dhlJob.totalTime} ثانية
+                ⚡ {typeof dhlJob.totalTime === 'number' ? `تم في ${dhlJob.totalTime} ثانية` : dhlJob.totalTime}
               </span>
             )}
           </div>
@@ -1333,6 +1333,7 @@ export function ReconcilePage() {
                           </div>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2 w-full md:w-auto">
                         <button 
                           onClick={() => {
                             if (h.details) {
