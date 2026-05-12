@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import type { Invoice, InvoiceItem } from '../../utils/models'
 import { invoiceService } from '../../services/invoiceService'
 import { enrichSingleInvoice } from '../../services/dbService'
