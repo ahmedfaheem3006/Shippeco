@@ -301,7 +301,7 @@ export function PaymobLinksPage() {
         const link = links.find(l => String(l.paymob_order_id) === String(orderId));
         
         // Try to determine the target invoice ID
-        let targetInvoiceId = link?.invoice_id;
+        let targetInvoiceId: string | number | null | undefined = link?.invoice_id;
         
         // Fallback: If invoice_id is missing, try to extract it from the description or special reference
         if (!targetInvoiceId && link?.description) {
