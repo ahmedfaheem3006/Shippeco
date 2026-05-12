@@ -658,6 +658,13 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
                   if (link && link.paymob_order_id) {
                     const check = await checkPayment(link.paymob_order_id);
                     if (check.paid) {
+                      // Explicitly call mark-paid to ENSURE the database is updated
+                      await api.post(`/invoices/${displayInv.id}/mark-paid`, {
+                        amount: check.paid_amount || displayInv.total,
+                        payment_method: 'paymob',
+                        notes: `Paymob confirmed (Order: ${link.paymob_order_id})`
+                      });
+                      
                       setLocalToast({ type: 'success', message: '✅ تم تأكيد الدفع وتحديث الفاتورة!' });
                       void loadFull();
                       if (onRefresh) onRefresh();
