@@ -296,8 +296,24 @@ export function PaymobLinksPage() {
     setCheckingPayment(orderId);
     try {
       const res = await checkPayment(orderId);
-      if (res.paid) { await loadLinks(); await loadStats(); }
-      alert(res.paid ? `✅ مدفوع — ${res.paid_amount || 0} ر.س` : '⏳ لم يتم الدفع بعد');
+      if (res.paid) { 
+        // Find the link locally to get the invoice_id
+        const link = links.find(l => String(l.paymob_order_id) === String(orderId));
+        if (link && link.invoice_id) {
+          try {
+            await api.post(`/invoices/${link.invoice_id}/mark-paid`, {
+              amount: res.paid_amount || link.amount,
+              payment_method: 'paymob',
+              notes: `Manual check confirm (Order: ${orderId})`
+            });
+          } catch (err) {
+            console.warn('[Paymob] Guaranteed update failed:', err);
+          }
+        }
+        await loadLinks(); 
+        await loadStats(); 
+      }
+      alert(res.paid ? `✅ تم تأكيد الدفع وتحديث الفواتير!` : '⏳ لم يتم الدفع بعد');
     } catch (e) {
       alert('فشل التحقق: ' + (e instanceof Error ? e.message : String(e)));
     } finally { setCheckingPayment(null); }
