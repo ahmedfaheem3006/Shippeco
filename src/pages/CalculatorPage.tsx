@@ -4,6 +4,7 @@ import {
   CheckCircle2, RotateCcw, AlertCircle, Package, Hash, X
 } from 'lucide-react'
 import { SearchableSelect } from '../components/shared/SearchableSelect'
+import { SURCHARGE_DEFS, computeAutoSurcharges } from '../utils/surcharges'
 import styles from './NewInvoicePage.module.css'
 
 export function CalculatorPage() {
@@ -152,43 +153,7 @@ export function CalculatorPage() {
             ))}
             <button type="button" onClick={calc.addPiece} className="w-full py-2 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl text-gray-500 font-bold text-sm mb-4 hover:border-indigo-500 hover:text-indigo-600 transition-colors bg-white dark:bg-slate-800">+ إضافة طرد آخر</button>
 
-            {/* Surcharges */}
-            <div className="mb-4 bg-gray-50 dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-              <div className="px-3 py-2 bg-gray-100/50 dark:bg-slate-800/50 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-                <AlertCircle size={14} className="text-gray-500" />
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">رسوم إضافية يدوية (اختياري)</span>
-              </div>
-              <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold text-gray-600 dark:text-gray-400">
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.elevatedRisk} onChange={(e) => calc.setManualSurcharge('elevatedRisk', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Elevated Risk (خطر مرتفع)
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.restrictedDestination} onChange={(e) => calc.setManualSurcharge('restrictedDestination', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Restricted Destination (وجهة مقيدة)
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.overweight} onChange={(e) => calc.setManualSurcharge('overweight', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Overweight Piece {'>'} 70kg
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.oversize} onChange={(e) => calc.setManualSurcharge('oversize', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Oversize Piece {'>'} 120cm
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.nonConveyable} onChange={(e) => calc.setManualSurcharge('nonConveyable', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Non-Conveyable (غير قابل للحزام)
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.nonStackable} onChange={(e) => calc.setManualSurcharge('nonStackable', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Non-Stackable Pallet (طبلية)
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors">
-                  <input type="checkbox" checked={calc.manualSurcharges.remoteArea} onChange={(e) => calc.setManualSurcharge('remoteArea', e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  Remote Area (منطقة نائية)
-                </label>
-              </div>
-            </div>
+            {/* Surcharges moved to Result Panel */}
 
             <div className={styles.rangeGroup}>
               <div className={styles.rangeHeader}>
@@ -219,46 +184,133 @@ export function CalculatorPage() {
         </div>
       </div>
 
-      {calc.result && (
-        <div className={styles.section} style={{ animation: 'fadeSlideUp 0.3s ease-out' }}>
-          <div className={styles.sectionHeader}>
-            <div className={styles.sectionIcon} style={{ background: '#f0fdf4', color: '#16a34a' }}>
-              <CheckCircle2 size={18} />
-            </div>
-            <div className={styles.sectionTitle}>نتيجة الحساب التفصيلية</div>
-          </div>
-          <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
-            <div className={styles.calcPanel}>
-              <div className={styles.calcResult}>
-                <span className={styles.calcResultLabel}>الزون الجغرافي</span>
-                <span className={styles.calcResultValue}>Zone {calc.result.zoneLabel}</span>
-                <span className={styles.calcResultLabel}>الوزن الفعلي / الحجمي</span>
-                <span className={styles.calcResultValue} dir="ltr">{calc.result.actualKg} kg / {calc.result.volumetricKg} kg</span>
-                <span className={styles.calcResultLabel}>وزن المحاسبة</span>
-                <span className={styles.calcResultValue} dir="ltr">{calc.result.chargeableKg} kg</span>
-                <span className={styles.calcResultLabel}>تكلفة DHL الأساسية</span>
-                <span className={styles.calcResultValue}>{calc.result.baseRate.toFixed(2)} ر.س</span>
-                <span className={styles.calcResultLabel}>رسوم الوقود ({calc.result.fuelPct}%)</span>
-                <span className={styles.calcResultValue} style={{ color: '#dc2626' }}>+{calc.result.fuelAmt.toFixed(2)} ر.س</span>
-                <span className={styles.calcResultLabel}>رسوم GoGreen المناخية</span>
-                <span className={styles.calcResultValue} style={{ color: '#16a34a' }}>+{calc.result.goGreen.toFixed(2)} ر.س</span>
-                {calc.result.surcharges.totalSurcharges > 0 && (
-                  <>
-                    <span className={styles.calcResultLabel}>رسوم إضافية (Surcharges)</span>
-                    <span className={styles.calcResultValue} style={{ color: '#d97706' }}>+{calc.result.surcharges.totalSurcharges.toFixed(2)} ر.س</span>
-                  </>
-                )}
-                <span className={styles.calcResultLabel}>صافي الربح المُقدر ({calc.result.profitPct}%)</span>
-                <span className={styles.calcResultValue} style={{ color: '#6366f1' }}>+{calc.result.markup.toFixed(2)} ر.س</span>
+      {calc.result && (() => {
+        const { autoState, counts } = computeAutoSurcharges(calc.result.foreignCountry, calc.result.pieces, calc.result.dimUnit)
+        
+        let surchargeTotal = 0;
+        const activeSurcharges: Record<string, boolean> = {};
+
+        SURCHARGE_DEFS.forEach(def => {
+          let autoTriggered = false;
+          if (def.type === 'auto') {
+            autoTriggered = autoState[def.id];
+          }
+          const isChecked = calc.surchargesState[def.id] !== undefined ? calc.surchargesState[def.id] : autoTriggered;
+          activeSurcharges[def.id] = isChecked;
+
+          if (isChecked) {
+            const count = def.perPiece ? ((counts as any)[def.id] || 1) : 1;
+            surchargeTotal += def.feeBase * count;
+          }
+        });
+
+        const grandTotal = calc.result.total + surchargeTotal;
+
+        return (
+          <div className={styles.section} style={{ animation: 'fadeSlideUp 0.3s ease-out' }}>
+            <div className={styles.sectionHeader}>
+              <div className={styles.sectionIcon} style={{ background: '#f0fdf4', color: '#16a34a' }}>
+                <CheckCircle2 size={18} />
               </div>
-              <div className={styles.calcTotal}>
-                <span className={styles.calcTotalLabel}>السعر النهائي للعميل</span>
-                <span className={styles.calcTotalValue}>{calc.result.total.toFixed(2)} ر.س</span>
+              <div className={styles.sectionTitle}>نتيجة الحساب التفصيلية</div>
+            </div>
+            <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
+              <div className={styles.calcPanel}>
+                <div className={styles.calcResult}>
+                  <span className={styles.calcResultLabel}>الزون الجغرافي</span>
+                  <span className={styles.calcResultValue}>Zone {calc.result.zoneLabel}</span>
+                  <span className={styles.calcResultLabel}>الوزن الفعلي / الحجمي</span>
+                  <span className={styles.calcResultValue} dir="ltr">{calc.result.actualKg} kg / {calc.result.volumetricKg} kg</span>
+                  <span className={styles.calcResultLabel}>وزن المحاسبة</span>
+                  <span className={styles.calcResultValue} dir="ltr">{calc.result.chargeableKg} kg</span>
+                  <span className={styles.calcResultLabel}>تكلفة DHL الأساسية</span>
+                  <span className={styles.calcResultValue}>{calc.result.baseRate.toFixed(2)} ر.س</span>
+                  <span className={styles.calcResultLabel}>رسوم الوقود ({calc.result.fuelPct}%)</span>
+                  <span className={styles.calcResultValue} style={{ color: '#dc2626' }}>+{calc.result.fuelAmt.toFixed(2)} ر.س</span>
+                  <span className={styles.calcResultLabel}>رسوم GoGreen المناخية</span>
+                  <span className={styles.calcResultValue} style={{ color: '#16a34a' }}>+{calc.result.goGreen.toFixed(2)} ر.س</span>
+                  <span className={styles.calcResultLabel}>صافي الربح المُقدر ({calc.result.profitPct}%)</span>
+                  <span className={styles.calcResultValue} style={{ color: '#6366f1' }}>+{calc.result.markup.toFixed(2)} ر.س</span>
+                </div>
+                
+                {/* Final Final Base Price before Surcharges (as in the new design) */}
+                <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-4 text-center mt-4">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">السعر الأساسي (قبل الرسوم الإضافية)</div>
+                  <div className="text-3xl font-bold text-amber-500 font-mono">
+                    <span className="text-lg text-gray-400 mr-1 font-sans">ر.س</span>
+                    {calc.result.total.toFixed(2)}
+                  </div>
+                </div>
+
+                {/* Surcharges Section inside Result Panel */}
+                <div className="mt-5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
+                    <div className="w-3 h-0.5 bg-red-600 rounded-full"></div>
+                    رسوم إضافية
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {SURCHARGE_DEFS.map(def => {
+                      let autoTriggered = false;
+                      if (def.type === 'auto') autoTriggered = autoState[def.id];
+                      const isChecked = activeSurcharges[def.id];
+                      const count = def.perPiece ? ((counts as any)[def.id] || 0) : null;
+                      const feeBase = def.feeBase;
+                      const amountStr = (def.perPiece && count && count > 1) 
+                        ? `${feeBase.toFixed(2)} × ${count} = ${(feeBase * count).toFixed(2)} ر.س`
+                        : `${feeBase.toFixed(2)} ر.س`;
+
+                      return (
+                        <div 
+                          key={def.id}
+                          onClick={() => calc.toggleSurcharge(def.id)}
+                          className={`flex items-center gap-3 bg-white dark:bg-slate-900 border rounded-xl p-3 cursor-pointer transition-colors select-none ${
+                            isChecked 
+                              ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10' 
+                              : autoTriggered 
+                                ? 'border-amber-500 bg-amber-50/30 dark:bg-amber-900/10'
+                                : 'border-gray-200 dark:border-slate-700 hover:border-red-300'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 min-w-[20px] rounded border-2 flex items-center justify-center transition-colors ${
+                            isChecked ? 'bg-red-600 border-red-600 text-white' : 
+                            autoTriggered ? 'border-amber-500 text-transparent' : 'border-gray-300 text-transparent'
+                          }`}>
+                            <CheckCircle2 size={14} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-[13px] font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                              {def.nameAr} <span className="text-gray-400 font-normal text-[11px]">{def.name}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">
+                              {def.desc} {count !== null && count > 0 && <span className="font-bold text-gray-700 dark:text-gray-300 ml-1">— {count} طرد</span>}
+                            </div>
+                          </div>
+                          {autoTriggered && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 whitespace-nowrap">
+                              تلقائي
+                            </span>
+                          )}
+                          <div className="text-[13px] font-bold text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                            {amountStr}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-slate-900 to-black rounded-xl p-6 text-center mt-4 border border-gray-800 shadow-xl">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">السعر الإجمالي للعميل (شامل الرسوم)</div>
+                  <div className="text-4xl font-bold text-amber-400 font-mono tracking-tight">
+                    <span className="text-lg text-gray-500 mr-1 font-sans">ر.س</span>
+                    {grandTotal.toFixed(2)}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

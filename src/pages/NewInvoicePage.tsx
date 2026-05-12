@@ -8,6 +8,7 @@ import { COUNTRIES } from '../legacy/dhlData'
 import { computeLegacyPrice, getZoneInfoLegacy, type LegacyService } from '../utils/dhlLegacyPricing'
 import { invoiceService } from '../services/invoiceService'
 import { computeVolumetricWeightKg, toKg, type UnitSystem } from '../utils/chargeableWeight'
+import { SURCHARGE_DEFS, computeAutoSurcharges } from '../utils/surcharges'
 
 import styles from './NewInvoicePage.module.css'
 import {
@@ -16,7 +17,7 @@ import {
   Box, Truck, AlertCircle, CheckCircle2,
   ArrowRight, FileText, User, CreditCard,
   Package, Hash, Calendar, ClipboardList,
-  Banknote, Weight, Ruler
+  Banknote, Weight, Ruler, RotateCcw
 } from 'lucide-react'
 import { SearchableClientInput } from '../components/shared/SearchableClientInput'
 import { SearchableSelect } from '../components/shared/SearchableSelect'
@@ -100,6 +101,7 @@ export function NewInvoicePage() {
   const [calcDimUnit, setCalcDimUnit] = useState<UnitSystem>('metric')
   const [calcResult, setCalcResult] = useState<CalcResult | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
+  const [surchargesState, setSurchargesState] = useState<Record<string, boolean>>({})
   const priceRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -134,7 +136,7 @@ export function NewInvoicePage() {
   )
 
   // ─── Handlers ───
-  const handleCalcAndContinue = useCallback(() => {
+  const handleCalculate = useCallback(() => {
     setCalcError(null)
     const actualW = Number(calcWeight) || 0
     if (!actualW) { setCalcError('أدخل الوزن'); return }
@@ -162,29 +164,71 @@ export function NewInvoicePage() {
       return
     }
 
+    setSurchargesState((prev) => {
+      const next = { ...prev };
+      ['elevated_risk', 'restricted_dest', 'overweight', 'oversize', 'non_conveyable'].forEach((id) => {
+        delete next[id];
+      });
+      return next;
+    });
+
     const res: CalcResult = {
       baseRate: r.baseRate, fuelAmt: r.fuelAmt, goGreen: r.goGreen, markup: r.markup, total: r.total, chargeableWeight: round2(chargeW), zoneLabel: r.zoneInfo.label, zoneName: r.zoneInfo.name, fuelPct: calcFuelPct, profitPct: calcMarginPct,
     }
     setCalcResult(res)
+  }, [calcWeight, calcLength, calcWidth, calcHeight, calcQty, legacyService, routeFromValue, routeToValue, calcFuelPct, calcMarginPct, calcDimUnit])
+
+  const toggleSurcharge = useCallback((id: string) => {
+    setSurchargesState((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const handleContinue = useCallback(() => {
+    if (!calcResult) return;
+    
+    const actualW = Number(calcWeight) || 0
+    const l = Number(calcLength) || 0; const w = Number(calcWidth) || 0; const h = Number(calcHeight) || 0
+    const qty = Math.max(1, Math.floor(Number(calcQty) || 1))
+    const hasDims = l > 0 && w > 0 && h > 0
+
+    // Compute surcharges total again for the final draft
+    const foreignCountry = legacyService === 'export' ? routeToValue : routeFromValue;
+    const pieces = [{ qty: String(qty), weight: String(actualW), l: String(l), w: String(w), h: String(h) }];
+    const { autoState, counts } = computeAutoSurcharges(foreignCountry, pieces, calcDimUnit);
+    
+    let surchargeTotal = 0;
+    const activeSurcharges: Record<string, boolean> = {};
+    SURCHARGE_DEFS.forEach(def => {
+      const isChecked = surchargesState[def.id] !== undefined ? surchargesState[def.id] : autoState[def.id];
+      activeSurcharges[def.id] = isChecked;
+      if (isChecked) {
+        const count = def.perPiece ? ((counts as any)[def.id] || 1) : 1;
+        surchargeTotal += def.feeBase * count;
+      }
+    });
+
+    const grandTotal = calcResult.total + surchargeTotal;
 
     const fromLabel = getCountryLabel(routeFromValue); const toLabel = getCountryLabel(routeToValue)
-    const wt = `${round2(chargeW).toFixed(2)} كجم`
-    const zoneLine = `Zone ${r.zoneInfo.label} — ${r.zoneInfo.name}`
+    const wt = `${calcResult.chargeableWeight.toFixed(2)} كجم`
+    const zoneLine = `Zone ${calcResult.zoneLabel} — ${calcResult.zoneName}`
     const detailsLines = [
       `من: ${fromLabel}`, `إلى: ${toLabel}`, zoneLine, `وزن المحاسبة: ${wt}`, `عدد الطرود: ${qty}`
     ]
     if (hasDims) detailsLines.push(`الأبعاد: ${l} × ${w} × ${h} ${calcDimUnit === 'metric' ? 'سم' : 'إنش'}`)
     
-    const adminNotes = `أساسي: ${r.baseRate.toFixed(2)} ر.س  وقود: +${r.fuelAmt.toFixed(2)} ر.س  GoGreen: +${r.goGreen.toFixed(2)} ر.س`
+    // Add active surcharges to notes
+    const activeSurchargeNames = SURCHARGE_DEFS.filter(def => activeSurcharges[def.id]).map(def => def.nameAr).join(' + ');
+    
+    const adminNotes = `أساسي: ${calcResult.baseRate.toFixed(2)} ر.س  وقود: +${calcResult.fuelAmt.toFixed(2)} ر.س  GoGreen: +${calcResult.goGreen.toFixed(2)} ر.س` + (activeSurchargeNames ? `\nرسوم إضافية: ${activeSurchargeNames} (+${surchargeTotal.toFixed(2)} ر.س)` : '');
 
     const unitLabel = calcDimUnit === 'metric' ? 'سم' : 'إنش'
     const dimsStr = hasDims ? `${l} × ${w} × ${h} ${unitLabel}` : ''
     setDraft((p) => ({
-      ...p, price: r.total.toFixed(2), dhlCost: r.baseRate.toFixed(2), weight: round2(chargeW).toFixed(2), dimensions: dimsStr, details: detailsLines.join('\n'), notes: adminNotes, itemType: 'شحن دولي', carrier: 'DHL Express'
+      ...p, price: grandTotal.toFixed(2), dhlCost: calcResult.baseRate.toFixed(2), weight: calcResult.chargeableWeight.toFixed(2), dimensions: dimsStr, details: detailsLines.join('\n'), notes: adminNotes, itemType: 'شحن دولي', carrier: 'DHL Express'
     }))
     setMode('calc')
     setStep(2)
-  }, [calcWeight, calcLength, calcWidth, calcHeight, calcQty, legacyService, routeFromValue, routeToValue, calcFuelPct, calcMarginPct])
+  }, [calcResult, calcWeight, calcLength, calcWidth, calcHeight, calcQty, legacyService, routeFromValue, routeToValue, calcDimUnit, surchargesState])
 
   const handleSave = useCallback(async (asDraft: boolean) => {
     if (saving) return
@@ -429,36 +473,136 @@ export function NewInvoicePage() {
         </div>
 
         {/* Calc Result */}
-        {calcResult && (
-          <div className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <div className={styles.sectionIcon} style={{ background: '#f0fdf4', color: '#16a34a' }}>
-                <CheckCircle2 size={18} />
-              </div>
-              <div className={styles.sectionTitle}>نتيجة الحساب</div>
-            </div>
-            <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
-              <div className={styles.calcPanel}>
-                <div className={styles.calcResult}>
-                  <span className={styles.calcResultLabel}>الزون الجغرافي</span>
-                  <span className={styles.calcResultValue}>Zone {calcResult.zoneLabel}</span>
-                  <span className={styles.calcResultLabel}>تكلفة DHL الاستخراجية</span>
-                  <span className={styles.calcResultValue}>{calcResult.baseRate.toFixed(2)} ر.س</span>
-                  <span className={styles.calcResultLabel}>رسوم الوقود ({calcResult.fuelPct}%)</span>
-                  <span className={styles.calcResultValue} style={{ color: '#dc2626' }}>+{calcResult.fuelAmt.toFixed(2)} ر.س</span>
-                  <span className={styles.calcResultLabel}>رسوم GoGreen المناخية</span>
-                  <span className={styles.calcResultValue} style={{ color: '#16a34a' }}>+{calcResult.goGreen.toFixed(2)} ر.س</span>
-                  <span className={styles.calcResultLabel}>صافي الربح المُقدر ({calcResult.profitPct}%)</span>
-                  <span className={styles.calcResultValue} style={{ color: '#6366f1' }}>+{calcResult.markup.toFixed(2)} ر.س</span>
+        {calcResult && (() => {
+          const actualW = Number(calcWeight) || 0
+          const l = Number(calcLength) || 0; const w = Number(calcWidth) || 0; const h = Number(calcHeight) || 0
+          const qty = Math.max(1, Math.floor(Number(calcQty) || 1))
+
+          const foreignCountry = legacyService === 'export' ? routeToValue : routeFromValue;
+          const pieces = [{ qty: String(qty), weight: String(actualW), l: String(l), w: String(w), h: String(h) }];
+          const { autoState, counts } = computeAutoSurcharges(foreignCountry, pieces, calcDimUnit);
+          
+          let surchargeTotal = 0;
+          const activeSurcharges: Record<string, boolean> = {};
+
+          SURCHARGE_DEFS.forEach(def => {
+            let autoTriggered = false;
+            if (def.type === 'auto') {
+              autoTriggered = autoState[def.id];
+            }
+            const isChecked = surchargesState[def.id] !== undefined ? surchargesState[def.id] : autoTriggered;
+            activeSurcharges[def.id] = isChecked;
+
+            if (isChecked) {
+              const count = def.perPiece ? ((counts as any)[def.id] || 1) : 1;
+              surchargeTotal += def.feeBase * count;
+            }
+          });
+
+          const grandTotal = calcResult.total + surchargeTotal;
+
+          return (
+            <div className={styles.section} style={{ animation: 'fadeSlideUp 0.3s ease-out' }}>
+              <div className={styles.sectionHeader}>
+                <div className={styles.sectionIcon} style={{ background: '#f0fdf4', color: '#16a34a' }}>
+                  <CheckCircle2 size={18} />
                 </div>
-                <div className={styles.calcTotal}>
-                  <span className={styles.calcTotalLabel}>السعر النهائي للعميل</span>
-                  <span className={styles.calcTotalValue}>{calcResult.total.toFixed(2)} ر.س</span>
+                <div className={styles.sectionTitle}>نتيجة الحساب التفصيلية</div>
+              </div>
+              <div className={`${styles.sectionBody} ${styles.sectionBodySingle}`}>
+                <div className={styles.calcPanel}>
+                  <div className={styles.calcResult}>
+                    <span className={styles.calcResultLabel}>الزون الجغرافي</span>
+                    <span className={styles.calcResultValue}>Zone {calcResult.zoneLabel}</span>
+                    <span className={styles.calcResultLabel}>وزن المحاسبة</span>
+                    <span className={styles.calcResultValue} dir="ltr">{calcResult.chargeableWeight} kg</span>
+                    <span className={styles.calcResultLabel}>تكلفة DHL الأساسية</span>
+                    <span className={styles.calcResultValue}>{calcResult.baseRate.toFixed(2)} ر.س</span>
+                    <span className={styles.calcResultLabel}>رسوم الوقود ({calcResult.fuelPct}%)</span>
+                    <span className={styles.calcResultValue} style={{ color: '#dc2626' }}>+{calcResult.fuelAmt.toFixed(2)} ر.س</span>
+                    <span className={styles.calcResultLabel}>رسوم GoGreen المناخية</span>
+                    <span className={styles.calcResultValue} style={{ color: '#16a34a' }}>+{calcResult.goGreen.toFixed(2)} ر.س</span>
+                    <span className={styles.calcResultLabel}>صافي الربح المُقدر ({calcResult.profitPct}%)</span>
+                    <span className={styles.calcResultValue} style={{ color: '#6366f1' }}>+{calcResult.markup.toFixed(2)} ر.س</span>
+                  </div>
+
+                  <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-4 text-center mt-4">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">السعر الأساسي (قبل الرسوم الإضافية)</div>
+                    <div className="text-3xl font-bold text-amber-500 font-mono">
+                      <span className="text-lg text-gray-400 mr-1 font-sans">ر.س</span>
+                      {calcResult.total.toFixed(2)}
+                    </div>
+                  </div>
+
+                  {/* Surcharges Section inside Result Panel */}
+                  <div className="mt-5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2">
+                      <div className="w-3 h-0.5 bg-red-600 rounded-full"></div>
+                      رسوم إضافية
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {SURCHARGE_DEFS.map(def => {
+                        let autoTriggered = false;
+                        if (def.type === 'auto') autoTriggered = autoState[def.id];
+                        const isChecked = activeSurcharges[def.id];
+                        const count = def.perPiece ? ((counts as any)[def.id] || 0) : null;
+                        const feeBase = def.feeBase;
+                        const amountStr = (def.perPiece && count && count > 1) 
+                          ? `${feeBase.toFixed(2)} × ${count} = ${(feeBase * count).toFixed(2)} ر.س`
+                          : `${feeBase.toFixed(2)} ر.س`;
+
+                        return (
+                          <div 
+                            key={def.id}
+                            onClick={() => toggleSurcharge(def.id)}
+                            className={`flex items-center gap-3 bg-white dark:bg-slate-900 border rounded-xl p-3 cursor-pointer transition-colors select-none ${
+                              isChecked 
+                                ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10' 
+                                : autoTriggered 
+                                  ? 'border-amber-500 bg-amber-50/30 dark:bg-amber-900/10'
+                                  : 'border-gray-200 dark:border-slate-700 hover:border-red-300'
+                            }`}
+                          >
+                            <div className={`w-5 h-5 min-w-[20px] rounded border-2 flex items-center justify-center transition-colors ${
+                              isChecked ? 'bg-red-600 border-red-600 text-white' : 
+                              autoTriggered ? 'border-amber-500 text-transparent' : 'border-gray-300 text-transparent'
+                            }`}>
+                              <CheckCircle2 size={14} />
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-[13px] font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                {def.nameAr} <span className="text-gray-400 font-normal text-[11px]">{def.name}</span>
+                              </div>
+                              <div className="text-[11px] text-gray-500 mt-0.5">
+                                {def.desc} {count !== null && count > 0 && <span className="font-bold text-gray-700 dark:text-gray-300 ml-1">— {count} طرد</span>}
+                              </div>
+                            </div>
+                            {autoTriggered && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 whitespace-nowrap">
+                                تلقائي
+                              </span>
+                            )}
+                            <div className="text-[13px] font-bold text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                              {amountStr}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-slate-900 to-black rounded-xl p-6 text-center mt-4 border border-gray-800 shadow-xl">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">السعر الإجمالي للعميل (شامل الرسوم)</div>
+                    <div className="text-4xl font-bold text-amber-400 font-mono tracking-tight">
+                      <span className="text-lg text-gray-500 mr-1 font-sans">ر.س</span>
+                      {grandTotal.toFixed(2)}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {calcError && (
           <div className={styles.errorAlert}>
@@ -474,9 +618,20 @@ export function NewInvoicePage() {
             </button>
           </div>
           <div className={styles.footerRight}>
-            <button type="button" className={styles.btnCalc} onClick={handleCalcAndContinue}>
-              <Calculator size={18} /> احسب وانتقل لبيانات العميل
-            </button>
+            {!calcResult ? (
+              <button type="button" className={styles.btnCalc} onClick={handleCalculate}>
+                <Calculator size={18} /> احسب السعر فوراً
+              </button>
+            ) : (
+              <>
+                <button type="button" className={`${styles.btnCalc} bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-slate-600`} onClick={handleCalculate}>
+                  <RotateCcw size={18} /> إعادة الحساب
+                </button>
+                <button type="button" className={styles.btnCalc} onClick={handleContinue}>
+                  <ArrowRight size={18} /> متابعة لبيانات العميل
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

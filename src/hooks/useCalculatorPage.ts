@@ -16,19 +16,14 @@ export type CalcResult = {
   fuelAmt: number
   goGreen: number
   markup: number
-  surcharges: {
-    elevatedRisk: number
-    restrictedDestination: number
-    overweight: number
-    oversize: number
-    nonConveyable: number
-    nonStackable: number
-    remoteArea: number
-    totalSurcharges: number
-  }
   total: number
   fuelPct: number
   profitPct: number
+  
+  // New surcharges state for the result panel
+  foreignCountry: string
+  pieces: PieceInput[]
+  dimUnit: 'metric' | 'imperial'
 }
 
 type CountryOption = { value: string; label: string }
@@ -64,16 +59,7 @@ export function useCalculatorPage() {
   const [dimUnit, setDimUnit] = useState<'metric' | 'imperial'>('metric')
   const [shipmentType, setShipmentType] = useState<'non-doc' | 'doc' | 'envelope'>('non-doc')
   
-  // Manual surcharges overrides
-  const [manualSurcharges, setManualSurcharges] = useState({
-    elevatedRisk: false,
-    restrictedDestination: false,
-    overweight: false,
-    oversize: false,
-    nonConveyable: false,
-    nonStackable: false,
-    remoteArea: false,
-  })
+  const [surchargesState, setSurchargesState] = useState<Record<string, boolean>>({})
 
   const [fuelPct, setFuelPct] = useState(30)
   const [profitPct, setProfitPct] = useState(50)
@@ -114,15 +100,7 @@ export function useCalculatorPage() {
     setRouteToUser(DEFAULT_FOREIGN)
     setPieces([{ qty: '1', weight: '', l: '', w: '', h: '' }])
     setShipmentType('non-doc')
-    setManualSurcharges({
-      elevatedRisk: false,
-      restrictedDestination: false,
-      overweight: false,
-      oversize: false,
-      nonConveyable: false,
-      nonStackable: false,
-      remoteArea: false,
-    })
+    setSurchargesState({})
     setFuelPct(30)
     setProfitPct(50)
     setError(null)
@@ -161,55 +139,21 @@ export function useCalculatorPage() {
 
     const r = out as LegacyCalcOutput
 
-    // ─── Surcharges Auto & Manual Logic ───
-    const SURCHARGE_RATES = {
-      elevatedRisk: 159,
-      restrictedDestination: 203,
-      overweight: 418,
-      oversize: 418,
-      nonConveyable: 418,
-      nonStackable: 1354,
-      remoteArea: 135,
-    }
+    // Handle initial auto surcharges detection
+    const foreignCountry = legacyService === 'export' ? routeTo : routeFrom;
 
-    // Auto calculate if not manually checked
-    // Elevated Risk countries
-    const riskCountries = ['Afghanistan', 'Iraq', 'Libya', 'Somalia', 'Syria', 'Yemen', 'Niger', 'Mali', 'Sudan', 'Burundi']
-    const isElevatedRisk = manualSurcharges.elevatedRisk || riskCountries.includes(routeTo) || riskCountries.includes(routeFrom)
+    // Use our new surcharges logic inside the result rendering instead of keeping it completely inside calculate()
+    // Wait, the user wants us to reset auto-surcharges each time we calculate, but keep manual ones.
+    setSurchargesState((prev) => {
+      const next = { ...prev };
+      // Delete auto-detected keys so they can be re-detected naturally by the render component
+      ['elevated_risk', 'restricted_dest', 'overweight', 'oversize', 'non_conveyable'].forEach((id) => {
+        delete next[id];
+      });
+      return next;
+    });
 
-    // Restricted Destination countries
-    const restrictedCountries = ['Central African Republic', 'Congo', 'Eritrea', 'Iran', 'Iraq', 'Libya', 'North Korea', 'Somalia', 'Syria', 'Yemen']
-    const isRestricted = manualSurcharges.restrictedDestination || restrictedCountries.includes(routeTo) || restrictedCountries.includes(routeFrom)
-
-    // Overweight: Any single piece >= 70kg
-    const autoOverweight = pieces.some(p => Number(p.weight) >= 70)
-    const isOverweight = manualSurcharges.overweight || autoOverweight
-
-    // Oversize: Any dimension > 120cm
-    const autoOversize = pieces.some(p => {
-      const dim = dimUnit === 'imperial' ? 47.24 : 120 // 120cm in inches is ~47.24
-      return Number(p.l) > dim || Number(p.w) > dim || Number(p.h) > dim
-    })
-    const isOversize = manualSurcharges.oversize || autoOversize
-
-    const isNonConveyable = manualSurcharges.nonConveyable
-    const isNonStackable = manualSurcharges.nonStackable
-    const isRemoteArea = manualSurcharges.remoteArea
-
-    const surchargesObj = {
-      elevatedRisk: isElevatedRisk ? SURCHARGE_RATES.elevatedRisk : 0,
-      restrictedDestination: isRestricted ? SURCHARGE_RATES.restrictedDestination : 0,
-      overweight: isOverweight ? SURCHARGE_RATES.overweight : 0,
-      oversize: isOversize ? SURCHARGE_RATES.oversize : 0,
-      nonConveyable: isNonConveyable ? SURCHARGE_RATES.nonConveyable : 0,
-      nonStackable: isNonStackable ? SURCHARGE_RATES.nonStackable : 0,
-      remoteArea: isRemoteArea ? SURCHARGE_RATES.remoteArea : 0,
-    }
-
-    const totalSurcharges = Object.values(surchargesObj).reduce((sum, val) => sum + val, 0)
-    
-    // Add surcharges markup and fuel? Usually surcharges don't get the same markup, but let's add markup to total
-    const grandTotal = r.total + totalSurcharges + (totalSurcharges * (profitPct / 100))
+    const grandTotal = r.total; // Surcharges are added dynamically in the UI component
 
     setResult({
       actualKg: round2(totals.actualKg),
@@ -220,13 +164,15 @@ export function useCalculatorPage() {
       baseRate: r.baseRate,
       fuelAmt: r.fuelAmt,
       goGreen: r.goGreen,
-      markup: r.markup + (totalSurcharges * (profitPct / 100)), // add surcharge markup to total markup
-      surcharges: { ...surchargesObj, totalSurcharges },
+      markup: r.markup,
       total: grandTotal,
       fuelPct,
       profitPct,
+      foreignCountry,
+      pieces,
+      dimUnit
     })
-  }, [fuelPct, legacyService, profitPct, routeFrom, routeTo, totals.actualKg, totals.chargeableKg, totals.volumetricKg, manualSurcharges, pieces, dimUnit])
+  }, [fuelPct, legacyService, profitPct, routeFrom, routeTo, totals.actualKg, totals.chargeableKg, totals.volumetricKg, pieces, dimUnit])
 
   return {
     countryOptions,
@@ -287,10 +233,10 @@ export function useCalculatorPage() {
       setResult(null)
     },
 
-    manualSurcharges,
-    setManualSurcharge: (key: keyof typeof manualSurcharges, val: boolean) => {
-      setManualSurcharges(prev => ({ ...prev, [key]: val }))
-      setResult(null)
+    surchargesState,
+    setSurchargesState,
+    toggleSurcharge: (id: string) => {
+      setSurchargesState((prev) => ({ ...prev, [id]: !prev[id] }));
     }
   }
 }
