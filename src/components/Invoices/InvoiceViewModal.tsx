@@ -75,61 +75,56 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const displayInv = fullInvoice ?? invoice
 
   // عند فتح المودال → جلب البيانات الكاملة من DB
-  useEffect(() => {
-    if (!open || !invoice) {
-      setFullInvoice(null)
-      return
-    }
+  const loadFull = useCallback(async () => {
+    if (!invoice?.id) return
+    setLoadingFull(true)
+    try {
+      const data = await invoiceService.getInvoice(String(invoice.id))
 
-    let cancelled = false
-
-    const loadFull = async () => {
-      setLoadingFull(true)
+      // Parse items
+      let items: InvoiceItem[] = []
       try {
-        const data = await invoiceService.getInvoice(String(invoice.id))
-        if (cancelled) return
+        items = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || [])
+      } catch { items = [] }
 
-        // Parse items
-        let items: InvoiceItem[] = []
+      const fullData: Invoice = { ...invoice, ...data, items }
+      setFullInvoice(fullData)
+
+      // لو البيانات ناقصة → enrich من دفترة
+      const needsEnrich = (data as any).needs_enrichment && data.daftra_id
+      if (needsEnrich) {
+        setEnriching(true)
         try {
-          items = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || [])
-        } catch { items = [] }
-
-        const fullData: Invoice = { ...invoice, ...data, items }
-        setFullInvoice(fullData)
-
-        // لو البيانات ناقصة → enrich من دفترة
-        const needsEnrich = (data as any).needs_enrichment && data.daftra_id
-        if (needsEnrich && !cancelled) {
-          setEnriching(true)
-          try {
-            const enriched = await enrichSingleInvoice(data.daftra_id!)
-            if (!cancelled && enriched.ok && enriched.invoice) {
-              let enrichedItems: InvoiceItem[] = []
-              try {
-                enrichedItems = typeof enriched.invoice.items === 'string'
-                  ? JSON.parse(enriched.invoice.items as string)
-                  : (enriched.invoice.items || [])
-              } catch { enrichedItems = [] }
-              setFullInvoice({ ...fullData, ...enriched.invoice, items: enrichedItems })
-            }
-          } catch {
-            // فشل الإثراء — نعرض البيانات الموجودة
-          } finally {
-            if (!cancelled) setEnriching(false)
+          const enriched = await enrichSingleInvoice(data.daftra_id!)
+          if (enriched.ok && enriched.invoice) {
+            let enrichedItems: InvoiceItem[] = []
+            try {
+              enrichedItems = typeof enriched.invoice.items === 'string'
+                ? JSON.parse(enriched.invoice.items as string)
+                : (enriched.invoice.items || [])
+            } catch { enrichedItems = [] }
+            setFullInvoice({ ...fullData, ...enriched.invoice, items: enrichedItems })
           }
+        } catch {
+          // فشل الإثراء
+        } finally {
+          setEnriching(false)
         }
-      } catch {
-        // فشل جلب التفاصيل — نعرض البيانات الأساسية
-        setFullInvoice(null)
-      } finally {
-        if (!cancelled) setLoadingFull(false)
       }
+    } catch {
+      setFullInvoice(null)
+    } finally {
+      setLoadingFull(false)
     }
+  }, [invoice?.id, invoice?.daftra_id])
 
-    void loadFull()
-    return () => { cancelled = true }
-  }, [open, invoice?.id, invoice?.daftra_id])
+  useEffect(() => {
+    if (open && invoice) {
+      loadFull()
+    } else {
+      setFullInvoice(null)
+    }
+  }, [open, invoice?.id, loadFull])
 
   // إعادة الإثراء يدوياً
   const handleManualEnrich = async () => {
@@ -664,6 +659,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
                     const check = await checkPayment(link.paymob_order_id);
                     if (check.paid) {
                       setLocalToast({ type: 'success', message: '✅ تم تأكيد الدفع وتحديث الفاتورة!' });
+                      void loadFull();
                       if (onRefresh) onRefresh();
                     } else {
                       setLocalToast({ type: 'error', message: '⏳ لم يتم الدفع بعد عبر هذا الرابط' });
