@@ -197,17 +197,22 @@ export async function checkPayment(
   orderId: string | number,
   signal?: AbortSignal
 ): Promise<CheckPaymentResponse> {
+  // IMPORTANT: Always call Backend first — it both checks Paymob AND updates the invoice in DB.
+  // The Worker only checks status without updating anything.
   try {
-    const q = new URLSearchParams({ action: 'check-payment', order_id: String(orderId) });
-    return await workerFetch<CheckPaymentResponse>(
-      `${env.workerUrl}?${q.toString()}`,
-      { signal }
-    );
-  } catch {
-    // Fallback to backend
+    const result = await api.get<any>(`/paymob/check/${orderId}`);
+    const d = result?.data || result;
+    console.log('[Paymob] checkPayment via Backend:', d);
+    return d;
+  } catch (backendErr) {
+    console.warn('[Paymob] Backend check failed, trying Worker...', backendErr);
+    // Fallback to Worker (read-only check — won't update DB)
     try {
-      const result = await api.get<any>(`/paymob/check/${orderId}`);
-      return result?.data || result;
+      const q = new URLSearchParams({ action: 'check-payment', order_id: String(orderId) });
+      return await workerFetch<CheckPaymentResponse>(
+        `${env.workerUrl}?${q.toString()}`,
+        { signal }
+      );
     } catch {
       return { paid: false, error: 'فشل التحقق' };
     }
