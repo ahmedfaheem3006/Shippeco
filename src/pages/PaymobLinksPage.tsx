@@ -299,10 +299,20 @@ export function PaymobLinksPage() {
       if (res.paid) { 
         // Find the link locally to get the invoice_id
         const link = links.find(l => String(l.paymob_order_id) === String(orderId));
-        if (link && link.invoice_id) {
+        
+        // Try to determine the target invoice ID
+        let targetInvoiceId = link?.invoice_id;
+        
+        // Fallback: If invoice_id is missing, try to extract it from the description or special reference
+        if (!targetInvoiceId && link?.description) {
+          const match = link.description.match(/#(\d+)/);
+          if (match) targetInvoiceId = match[1];
+        }
+
+        if (targetInvoiceId) {
           try {
-            await api.post(`/invoices/${link.invoice_id}/mark-paid`, {
-              amount: res.paid_amount || link.amount,
+            await api.post(`/invoices/${targetInvoiceId}/mark-paid`, {
+              amount: res.paid_amount || link?.amount,
               payment_method: 'paymob',
               notes: `Manual check confirm (Order: ${orderId})`
             });
