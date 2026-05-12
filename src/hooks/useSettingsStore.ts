@@ -16,8 +16,8 @@ const defaultSettings: PlatformSettings = {
 }
 
 const defaultInvoiceTemplate: InvoiceTemplate = {
-  companyAr: 'التكامل التقني الدولي',
-  companyEn: 'Altakamul Altaqnii Alduwalii',
+  companyAr: '',
+  companyEn: '',
   vat: '',
   cr: '',
   phone: '',

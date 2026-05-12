@@ -102,8 +102,6 @@ export function LoginPage() {
           {/* Footer */}
           <div className="flex items-center gap-3 text-indigo-400/40 text-xs">
             <span>© 2026 ShipPec</span>
-            <span>•</span>
-            <span>Powered by التكامل التقني الدولي</span>
           </div>
         </div>
       </div>
