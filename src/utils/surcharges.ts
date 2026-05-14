@@ -56,8 +56,7 @@ export const SURCHARGE_DEFS: SurchargeDef[] = [
     id: 'oversize',
     name: 'Oversize Piece',
     nameAr: 'طرد كبير الحجم',
-    desc: 'تنطبق على كل طرد أحد أبعاده أكثر من 120 سم', // The user's prompt says 100cm, wait, let me check the user's prompt.
-    // user's prompt: 'تنطبق على كل طرد أحد أبعاده أكثر من 100 سم'
+    desc: 'تنطبق على كل طرد أحد أبعاده أكثر من 100 سم',
     feeBase: 88,
     perPiece: true,
     type: 'auto',
@@ -136,8 +135,8 @@ export function computeAutoSurcharges(
     elevated_risk: isElevatedRisk,
     restricted_dest: isRestrictedDest,
     overweight: owCount > 0,
-    oversize: osCount > 0,
-    non_conveyable: ncCount > 0,
+    non_conveyable: ncCount > 0 && owCount === 0,
+    oversize: osCount > 0 && owCount === 0 && ncCount === 0,
     non_stackable: false,
     remote_delivery: false,
     remote_pickup: false

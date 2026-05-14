@@ -204,7 +204,7 @@ export function CalculatorPage() {
           }
         });
 
-        const grandTotal = calc.result.total + surchargeTotal;
+        const grandTotal = calc.result.total;
 
         return (
           <div className={styles.section} style={{ animation: 'fadeSlideUp 0.3s ease-out' }}>
@@ -233,9 +233,8 @@ export function CalculatorPage() {
                   <span className={styles.calcResultValue} style={{ color: '#6366f1' }}>+{calc.result.markup.toFixed(2)} ر.س</span>
                 </div>
                 
-                {/* Final Final Base Price before Surcharges (as in the new design) */}
                 <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-4 text-center mt-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">السعر الأساسي (قبل الرسوم الإضافية)</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">إجمالي السعر (شامل الرسوم والوقود والربح)</div>
                   <div className="text-3xl font-bold text-amber-500 font-mono">
                     <span className="text-lg text-gray-400 mr-1 font-sans">ر.س</span>
                     {calc.result.total.toFixed(2)}

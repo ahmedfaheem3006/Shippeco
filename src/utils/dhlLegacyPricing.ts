@@ -78,6 +78,7 @@ export type LegacyCalcInput = {
   chargeW: number
   fuelPct: number
   profitPct: number
+  surchargeTotal?: number
 }
 
 export type LegacyCalcOutput = {
@@ -109,12 +110,15 @@ export function computeLegacyPrice(input: LegacyCalcInput): LegacyCalcOutput | L
 
   const fuelPct = Number.isFinite(input.fuelPct) ? input.fuelPct : 0
   const profitPct = Number.isFinite(input.profitPct) ? input.profitPct : 0
+  const surcharges = input.surchargeTotal || 0
 
-  const fuelAmt = baseRate * (fuelPct / 100)
+  const afterSurcharge = baseRate + surcharges
+  const fuelAmt = afterSurcharge * (fuelPct / 100)
+  const afterFuel = afterSurcharge + fuelAmt
   const goGreen = service !== 'domestic' ? chargeW * GOGREEN_RATE : 0
-  const afterFuel = baseRate + fuelAmt + goGreen
-  const markup = afterFuel * (profitPct / 100)
-  const total = afterFuel + markup
+  const beforeProfit = afterFuel + goGreen
+  const markup = beforeProfit * (profitPct / 100)
+  const total = beforeProfit + markup
 
   return { zoneInfo, baseRate, fuelAmt, goGreen, afterFuel, markup, total }
 }

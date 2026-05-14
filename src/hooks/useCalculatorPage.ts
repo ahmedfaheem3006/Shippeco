@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 import { COUNTRIES } from '../legacy/dhlData'
 import { computeLegacyPrice, getZoneInfoLegacy, type LegacyCalcError, type LegacyCalcOutput, type LegacyService } from '../utils/dhlLegacyPricing'
 import { computeTotals, type CalcKind, type PieceInput } from '../utils/calculator'
 
+import { computeAutoSurcharges, SURCHARGE_DEFS } from '../utils/surcharges'
 const SA = 'SA'
 const DEFAULT_FOREIGN = 'SA'
 
@@ -122,6 +123,18 @@ export function useCalculatorPage() {
       return
     }
 
+    const foreignCountry = legacyService === 'export' ? routeTo : routeFrom;
+    const { autoState, counts } = computeAutoSurcharges(foreignCountry, pieces, dimUnit);
+
+    let surchargeTotal = 0;
+    SURCHARGE_DEFS.forEach(def => {
+      const isChecked = surchargesState[def.id] !== undefined ? surchargesState[def.id] : autoState[def.id];
+      if (isChecked) {
+        const count = def.perPiece ? ((counts as any)[def.id] || 1) : 1;
+        surchargeTotal += def.feeBase * count;
+      }
+    });
+
     const out = computeLegacyPrice({
       service: legacyService,
       from: routeFrom,
@@ -129,6 +142,7 @@ export function useCalculatorPage() {
       chargeW: totals.chargeableKg,
       fuelPct,
       profitPct,
+      surchargeTotal
     })
 
     if ('kind' in out) {
@@ -139,21 +153,9 @@ export function useCalculatorPage() {
 
     const r = out as LegacyCalcOutput
 
-    // Handle initial auto surcharges detection
-    const foreignCountry = legacyService === 'export' ? routeTo : routeFrom;
+    // We do not clear surchargesState here so that manual user overrides are preserved.
 
-    // Use our new surcharges logic inside the result rendering instead of keeping it completely inside calculate()
-    // Wait, the user wants us to reset auto-surcharges each time we calculate, but keep manual ones.
-    setSurchargesState((prev) => {
-      const next = { ...prev };
-      // Delete auto-detected keys so they can be re-detected naturally by the render component
-      ['elevated_risk', 'restricted_dest', 'overweight', 'oversize', 'non_conveyable'].forEach((id) => {
-        delete next[id];
-      });
-      return next;
-    });
-
-    const grandTotal = r.total; // Surcharges are added dynamically in the UI component
+    const grandTotal = r.total;
 
     setResult({
       actualKg: round2(totals.actualKg),
@@ -172,7 +174,15 @@ export function useCalculatorPage() {
       pieces,
       dimUnit
     })
-  }, [fuelPct, legacyService, profitPct, routeFrom, routeTo, totals.actualKg, totals.chargeableKg, totals.volumetricKg, pieces, dimUnit])
+  }, [fuelPct, legacyService, profitPct, routeFrom, routeTo, totals.actualKg, totals.chargeableKg, totals.volumetricKg, pieces, dimUnit, surchargesState])
+
+  // Automatically recalculate if surcharges change and we already have a result
+  useEffect(() => {
+    if (result) {
+      calculate()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surchargesState])
 
   return {
     countryOptions,

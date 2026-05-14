@@ -136,10 +136,10 @@ export function NewInvoicePage() {
   )
 
   // ─── Handlers ───
-  const handleCalculate = useCallback(() => {
+  useEffect(() => {
     setCalcError(null)
     const actualW = Number(calcWeight) || 0
-    if (!actualW) { setCalcError('أدخل الوزن'); return }
+    if (!actualW) { setCalcResult(null); return; }
 
     const l = Number(calcLength) || 0; const w = Number(calcWidth) || 0; const h = Number(calcHeight) || 0
     const qty = Math.max(1, Math.floor(Number(calcQty) || 1))
@@ -154,29 +154,37 @@ export function NewInvoicePage() {
     // Chargeable weight per piece is max(actual, volumetric)
     const chargeW = Math.max(actualKg, volumetricKg) * qty
 
-    const r = computeLegacyPrice({ service: legacyService, from: routeFromValue, to: routeToValue, chargeW, fuelPct: calcFuelPct, profitPct: calcMarginPct })
+    // 1. Calculate surcharges first
+    const foreignCountry = legacyService === 'export' ? routeToValue : routeFromValue;
+    const pieces = [{ qty: String(qty), weight: String(actualW), l: String(l), w: String(w), h: String(h) }];
+    const { autoState, counts } = computeAutoSurcharges(foreignCountry, pieces, calcDimUnit);
+    
+    let surchargeTotal = 0;
+    SURCHARGE_DEFS.forEach(def => {
+      const isChecked = surchargesState[def.id] !== undefined ? surchargesState[def.id] : autoState[def.id];
+      if (isChecked) {
+        const count = def.perPiece ? ((counts as any)[def.id] || 1) : 1;
+        surchargeTotal += def.feeBase * count;
+      }
+    });
+
+    // 2. Pass surchargeTotal to legacy pricing
+    const r = computeLegacyPrice({ service: legacyService, from: routeFromValue, to: routeToValue, chargeW, fuelPct: calcFuelPct, profitPct: calcMarginPct, surchargeTotal })
 
     if ('kind' in r) {
       if (r.kind === 'missing_route') setCalcError('اختر المسار أولاً')
       else if (r.kind === 'missing_weight') setCalcError('أدخل الوزن')
       else if (r.kind === 'missing_zone') setCalcError('لم يتم العثور على الزون لهذا المسار')
       else setCalcError('لا يوجد سعر لهذه الوجهة (زون 8)')
+      setCalcResult(null)
       return
     }
-
-    setSurchargesState((prev) => {
-      const next = { ...prev };
-      ['elevated_risk', 'restricted_dest', 'overweight', 'oversize', 'non_conveyable'].forEach((id) => {
-        delete next[id];
-      });
-      return next;
-    });
 
     const res: CalcResult = {
       baseRate: r.baseRate, fuelAmt: r.fuelAmt, goGreen: r.goGreen, markup: r.markup, total: r.total, chargeableWeight: round2(chargeW), zoneLabel: r.zoneInfo.label, zoneName: r.zoneInfo.name, fuelPct: calcFuelPct, profitPct: calcMarginPct,
     }
     setCalcResult(res)
-  }, [calcWeight, calcLength, calcWidth, calcHeight, calcQty, legacyService, routeFromValue, routeToValue, calcFuelPct, calcMarginPct, calcDimUnit])
+  }, [calcWeight, calcLength, calcWidth, calcHeight, calcQty, legacyService, routeFromValue, routeToValue, calcFuelPct, calcMarginPct, calcDimUnit, surchargesState])
 
   const toggleSurcharge = useCallback((id: string) => {
     setSurchargesState((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -206,7 +214,7 @@ export function NewInvoicePage() {
       }
     });
 
-    const grandTotal = calcResult.total + surchargeTotal;
+    const grandTotal = calcResult.total; // already includes surcharges in legacy pricing
 
     const fromLabel = getCountryLabel(routeFromValue); const toLabel = getCountryLabel(routeToValue)
     const wt = `${calcResult.chargeableWeight.toFixed(2)} كجم`
@@ -499,7 +507,7 @@ export function NewInvoicePage() {
             }
           });
 
-          const grandTotal = calcResult.total + surchargeTotal;
+          const grandTotal = calcResult.total;
 
           return (
             <div className={styles.section} style={{ animation: 'fadeSlideUp 0.3s ease-out' }}>
@@ -527,7 +535,7 @@ export function NewInvoicePage() {
                   </div>
 
                   <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-4 text-center mt-4">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">السعر الأساسي (قبل الرسوم الإضافية)</div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">إجمالي السعر (شامل الرسوم والوقود والربح)</div>
                     <div className="text-3xl font-bold text-amber-500 font-mono">
                       <span className="text-lg text-gray-400 mr-1 font-sans">ر.س</span>
                       {calcResult.total.toFixed(2)}
@@ -618,19 +626,10 @@ export function NewInvoicePage() {
             </button>
           </div>
           <div className={styles.footerRight}>
-            {!calcResult ? (
-              <button type="button" className={styles.btnCalc} onClick={handleCalculate}>
-                <Calculator size={18} /> احسب السعر فوراً
+            {calcResult && (
+              <button type="button" className={styles.btnCalc} onClick={handleContinue}>
+                <ArrowRight size={18} /> متابعة لبيانات العميل
               </button>
-            ) : (
-              <>
-                <button type="button" className={`${styles.btnCalc} bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-slate-600`} onClick={handleCalculate}>
-                  <RotateCcw size={18} /> إعادة الحساب
-                </button>
-                <button type="button" className={styles.btnCalc} onClick={handleContinue}>
-                  <ArrowRight size={18} /> متابعة لبيانات العميل
-                </button>
-              </>
             )}
           </div>
         </div>
