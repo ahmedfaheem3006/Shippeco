@@ -17,7 +17,7 @@ import {
   Box, Truck, AlertCircle, CheckCircle2,
   ArrowRight, FileText, User, CreditCard,
   Package, Hash, Calendar, ClipboardList,
-  Banknote, Weight, Ruler, RotateCcw
+  Banknote, Weight, Ruler
 } from 'lucide-react'
 import { SearchableClientInput } from '../components/shared/SearchableClientInput'
 import { SearchableSelect } from '../components/shared/SearchableSelect'
