@@ -47,6 +47,11 @@ export const unifiedService = {
     return await api.put(endpoint, body) as T;
   },
 
+  async patch<T>(endpoint: string, body: any): Promise<T> {
+    this.invalidateCache();
+    return await api.patch(endpoint, body) as T;
+  },
+
   async delete<T>(endpoint: string): Promise<T> {
     this.invalidateCache();
     return await api.delete(endpoint) as T;

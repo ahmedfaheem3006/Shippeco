@@ -16,6 +16,7 @@ import { ReconcilePage } from './pages/ReconcilePage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WaTemplatesPage } from './pages/WaTemplatesPage'
+import { TasksPage } from './pages/TasksPage'
 import { useAuthStore } from './hooks/useAuthStore'
 function RequireAuth({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user)
@@ -53,6 +54,7 @@ function App() {
           <Route path="/profit-report" element={<ProfitReportPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/wa-templates" element={<WaTemplatesPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

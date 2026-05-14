@@ -62,6 +62,9 @@ export function Sidebar({ onNavigate }: Props) {
         <button className={navItemClass('/clients')} onClick={() => go('/clients')}>
           <Users size={20} /> العملاء
         </button>
+        <button className={navItemClass('/tasks')} onClick={() => go('/tasks')}>
+          <ClipboardList size={20} /> المهام المسؤل عنها
+        </button>
         <button
           className={navItemClass('/new-invoice', true)}
           onClick={() => go('/new-invoice')}

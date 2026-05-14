@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'accountant' | 'employee' | 'viewer'
+export type UserRole = 'admin' | 'manager' | 'accountant' | 'employee' | 'viewer'
 
 export type SessionUser = {
   id: number
