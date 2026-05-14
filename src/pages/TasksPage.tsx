@@ -142,12 +142,19 @@ export const TasksPage: React.FC = () => {
             >
               <div className="p-6 flex-1">
                 <div className="flex justify-between items-start mb-4">
-                  <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                    task.status === 'open' 
-                      ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400' 
-                      : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'
-                  }`}>
-                    {task.status === 'open' ? 'مفتوحة' : 'مغلقة'}
+                  <div className="flex items-center gap-2">
+                    <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                      task.status === 'open' 
+                        ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400' 
+                        : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'
+                    }`}>
+                      {task.status === 'open' ? 'مفتوحة' : 'مغلقة'}
+                    </div>
+                    {task.invoice_id && (
+                      <div className="px-3 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30">
+                        فاتورة #{task.invoice_number || task.invoice_id}
+                      </div>
+                    )}
                   </div>
                   <div className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
                     <Clock size={12} />
