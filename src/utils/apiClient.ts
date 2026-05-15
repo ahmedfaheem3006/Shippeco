@@ -26,6 +26,16 @@ class ApiClient {
     return this.handleResponse(res);
   }
 
+  async postFormData<T = any>(endpoint: string, formData: FormData): Promise<T> {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    return this.handleResponse(res);
+  }
+
   async put<T = any>(endpoint: string, body: any): Promise<T> {
     const res = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'PUT',

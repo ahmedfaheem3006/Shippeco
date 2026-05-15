@@ -27,6 +27,7 @@ export type InvoiceDraftInput = {
   receiverPhone: string
   receiverAddress: string
   receiverCountry: string
+  transferReceiptUrl: string
 }
 
 export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput {
@@ -54,6 +55,7 @@ export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput 
     receiverPhone: '',
     receiverAddress: '',
     receiverCountry: 'Saudi Arabia',
+    transferReceiptUrl: '',
   }
 }
 
@@ -160,6 +162,7 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
     receiverPhone: inv.receiverPhone ?? '',
     receiverAddress: inv.receiverAddress ?? '',
     receiverCountry: inv.receiverCountry ?? 'Saudi Arabia',
+    transferReceiptUrl: (inv as any).transfer_receipt_url ?? '',
   }
 }
 

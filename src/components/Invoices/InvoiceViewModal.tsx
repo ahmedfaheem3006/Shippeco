@@ -622,6 +622,31 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             </div>
           )}
 
+          {/* ─── سند التحويل البنكي ─── */}
+          {(displayInv as any).transfer_receipt_url && (
+            <div style={{ marginTop: 8 }} className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/20 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-emerald-100 dark:border-emerald-800/20 flex items-center gap-2">
+                <CreditCard size={14} className="text-emerald-500" />
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">سند التحويل البنكي</span>
+              </div>
+              <div className="p-3">
+                <a
+                  href={`${import.meta.env.VITE_API_URL || ''}${(displayInv as any).transfer_receipt_url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <img
+                    src={`${import.meta.env.VITE_API_URL || ''}${(displayInv as any).transfer_receipt_url}`}
+                    alt="سند التحويل"
+                    className="w-full max-h-[300px] object-contain rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900 cursor-pointer hover:opacity-90 transition-opacity"
+                  />
+                </a>
+                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 text-center mt-2 font-bold">اضغط على الصورة لفتحها بالحجم الكامل</div>
+              </div>
+            </div>
+          )}
+
           {/* ─── بنود الفاتورة ─── */}
           <div className={styles.items}>
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">

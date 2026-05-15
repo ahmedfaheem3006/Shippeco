@@ -356,13 +356,15 @@ export function InvoicesPage() {
   // ══════════════════════════════════════════
   // WIZARD SAVE — Update sends only clean DB fields
   // ══════════════════════════════════════════
-  const onWizardSave = (draft: InvoiceDraftInput, options: { asDraft: boolean }) => {
+  const onWizardSave = (draft: InvoiceDraftInput, options: { asDraft: boolean }, receiptFile?: File | null) => {
     if (mutating) return
     const id = editingInvoiceId ? String(editingInvoiceId) : `${Date.now()}`
 
     void (async () => {
       setMutating(true)
       try {
+        let savedInvoiceId = editingInvoiceId ? String(editingInvoiceId) : ''
+
         if (editingInvoiceId) {
           const { api } = await import('../utils/apiClient')
 
@@ -389,11 +391,26 @@ export function InvoicesPage() {
 
           console.log(`[Invoices] Updating #${id}:`, updatePayload)
           await api.put(`/invoices/${id}`, updatePayload)
+          savedInvoiceId = id
           console.log(`[Invoices] ✅ Updated invoice #${id}`)
         } else {
           const next = toInvoiceFromDraft(id, draft, { forceDraft: options.asDraft })
-          await invoiceService.createInvoice(next)
+          const created = await invoiceService.createInvoice(next)
+          savedInvoiceId = String((created as any)?.id || id)
           console.log(`[Invoices] ✅ Created new invoice`)
+        }
+
+        // Upload receipt file if provided
+        if (receiptFile && savedInvoiceId) {
+          try {
+            const { api } = await import('../utils/apiClient')
+            const formData = new FormData()
+            formData.append('file', receiptFile)
+            await api.postFormData(`/invoices/${savedInvoiceId}/transfer-receipt`, formData)
+            console.log(`[Invoices] ✅ Receipt uploaded for #${savedInvoiceId}`)
+          } catch (e) {
+            console.error('[Invoices] ⚠️ Receipt upload failed:', e)
+          }
         }
 
         setWizardOpen(false)
