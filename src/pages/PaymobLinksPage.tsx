@@ -354,7 +354,25 @@ export function PaymobLinksPage() {
         integration_type: integrationType,
       });
 
-      const url = String(res?.payment_url || '').trim();
+      const url = String(res?.payment_url || res?.payment_link || '').trim();
+      
+      // Handle already exists
+      if (res?.already_exists) {
+        if (window.confirm('رابط دفع معلق موجود بالفعل لهذا الطلب. هل تريد عرض الرابط القديم؟')) {
+          setResult({ url, orderId: res?.paymob_order_id });
+          if (sendWa) {
+            const msg = buildPaymobWaMessage({ name, amount: amountNum, description: desc, url });
+            openWhatsApp(phone, msg);
+          }
+          // Highlight the link in history if possible (re-load)
+          await loadLinks();
+          return;
+        } else {
+          setBusy(false);
+          return;
+        }
+      }
+
       if (!url) throw new Error(res?.error || 'تعذّر إنشاء رابط الدفع — تأكد من صحة رقم الجوال');
 
       // Refresh from DB immediately to show the new link

@@ -177,19 +177,26 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
       })
 
-      if (res.payment_url_full || res.payment_url) {
-        const url = res.payment_url_full || res.payment_url
+      if (res?.already_exists) {
+        if (!window.confirm('رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد استخدامه؟')) {
+          setCreatingLink(false);
+          return;
+        }
+      }
+
+      if (res.payment_url_full || res.payment_url || res.payment_link) {
+        const url = res.payment_url_full || res.payment_url || res.payment_link
         if (newWindow) {
           newWindow.location.href = url!;
         } else {
           window.open(url!, '_blank')
         }
-        setLocalToast({ type: 'success', message: 'تم إنشاء رابط الدفع وفتحه بنجاح' })
+        setLocalToast({ type: 'success', message: res.already_exists ? 'تم فتح الرابط الموجود مسبقاً' : 'تم إنشاء رابط الدفع وفتحه بنجاح' })
         
         // Audit: generate paymob link
         try {
           await api.post('/audit/write', {
-            action: 'payment_link',
+            action: res.already_exists ? 'payment_link_existing' : 'payment_link',
             entityType: 'invoice',
             entityId: parseInt(String(displayInv.id), 10),
             newData: { amount: remainingAmount, url }
@@ -199,6 +206,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     } catch (err: any) {
       console.error('[Paymob] Error:', err)
       setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء رابط الدفع' })
+      if (newWindow) newWindow.close();
     } finally {
       setCreatingLink(false)
       setTimeout(() => setLocalToast(null), 4000)
@@ -224,7 +232,14 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
       })
 
-      const url = res.payment_url_full || res.payment_url
+      if (res?.already_exists) {
+        if (!window.confirm('رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد نسخ الرابط القديم؟')) {
+          setCreatingLink(false);
+          return;
+        }
+      }
+
+      const url = res.payment_url_full || res.payment_url || res.payment_link
       if (url) {
         let success = false;
         // On mobile, navigator.clipboard often fails due to strict permission/context rules.
@@ -266,7 +281,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         
         if (success) {
           setCopied(true)
-          setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع!' })
+          setLocalToast({ type: 'success', message: res.already_exists ? 'تم نسخ الرابط الموجود مسبقاً!' : 'تم نسخ رابط الدفع!' })
           setTimeout(() => setCopied(false), 2000)
         } else {
           setLocalToast({ type: 'error', message: 'فشل النسخ تلقائياً، يرجى نسخ الرابط يدوياً' })
@@ -275,7 +290,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         // Audit
         try {
           await api.post('/audit/write', {
-            action: 'payment_link_copy',
+            action: res.already_exists ? 'payment_link_copy_existing' : 'payment_link_copy',
             entityType: 'invoice',
             entityId: parseInt(String(displayInv.id), 10),
             newData: { amount: remainingAmount, url }

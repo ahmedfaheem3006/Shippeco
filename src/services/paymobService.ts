@@ -19,11 +19,15 @@ export type CreatePaymentRequest = {
 
 export type CreatePaymentResponse = {
   payment_url?: string;
+  payment_link?: string;
   payment_url_full?: string;
   order_id?: string | number;
+  paymob_order_id?: string | number;
   client_secret?: string;
   shortened?: boolean;
   error?: string;
+  already_exists?: boolean;
+  message?: string;
 };
 
 export type CheckPaymentResponse = {
@@ -175,15 +179,19 @@ export async function createPaymentLink(
       const backendResult = await api.post<any>('/paymob/create-link', normalizedPayload);
       const d = backendResult?.data || backendResult;
       
-      if (!d?.payment_url) {
+      if (!d?.payment_url && !d?.payment_link) {
         throw new Error(d?.error || 'فشل إنشاء الرابط');
       }
 
       return {
         payment_url: d.payment_url,
+        payment_link: d.payment_link,
         payment_url_full: d.payment_url_full,
         order_id: d.order_id || d.paymob_order_id,
+        paymob_order_id: d.paymob_order_id || d.order_id,
         client_secret: d.client_secret,
+        already_exists: d.already_exists,
+        message: d.message,
       };
     } catch (backendError: any) {
       // Both failed — show the backend error as it's more relevant now
