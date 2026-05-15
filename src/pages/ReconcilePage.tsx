@@ -400,17 +400,56 @@ export function ReconcilePage() {
     setEditModal({ open: true, awb })
   }
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editModal.awb) return
-    setDhlManualEdits(p => ({
-      ...p, [editModal.awb!]: {
+    const newEdits = {
+      ...dhlManualEdits, [editModal.awb!]: {
         client: editFields.client || null,
         weight: editFields.weight ? parseFloat(editFields.weight) : null,
         daftraTotal: editFields.daftraTotal ? parseFloat(editFields.daftraTotal) : null,
         paymentStatus: editFields.paymentStatus || null,
       }
-    }))
-    setEditModal({ open: false, awb: null })
+    };
+    setDhlManualEdits(newEdits);
+    setEditModal({ open: false, awb: null });
+
+    // If we are in history mode, persist to backend immediately
+    if (dhlJob.jobId?.startsWith('history-')) {
+      const historyId = parseInt(dhlJob.jobId.replace('history-', ''), 10);
+      try {
+        // Prepare the updated result object
+        const currentResult = dhlJob.result;
+        if (currentResult && currentResult.results) {
+          const updatedResults = (currentResult.results as any[]).map(r => {
+            if (r.airwaybill_number === editModal.awb) {
+              const manual = newEdits[editModal.awb!];
+              return {
+                ...r,
+                daftra_weight_kg: manual.weight ?? r.daftra_weight_kg,
+                daftra_data: {
+                  ...r.daftra_data,
+                  client_name: manual.client ?? r.daftra_data?.client_name,
+                  summary_total: manual.daftraTotal ?? r.daftra_data?.summary_total,
+                  payment_status: manual.paymentStatus ?? r.daftra_data?.payment_status,
+                }
+              };
+            }
+            return r;
+          });
+
+          const updatedReport = {
+            ...currentResult,
+            results: updatedResults
+          };
+
+          await reconcileApiService.updateHistory(historyId, updatedReport);
+          setDhlJob(prev => ({ ...prev, result: updatedReport }));
+        }
+      } catch (err) {
+        console.error('Failed to update history:', err);
+        alert('فشل حفظ التعديلات في قاعدة البيانات');
+      }
+    }
   }
 
   /* ─── Reset ─── */

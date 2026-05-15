@@ -102,4 +102,16 @@ export const reconcileApiService = {
     if (!res.ok) throw new Error(json?.error?.message || 'Failed to assign client');
     return json?.data ?? json;
   },
+
+  /** Update History Record Details */
+  async updateHistory(id: number, details: any): Promise<any> {
+    const res = await fetch(`${API}/reconcile/history/${id}/update`, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: JSON.stringify({ details }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.error?.message || 'Failed to update history');
+    return json?.data ?? json;
+  },
 };
