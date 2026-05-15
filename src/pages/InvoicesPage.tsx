@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useSettingsStore } from '../hooks/useSettingsStore'
 import { downloadInvoicePDF } from '../utils/pdfGenerator'
+import { useSocket } from '../contexts/SocketContext'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
 type QuickStatus = 'all' | 'unpaid' | 'partial' | 'paid' | 'returned'
@@ -104,6 +105,26 @@ export function InvoicesPage() {
       setTaskLoading(false)
     }
   }
+
+  // ── Socket.io Listener for Real-time Payment ──
+  const { socket } = useSocket()
+  useEffect(() => {
+    if (!socket) return
+    
+    const handlePayment = (data: any) => {
+      console.log('[Socket] Payment update received:', data)
+      // Refresh the list immediately
+      syncFromDb()
+    }
+
+    socket.on('PAYMENT_SUCCESS', handlePayment)
+    socket.on('INVOICE_UPDATED', handlePayment)
+
+    return () => {
+      socket.off('PAYMENT_SUCCESS', handlePayment)
+      socket.off('INVOICE_UPDATED', handlePayment)
+    }
+  }, [socket, syncFromDb])
 
   const handleSendTask = async () => {
     if (!taskRecipientId || !taskNotes.trim() || !taskInvoice) return

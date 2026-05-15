@@ -18,6 +18,9 @@ import { SettingsPage } from './pages/SettingsPage'
 import { WaTemplatesPage } from './pages/WaTemplatesPage'
 import { TasksPage } from './pages/TasksPage'
 import { useAuthStore } from './hooks/useAuthStore'
+import { SocketProvider } from './contexts/SocketContext'
+import { Toaster } from 'react-hot-toast'
+
 function RequireAuth({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user)
 
@@ -30,7 +33,9 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 function App() {
   return (
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <SocketProvider>
+      <Toaster />
+      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
@@ -59,6 +64,7 @@ function App() {
         </Route>
       </Routes>
     </HashRouter>
+  </SocketProvider>
   )
 }
 

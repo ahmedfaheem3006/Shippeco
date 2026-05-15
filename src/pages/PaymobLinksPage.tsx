@@ -10,6 +10,7 @@ import {
   AlertCircle, Check, CircleDollarSign, ExternalLink,
   Clock, Loader2, Eye,
 } from 'lucide-react';
+import { useSocket } from '../contexts/SocketContext';
 
 /* ═══ Helpers ═══ */
 async function copyText(value: string) {
@@ -155,6 +156,27 @@ export function PaymobLinksPage() {
       setBusy(false);
     }
   };
+
+  // ── Socket.io Listener for Real-time Payment ──
+  const { socket } = useSocket()
+  useEffect(() => {
+    if (!socket) return
+    
+    const handlePayment = (data: any) => {
+      console.log('[Socket] Payment update received:', data)
+      // Refresh the links list and stats immediately
+      void loadLinks();
+      void loadStats();
+    }
+
+    socket.on('PAYMENT_SUCCESS', handlePayment)
+    socket.on('INVOICE_UPDATED', handlePayment)
+
+    return () => {
+      socket.off('PAYMENT_SUCCESS', handlePayment)
+      socket.off('INVOICE_UPDATED', handlePayment)
+    }
+  }, [socket]);
 
   const checkStatus = async (link: PaymobLink) => {
     if (!link.paymob_order_id) return;
