@@ -8,7 +8,7 @@ import {
   CreditCard, Link, Send, Copy, Search, RefreshCw,
   Trash2, X, Smartphone, User, FileText, CheckCircle2,
   AlertCircle, Check, CircleDollarSign, ExternalLink,
-  Clock, Loader2, Eye,
+  Clock, Loader2,
 } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 
@@ -139,7 +139,6 @@ export function PaymobLinksPage() {
   // Result
   const [result, setResult] = useState<{ url: string; orderId?: string | number } | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
-  const [checkingPayment, setCheckingPayment] = useState<string | null>(null);
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const handleGlobalSync = async () => {
@@ -178,25 +177,37 @@ export function PaymobLinksPage() {
     }
   }, [socket]);
 
-  const checkStatus = async (link: PaymobLink) => {
-    if (!link.paymob_order_id) return;
-    setCheckingPayment(String(link.paymob_order_id));
-    try {
-      const res = await checkPayment(String(link.paymob_order_id));
-      if (res.paid) {
-        setLocalToast({ type: 'success', message: 'تم الدفع وتحديث الفاتورة!' });
-        void loadLinks();
-        void loadStats();
-      } else {
-        setLocalToast({ type: 'error', message: 'لم يتم الدفع بعد' });
+  // ── Automatic Polling for Pending Links ──
+  useEffect(() => {
+    if (useLocalHistory) return;
+
+    const pollInterval = setInterval(async () => {
+      const pendingLinks = links.filter(l => l.status === 'pending' && l.paymob_order_id);
+      if (pendingLinks.length === 0) return;
+
+      console.log(`[Polling] Checking ${pendingLinks.length} pending links...`);
+      for (const link of pendingLinks) {
+        try {
+          const check = await checkPayment(String(link.paymob_order_id));
+          if (check.paid) {
+            console.log(`[Polling] Link ${link.id} confirmed paid!`);
+            // Update the invoice status too
+            await api.post(`/invoices/${link.invoice_id}/mark-paid`, {
+              amount: check.paid_amount || link.amount,
+              payment_method: 'paymob',
+              notes: `Auto-confirmed via background polling (Order: ${link.paymob_order_id})`
+            });
+            void loadLinks();
+            void loadStats();
+          }
+        } catch (e) {
+          // Silent
+        }
       }
-    } catch (err: any) {
-      setLocalToast({ type: 'error', message: err.message || 'فشل الفحص' });
-    } finally {
-      setCheckingPayment(null);
-      setTimeout(() => setLocalToast(null), 6000);
-    }
-  };
+    }, 10000); // Every 10 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [links, useLocalHistory]);
 
   const loadLinks = useCallback(async (status?: string) => {
     setLinksLoading(true);
@@ -737,14 +748,7 @@ export function PaymobLinksPage() {
                         }}>
                         <Send size={14} />
                       </button>
-                      {link.paymob_order_id && (
-                        <button type="button" title="فحص الدفع"
-                          className="p-1.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-md border border-amber-200 dark:border-amber-800/30 transition-colors"
-                          onClick={() => checkStatus(link)}
-                          disabled={checkingPayment === String(link.paymob_order_id)}>
-                          {checkingPayment === String(link.paymob_order_id) ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
-                        </button>
-                      )}
+                      {/* Manual check button removed as polling is now automatic */}
                       <button type="button" title="حذف"
                         className="p-1.5 text-red-500 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200 dark:border-red-800/30 transition-colors"
                         onClick={() => handleDelete(link)}>
