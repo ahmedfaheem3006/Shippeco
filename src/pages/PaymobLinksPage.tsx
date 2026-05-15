@@ -172,7 +172,7 @@ export function PaymobLinksPage() {
       setLocalToast({ type: 'error', message: err.message || 'فشل الفحص' });
     } finally {
       setCheckingPayment(null);
-      setTimeout(() => setLocalToast(null), 3000);
+      setTimeout(() => setLocalToast(null), 6000);
     }
   };
 
@@ -581,9 +581,14 @@ export function PaymobLinksPage() {
 
           {/* Error */}
           {(error || localToast) && (
-            <div className={`${(localToast?.type === 'success' || !error) ? 'bg-green-50 border-green-200 text-green-600' : 'bg-red-50 border-red-200 text-red-600'} p-3 rounded-xl text-sm font-bold flex items-center gap-2 border`}>
-              {(localToast?.type === 'success' || !error) ? <Check size={18} /> : <AlertCircle size={18} />}
-              {localToast?.message || error}
+            <div className={`${(localToast?.type === 'success' || !error) ? 'bg-green-50 border-green-200 text-green-600' : 'bg-red-50 border-red-200 text-red-600'} p-3 rounded-xl text-sm font-bold flex justify-between items-center gap-2 border`}>
+              <div className="flex items-center gap-2">
+                {(localToast?.type === 'success' || !error) ? <Check size={18} /> : <AlertCircle size={18} />}
+                {localToast?.message || error}
+              </div>
+              <button onClick={() => { setLocalToast(null); setError(null); }} className="p-1 hover:bg-black/5 rounded-full transition-colors">
+                <X size={14} />
+              </button>
             </div>
           )}
 

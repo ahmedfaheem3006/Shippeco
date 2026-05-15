@@ -348,8 +348,17 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
               ? 'bg-green-600 text-white border-green-500' 
               : 'bg-red-600 text-white border-red-500'
           }`}>
-            {localToast.type === 'success' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
-            <span className="font-bold text-sm">{localToast.message}</span>
+            <div className="flex items-center gap-3">
+              {localToast.type === 'success' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+              <span className="font-bold text-sm whitespace-nowrap">{localToast.message}</span>
+            </div>
+            <button 
+              onClick={() => setLocalToast(null)}
+              className="p-1 hover:bg-white/20 rounded-full transition-colors ml-1"
+              title="إغلاق"
+            >
+              <X size={16} />
+            </button>
           </div>
         )}
 
@@ -693,6 +702,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
                   setLocalToast({ type: 'error', message: 'فشل فحص الحالة' });
                 } finally {
                   setCreatingLink(false);
+                  setTimeout(() => setLocalToast(null), 6000);
                 }
               }}
               disabled={creatingLink}
