@@ -310,9 +310,30 @@ export function InvoicesPage() {
   const handleCollect = (id: string) => {
     const inv = storeInvoices.find((i) => String(i.id) === id)
     if (!inv || !inv.phone) return
-    const templateKey = getSmartTemplateKey(inv)
-    const msg = applyWaTemplate(templateKey, inv)
-    openWhatsApp(inv.phone, msg)
+
+    // Fetch Paymob link for this invoice, then send WhatsApp
+    void (async () => {
+      let paymentUrl = inv.paymentUrl || ''
+      
+      // Try to find existing Paymob link for this invoice
+      if (!paymentUrl) {
+        try {
+          const { api } = await import('../utils/apiClient')
+          const res = await api.get<any>(`/paymob/links?invoice_id=${inv.id}&limit=1`)
+          const links = res?.links || res?.data?.links || []
+          if (links.length > 0) {
+            paymentUrl = links[0].payment_url || links[0].payment_link || ''
+          }
+        } catch {
+          // Silent - continue without link
+        }
+      }
+
+      const invWithUrl = paymentUrl ? { ...inv, paymentUrl } : inv
+      const templateKey = getSmartTemplateKey(invWithUrl)
+      const msg = applyWaTemplate(templateKey, invWithUrl)
+      openWhatsApp(inv.phone!, msg)
+    })()
   }
 
   const handleDelete = (id: string) => {
