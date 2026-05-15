@@ -139,6 +139,42 @@ export function PaymobLinksPage() {
   const [result, setResult] = useState<{ url: string; orderId?: string | number } | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [checkingPayment, setCheckingPayment] = useState<string | null>(null);
+  const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleGlobalSync = async () => {
+    try {
+      setBusy(true);
+      const res = await api.post('/paymob/sync-paid', {});
+      const d: any = res.data || res;
+      alert(`تم التحديث: ${d.updated}, تم التخطي: ${d.skipped}, فشل: ${d.failed}`);
+      void loadLinks();
+      void loadStats();
+    } catch (err: any) {
+      alert('فشل المزامنة: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const checkStatus = async (link: PaymobLink) => {
+    if (!link.paymob_order_id) return;
+    setCheckingPayment(String(link.paymob_order_id));
+    try {
+      const res = await checkPayment(String(link.paymob_order_id));
+      if (res.paid) {
+        setLocalToast({ type: 'success', message: 'تم الدفع وتحديث الفاتورة!' });
+        void loadLinks();
+        void loadStats();
+      } else {
+        setLocalToast({ type: 'error', message: 'لم يتم الدفع بعد' });
+      }
+    } catch (err: any) {
+      setLocalToast({ type: 'error', message: err.message || 'فشل الفحص' });
+    } finally {
+      setCheckingPayment(null);
+      setTimeout(() => setLocalToast(null), 3000);
+    }
+  };
 
   const loadLinks = useCallback(async (status?: string) => {
     setLinksLoading(true);
@@ -291,43 +327,6 @@ export function PaymobLinksPage() {
     if (ok) { setCopiedUrl(url); setTimeout(() => setCopiedUrl(null), 2000); }
   };
 
-  /* ── Check Payment ── */
-  const handleCheckPayment = async (orderId: string) => {
-    setCheckingPayment(orderId);
-    try {
-      const res = await checkPayment(orderId);
-      if (res.paid) { 
-        // Find the link locally to get the invoice_id
-        const link = links.find(l => String(l.paymob_order_id) === String(orderId));
-        
-        // Try to determine the target invoice ID
-        let targetInvoiceId: string | number | null | undefined = link?.invoice_id;
-        
-        // Fallback: If invoice_id is missing, try to extract it from the description or special reference
-        if (!targetInvoiceId && link?.description) {
-          const match = link.description.match(/#(\d+)/);
-          if (match) targetInvoiceId = match[1];
-        }
-
-        if (targetInvoiceId) {
-          try {
-            await api.post(`/invoices/${targetInvoiceId}/mark-paid`, {
-              amount: res.paid_amount || link?.amount,
-              payment_method: 'paymob',
-              notes: `Manual check confirm (Order: ${orderId})`
-            });
-          } catch (err) {
-            console.warn('[Paymob] Guaranteed update failed:', err);
-          }
-        }
-        await loadLinks(); 
-        await loadStats(); 
-      }
-      alert(res.paid ? `✅ تم تأكيد الدفع وتحديث الفواتير!` : '⏳ لم يتم الدفع بعد');
-    } catch (e) {
-      alert('فشل التحقق: ' + (e instanceof Error ? e.message : String(e)));
-    } finally { setCheckingPayment(null); }
-  };
 
   const onCreate = async (sendWa: boolean) => {
     setError(null); setResult(null);
@@ -581,9 +580,10 @@ export function PaymobLinksPage() {
           </div>
 
           {/* Error */}
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm font-bold flex items-center gap-2">
-              <AlertCircle size={18} /> {error}
+          {(error || localToast) && (
+            <div className={`${(localToast?.type === 'success' || !error) ? 'bg-green-50 border-green-200 text-green-600' : 'bg-red-50 border-red-200 text-red-600'} p-3 rounded-xl text-sm font-bold flex items-center gap-2 border`}>
+              {(localToast?.type === 'success' || !error) ? <Check size={18} /> : <AlertCircle size={18} />}
+              {localToast?.message || error}
             </div>
           )}
 
@@ -641,6 +641,17 @@ export function PaymobLinksPage() {
               <RefreshCw size={18} className="text-indigo-600 dark:text-indigo-400" /> سجل الروابط
             </h2>
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleGlobalSync}
+                disabled={busy}
+                className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                title="مزامنة الكل"
+              >
+                <div className="flex items-center gap-1">
+                  <RefreshCw size={18} className={busy ? 'animate-spin' : ''} />
+                  <span className="text-xs font-bold">مزامنة الكل</span>
+                </div>
+              </button>
               <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
                 className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 dark:text-gray-300">
                 <option value="all">الكل</option>
@@ -699,12 +710,12 @@ export function PaymobLinksPage() {
                         }}>
                         <Send size={14} />
                       </button>
-                      {link.status === 'pending' && link.paymob_order_id && (
+                      {link.paymob_order_id && (
                         <button type="button" title="فحص الدفع"
                           className="p-1.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-md border border-amber-200 dark:border-amber-800/30 transition-colors"
-                          onClick={() => handleCheckPayment(link.paymob_order_id!)}
-                          disabled={checkingPayment === link.paymob_order_id}>
-                          {checkingPayment === link.paymob_order_id ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+                          onClick={() => checkStatus(link)}
+                          disabled={checkingPayment === String(link.paymob_order_id)}>
+                          {checkingPayment === String(link.paymob_order_id) ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
                         </button>
                       )}
                       <button type="button" title="حذف"
