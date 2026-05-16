@@ -103,6 +103,14 @@ export function openWhatsApp(phone: string, msg: string): boolean {
   // on WhatsApp Desktop for Windows where it corrupts emojis during redirect.
   const url = `https://api.whatsapp.com/send/?phone=${wa}&text=${encodeURIComponent(cleanMsg)}`
   
-  window.open(url, '_blank', 'noopener,noreferrer')
+  // On mobile (especially iPhone Safari), window.open inside async callbacks
+  // gets blocked by popup blocker. Use location.href as primary on mobile.
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  
+  if (isMobile) {
+    window.location.href = url
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
   return true
 }

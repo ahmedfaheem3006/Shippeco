@@ -311,11 +311,14 @@ export function InvoicesPage() {
     const inv = storeInvoices.find((i) => String(i.id) === id)
     if (!inv || !inv.phone) return
 
-    // Fetch Paymob link for this invoice, then send WhatsApp
+    // Fetch or CREATE Paymob link for this invoice, then send WhatsApp
     void (async () => {
       let paymentUrl = inv.paymentUrl || ''
-      
-      // Try to find existing Paymob link for this invoice
+      const price = Number(inv.price || 0)
+      const paid = Number((inv as any).paid_amount ?? inv.partialPaid ?? inv.partial_paid ?? 0)
+      const remainingAmount = Math.max(0, price - paid)
+
+      // Step 1: Try to find existing Paymob link for this invoice
       if (!paymentUrl) {
         try {
           const { api } = await import('../utils/apiClient')
@@ -325,10 +328,29 @@ export function InvoicesPage() {
             paymentUrl = links[0].payment_url || links[0].payment_link || ''
           }
         } catch {
-          // Silent - continue without link
+          // Silent - continue to create
         }
       }
 
+      // Step 2: If no link exists, AUTO-CREATE one
+      if (!paymentUrl && remainingAmount > 0) {
+        try {
+          const { createPaymentLink } = await import('../services/paymobService')
+          const res = await createPaymentLink({
+            invoice_id: String(inv.id),
+            amount: remainingAmount,
+            client_name: inv.client || 'عميل',
+            client_phone: inv.phone || '0500000000',
+            description: `دفع فاتورة #${inv.invoice_number || inv.id}`,
+          })
+          paymentUrl = res.payment_url_full || res.payment_url || res.payment_link || ''
+          console.log('[Collect] ✅ Auto-created Paymob link:', paymentUrl)
+        } catch (err) {
+          console.error('[Collect] ⚠️ Failed to auto-create payment link:', err)
+        }
+      }
+
+      // Step 3: Build message with the link and open WhatsApp
       const invWithUrl = paymentUrl ? { ...inv, paymentUrl } : inv
       const templateKey = getSmartTemplateKey(invWithUrl)
       const msg = applyWaTemplate(templateKey, invWithUrl)
