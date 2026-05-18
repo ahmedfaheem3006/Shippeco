@@ -67,6 +67,7 @@ function generateShippecTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
     </div>
     ${generateCommonBody(inv, tmpl, items, total, paid, remaining, desc, '#2563eb')}
     ${generateFooter(tmpl)}
+    ${generateReceiptHtml(inv)}
   `
 }
 
@@ -92,6 +93,7 @@ function generateClassicTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
     </div>
     ${generateCommonBody(inv, tmpl, items, total, paid, remaining, desc, '#1e293b')}
     ${generateFooter(tmpl)}
+    ${generateReceiptHtml(inv)}
   `
 }
 
@@ -115,6 +117,7 @@ function generateModernTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[], 
     </div>
     ${generateCommonBody(inv, tmpl, items, total, paid, remaining, desc, '#4f46e5')}
     ${generateFooter(tmpl)}
+    ${generateReceiptHtml(inv)}
   `
 }
 
@@ -132,6 +135,7 @@ function generateMinimalTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
     </div>
     ${generateCommonBody(inv, tmpl, items, total, paid, remaining, desc, '#111827')}
     ${generateFooter(tmpl)}
+    ${generateReceiptHtml(inv)}
   `
 }
 
@@ -207,25 +211,26 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
         </tr>
       </table>
     </div>
-
-    ${(() => {
-      const b64 = (inv as any).transferReceiptBase64;
-      const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl;
-      const receiptImg = b64 || (receiptUrl 
-        ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`)
-        : '');
-      return receiptImg ? `
-        <div style="page-break-before: always; padding: 40px 28px; margin-top: 20px;">
-          <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px; text-align: center;">
-            <span style="font-weight: 900; font-size: 20px; color: #1e293b;">سند التحويل البنكي المرفق</span>
-          </div>
-          <div style="text-align: center;">
-            <img src="${receiptImg}" style="max-width: 100%; max-height: 800px; object-fit: contain; border-radius: 12px; border: 2px solid #e2e8f0; padding: 4px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" alt="سند التحويل" />
-          </div>
-        </div>
-      ` : ''
-    })()}
   `
+}
+
+function generateReceiptHtml(inv: Invoice): string {
+  const b64 = (inv as any).transferReceiptBase64;
+  const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl;
+  const receiptImg = b64 || (receiptUrl 
+    ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`)
+    : '');
+  
+  return receiptImg ? `
+    <div style="page-break-before: always; padding: 40px 28px; margin-top: 20px;">
+      <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px; text-align: center;">
+        <span style="font-weight: 900; font-size: 20px; color: #1e293b;">سند التحويل البنكي المرفق</span>
+      </div>
+      <div style="text-align: center;">
+        <img src="${receiptImg}" style="max-width: 100%; max-height: 800px; object-fit: contain; border-radius: 12px; border: 2px solid #e2e8f0; padding: 4px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" alt="سند التحويل" />
+      </div>
+    </div>
+  ` : ''
 }
 
 function generateFooter(tmpl: InvoiceTemplate): string {
