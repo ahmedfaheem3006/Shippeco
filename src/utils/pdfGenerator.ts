@@ -31,11 +31,13 @@ function formatDate(raw: string | undefined | null): string {
 
 function buildDesc(inv: Record<string, any>): string {
   const parts: string[] = []
-  if (inv.awb) parts.push('رقم البوليصة:' + safe(inv.awb))
-  if (inv.invoice_number) parts.push('رقم الفاتورة:' + safe(inv.invoice_number))
+  if (inv.awb) parts.push('رقم البوليصة: ' + safe(inv.awb))
+  if (inv.invoice_number) parts.push('رقم الفاتورة: ' + safe(inv.invoice_number))
   if (inv.weight) parts.push('الوزن: ' + safe(inv.weight) + ' كيلو')
   if (inv.dimensions) parts.push('أبعاد الشحنة: ' + safe(inv.dimensions))
   if (inv.final_weight) parts.push('الوزن النهائي: ' + safe(inv.final_weight) + ' كيلو')
+  if (inv.details) parts.push('\nتفاصيل إضافية:\n' + inv.details)
+  else if (inv.notes) parts.push('\nملاحظات:\n' + inv.notes)
   return parts.join('\n')
 }
 
@@ -140,15 +142,17 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
   const receiverAddress = inv.receiver_address || ''
   const receiverCountry = inv.receiver_country || ''
 
-  const itemsRows = items.map((it: any) => `
+  const itemsRows = items.map((it: any) => {
+    const itemDesc = [it.details, desc].filter(Boolean).join('\n\n')
+    return `
     <tr style="border-bottom:1px solid #e5e7eb">
       <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1e293b;font-size:12px;vertical-align:top;width:18%">${escapeHtml(it.type)}</td>
-      <td style="padding:10px 8px;text-align:right;font-size:12px;color:#555;vertical-align:top;width:40%;white-space:pre-line;line-height:1.7">${escapeHtml(desc || it.details || '')}</td>
+      <td style="padding:10px 8px;text-align:right;font-size:12px;color:#555;vertical-align:top;width:40%;white-space:pre-line;line-height:1.7">${escapeHtml(itemDesc)}</td>
       <td style="padding:10px 8px;text-align:center;font-size:12px;width:10%">1</td>
       <td style="padding:10px 8px;text-align:center;font-size:12px;font-family:'Segoe UI',sans-serif;direction:ltr;width:16%">${formatCurrency(it.price)}</td>
       <td style="padding:10px 8px;text-align:center;font-size:12px;font-weight:700;font-family:'Segoe UI',sans-serif;direction:ltr;width:16%">${formatCurrency(it.price)}</td>
     </tr>
-  `).join('')
+  `}).join('')
 
   return `
     <div style="display:flex;justify-content:space-between;padding:16px 28px;gap:20px">
@@ -203,6 +207,19 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
         </tr>
       </table>
     </div>
+
+    ${(() => {
+      const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl
+      const receiptImg = receiptUrl 
+        ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : \`\${import.meta.env.VITE_API_URL || ''}\${receiptUrl}\`)
+        : ''
+      return receiptImg ? \`
+        <div style="padding:16px 28px; margin-top:20px; page-break-inside: avoid; border-top:1px solid #e5e7eb">
+          <div style="font-weight:800;font-size:14px;color:#111;margin-bottom:12px">سند التحويل المرفق:</div>
+          <img src="\${receiptImg}" style="max-width:100%; max-height:450px; border-radius:8px; border:1px solid #d1d5db; object-fit:contain;" alt="سند التحويل" />
+        </div>
+      \` : ''
+    })()}
   `
 }
 
