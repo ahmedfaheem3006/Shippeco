@@ -209,14 +209,19 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
     </div>
 
     ${(() => {
-      const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl
-      const receiptImg = receiptUrl 
+      const b64 = (inv as any).transferReceiptBase64;
+      const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl;
+      const receiptImg = b64 || (receiptUrl 
         ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`)
-        : ''
+        : '');
       return receiptImg ? `
-        <div style="padding:16px 28px; margin-top:20px; page-break-inside: avoid; border-top:1px solid #e5e7eb">
-          <div style="font-weight:800;font-size:14px;color:#111;margin-bottom:12px">سند التحويل المرفق:</div>
-          <img src="${receiptImg}" style="max-width:100%; max-height:450px; border-radius:8px; border:1px solid #d1d5db; object-fit:contain;" alt="سند التحويل" />
+        <div style="page-break-before: always; padding: 40px 28px; margin-top: 20px;">
+          <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px; text-align: center;">
+            <span style="font-weight: 900; font-size: 20px; color: #1e293b;">سند التحويل البنكي المرفق</span>
+          </div>
+          <div style="text-align: center;">
+            <img src="${receiptImg}" style="max-width: 100%; max-height: 800px; object-fit: contain; border-radius: 12px; border: 2px solid #e2e8f0; padding: 4px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" alt="سند التحويل" />
+          </div>
         </div>
       ` : ''
     })()}
@@ -297,6 +302,7 @@ ${themeContent}
 
 // ═══ Download PDF ═══
 export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
+  await preloadInvoiceReceipt(inv)
   const html = generateInvoiceHTML(inv, tmpl)
   
   // Try direct download using canvas -> jspdf
@@ -351,6 +357,7 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
 
 // ═══ Share PDF via WhatsApp ═══
 export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) {
+  await preloadInvoiceReceipt(inv)
   const { total } = computeInvoiceTotal(inv)
   const paid = parseFloat(String(inv.paid_amount || inv.partialPaid || 0)) || 0
   const remaining = total - paid
@@ -480,4 +487,30 @@ async function canvasToPDFBlob(canvas: HTMLCanvasElement, _inv: Invoice, _tmpl: 
       'image/png'
     )
   })
+}
+
+// ═══ Helper: Preload Receipt Image as Base64 ═══
+async function fetchImageAsBase64(url: string): Promise<string> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return ''
+    const blob = await res.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result as string)
+      reader.onerror = () => resolve('')
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return ''
+  }
+}
+
+export async function preloadInvoiceReceipt(inv: Invoice) {
+  const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl
+  if (receiptUrl && !receiptUrl.startsWith('data:')) {
+    const fullUrl = receiptUrl.startsWith('http') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`
+    const b64 = await fetchImageAsBase64(fullUrl)
+    if (b64) (inv as any).transferReceiptBase64 = b64
+  }
 }

@@ -630,19 +630,11 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
                 <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">سند التحويل البنكي</span>
               </div>
               <div className="p-3">
-                <a
-                  href={`${import.meta.env.VITE_API_URL || ''}${(displayInv as any).transfer_receipt_url}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block"
-                >
-                  <img
-                    src={`${import.meta.env.VITE_API_URL || ''}${(displayInv as any).transfer_receipt_url}`}
-                    alt="سند التحويل"
-                    className="w-full max-h-[300px] object-contain rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900 cursor-pointer hover:opacity-90 transition-opacity"
-                  />
-                </a>
-                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 text-center mt-2 font-bold">اضغط على الصورة لفتحها بالحجم الكامل</div>
+                <img
+                  src={`${import.meta.env.VITE_API_URL || ''}${(displayInv as any).transfer_receipt_url}`}
+                  alt="سند التحويل"
+                  className="w-full h-auto object-contain rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900"
+                />
               </div>
             </div>
           )}
