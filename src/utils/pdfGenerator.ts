@@ -211,14 +211,14 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
     ${(() => {
       const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl
       const receiptImg = receiptUrl 
-        ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : \`\${import.meta.env.VITE_API_URL || ''}\${receiptUrl}\`)
+        ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`)
         : ''
-      return receiptImg ? \`
+      return receiptImg ? `
         <div style="padding:16px 28px; margin-top:20px; page-break-inside: avoid; border-top:1px solid #e5e7eb">
           <div style="font-weight:800;font-size:14px;color:#111;margin-bottom:12px">سند التحويل المرفق:</div>
-          <img src="\${receiptImg}" style="max-width:100%; max-height:450px; border-radius:8px; border:1px solid #d1d5db; object-fit:contain;" alt="سند التحويل" />
+          <img src="${receiptImg}" style="max-width:100%; max-height:450px; border-radius:8px; border:1px solid #d1d5db; object-fit:contain;" alt="سند التحويل" />
         </div>
-      \` : ''
+      ` : ''
     })()}
   `
 }
