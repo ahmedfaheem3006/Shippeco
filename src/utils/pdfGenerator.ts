@@ -33,9 +33,9 @@ function buildDesc(inv: Record<string, any>): string {
   const parts: string[] = []
   if (inv.awb) parts.push('رقم البوليصة: ' + safe(inv.awb))
   if (inv.invoice_number) parts.push('رقم الفاتورة: ' + safe(inv.invoice_number))
-  if (inv.weight) parts.push('الوزن: ' + safe(inv.weight) + ' كيلو')
+  if (inv.final_weight) parts.push('وزن المحاسبة: ' + safe(inv.final_weight) + ' كيلو')
+  if (inv.weight) parts.push('الوزن الفعلي: ' + safe(inv.weight) + ' كيلو')
   if (inv.dimensions) parts.push('أبعاد الشحنة: ' + safe(inv.dimensions))
-  if (inv.final_weight) parts.push('الوزن النهائي: ' + safe(inv.final_weight) + ' كيلو')
   if (inv.details) parts.push('\nتفاصيل إضافية:\n' + inv.details)
   else if (inv.notes) parts.push('\nملاحظات:\n' + inv.notes)
   return parts.join('\n')

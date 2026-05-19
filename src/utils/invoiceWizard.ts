@@ -12,6 +12,7 @@ export type InvoiceDraftInput = {
   price: string
   dhlCost: string
   weight: string
+  finalWeight: string
   dimensions: string
   date: string
   status: InvoiceStatus
@@ -41,6 +42,7 @@ export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput 
     price: '',
     dhlCost: '',
     weight: '',
+    finalWeight: '',
     dimensions: '',
     date: todayIso,
     status: 'unpaid',
@@ -122,6 +124,7 @@ export function toInvoiceFromDraft(
     partialPaid,
     dhlCost,
     weight,
+    final_weight: draft.finalWeight || undefined,
     dimensions: draft.dimensions || undefined,
     itemType: draft.itemType || undefined,
     details,
@@ -148,6 +151,7 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
     price: String(inv.price ?? ''),
     dhlCost: inv.dhlCost !== undefined ? String(inv.dhlCost) : '',
     weight: inv.weight !== undefined ? String(inv.weight) : '',
+    finalWeight: inv.final_weight !== undefined ? String(inv.final_weight) : '',
     dimensions: inv.dimensions || '',
     date: inv.date ? String(inv.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
     status: inv.status && ['paid', 'unpaid', 'partial', 'returned'].includes(inv.status) 

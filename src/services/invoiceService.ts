@@ -228,7 +228,8 @@ function mapToRailway(inv: Partial<Invoice>): any {
     details: i.details,
     shipping_type: i.shippingType || i.shipping_type,
     dimensions: i.dimensions,
-    weight: i.weight || i.final_weight,
+    weight: i.weight || undefined,
+    final_weight: i.final_weight || undefined,
     code_type: i.codeType || i.code_type,
   };
 }
@@ -295,7 +296,8 @@ function mapRailwayToCloudflare(result: any): Invoice {
     sender_address: result.sender_address || '',
     receiver_address: result.receiver_address || '',
     receiver_country: result.receiver_country || '',
-    weight: result.weight || result.final_weight || '',
+    weight: result.weight || '',
+    final_weight: result.final_weight || '',
     dimensions: result.dimensions || '',
     status,
     isDraft: false,

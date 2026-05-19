@@ -448,6 +448,10 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                  </div>
                  <div className="flex flex-col gap-1.5">
                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">وزن المحاسبة النهائي (كجم)</label>
+                   <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.finalWeight} onChange={(e) => setDraft((p) => ({ ...p, finalWeight: e.target.value }))} placeholder="0.0" dir="ltr" />
+                 </div>
+                 <div className="flex flex-col gap-1.5">
+                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الوزن الفعلي (كجم)</label>
                    <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.weight} onChange={(e) => setDraft((p) => ({ ...p, weight: e.target.value }))} placeholder="0.0" dir="ltr" />
                  </div>
 
