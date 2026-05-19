@@ -32,6 +32,7 @@ import {
 import { useAuthStore } from '../hooks/useAuthStore'
 import { InvoiceWizardModal } from '../components/Invoices/InvoiceWizardModal'
 import { toDraftFromInvoice, toInvoiceFromDraft } from '../utils/invoiceWizard'
+import { invoiceService } from '../services/invoiceService'
 import { api } from '../utils/apiClient'
 import s from './ProfitReportPage.module.css'
 
@@ -307,12 +308,24 @@ export function ProfitReportPage() {
   const [taskHistory, setTaskHistory] = useState<any[]>([])
 
   const handleEdit = (inv: any) => {
-    if (!inv) return
-    setEditingInvoiceId(String(inv.id))
-    setWizardInitialDraft(toDraftFromInvoice(inv))
-    setWizardTitle(`تعديل الفاتورة #${inv.invoice_number || inv.daftra_id || inv.id}`)
-    setWizardKey((k) => k + 1)
-    setWizardOpen(true)
+    if (!inv || mutating) return
+    const id = String(inv.id)
+    void (async () => {
+      setMutating(true)
+      try {
+        const fullInv = await invoiceService.getInvoice(id)
+        setEditingInvoiceId(id)
+        setWizardInitialDraft(toDraftFromInvoice(fullInv))
+        setWizardTitle(`تعديل الفاتورة #${fullInv.invoice_number || fullInv.daftra_id || fullInv.id}`)
+        setWizardKey((k) => k + 1)
+        setWizardOpen(true)
+      } catch (err: any) {
+        console.error('[ProfitReport] Failed to load invoice details:', err)
+        window.alert('فشل في تحميل تفاصيل الفاتورة')
+      } finally {
+        setMutating(false)
+      }
+    })()
   }
 
   const handleOpenTaskModal = async (inv: any) => {

@@ -350,12 +350,9 @@ const filteredInvoices = useMemo(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await apiFetch<any>(`/invoices?page=1&limit=1&search=${selectedInvoiceId}`)
+        const res = await apiFetch<any>(`/invoices/${selectedInvoiceId}`)
         if (cancelled) return
-        let inv: any = null
-        if (res?.data?.[0]) inv = res.data[0]
-        else if (res?.invoices?.[0]) inv = res.invoices[0]
-        else if (Array.isArray(res) && res[0]) inv = res[0]
+        const inv = res?.data !== undefined && res?.success ? res.data : res
 
         if (inv) {
           setSelectedInvoiceFull(mapInvoice(inv))

@@ -296,13 +296,23 @@ export function InvoicesPage() {
   const handleView = (id: string) => setViewInvoiceId(id)
 
   const handleEdit = (id: string) => {
-    const inv = storeInvoices.find((i) => String(i.id) === id)
-    if (!inv) return
-    setEditingInvoiceId(id)
-    setWizardInitialDraft(toDraftFromInvoice(inv))
-    setWizardTitle(`${inv.isDraft ? 'إكمال المسودة' : 'تعديل الفاتورة'} #${inv.invoice_number || inv.id}`)
-    setWizardKey((k) => k + 1)
-    setWizardOpen(true)
+    if (mutating) return
+    void (async () => {
+      setMutating(true)
+      try {
+        const fullInv = await invoiceService.getInvoice(id)
+        setEditingInvoiceId(id)
+        setWizardInitialDraft(toDraftFromInvoice(fullInv))
+        setWizardTitle(`${fullInv.isDraft ? 'إكمال المسودة' : 'تعديل الفاتورة'} #${fullInv.invoice_number || fullInv.id}`)
+        setWizardKey((k) => k + 1)
+        setWizardOpen(true)
+      } catch (err: any) {
+        console.error('[Invoices] Failed to load invoice details:', err)
+        window.alert('فشل في تحميل تفاصيل الفاتورة')
+      } finally {
+        setMutating(false)
+      }
+    })()
   }
 
   const handleAddItem = (id: string) => setAddItemInvoiceId(id)
