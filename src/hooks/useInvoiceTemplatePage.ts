@@ -77,7 +77,16 @@ function mapInvoice(inv: any): Invoice {
     weight: String(inv.weight || inv.final_weight || ''),
     final_weight: String(inv.final_weight || ''),
     dimensions: String(inv.dimensions || ''),
-    items: inv.items_json || inv.items || [],
+    items: (() => {
+      let it = inv.items;
+      if (!it || (Array.isArray(it) && it.length === 0)) {
+        it = inv.items_json;
+      }
+      if (typeof it === 'string') {
+        try { it = JSON.parse(it); } catch { it = []; }
+      }
+      return Array.isArray(it) ? it : [];
+    })(),
     isDraft: false,
     shipping_type: String(inv.shipping_type || ''),
     payment_method: String(inv.payment_method || inv.payment || ''),

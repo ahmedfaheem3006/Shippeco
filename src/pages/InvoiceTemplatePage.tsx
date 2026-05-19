@@ -47,6 +47,7 @@ function InvoicePreview({
 
   return (
     <iframe
+      key={String(inv.id || 'new') + '_' + html.length}
       srcDoc={html}
       className="w-full bg-white rounded-lg shadow-sm border border-gray-200 dark:border-slate-700"
       style={{ height: 'calc(100vh - 16rem)', minHeight: '650px', border: 'none' }}
