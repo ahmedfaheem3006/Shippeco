@@ -238,24 +238,10 @@ function generateReceiptHtml(inv: Invoice): string {
 }
 
 function generateFooter(tmpl: InvoiceTemplate): string {
+  if (!tmpl.note) return ''
   return `
-    <div style="padding:20px 28px">
-      <div style="font-weight:800;font-size:14px;color:#111;text-align:center;margin-bottom:12px">شكرا لثقتكم ونتمنا لكم يوما سعيدا</div>
-      <div style="font-size:11px;color:#555;line-height:1.8;text-align:center;margin-bottom:16px;padding:0 20px">
-        شيب بيك تقدم الخدمات اللوجستية ومختصة بالشحن الجوي لجميع دول العالم بجودة عالية وأسعار تنافسية أيضا مختصون بشحن المواد الخطرة والسائلة، ونقدم خدمات التوزيع للمتاجر، وخدمات إدارة المتاجر الإلكتروني، لمزيد من المعلومات يرجى التواصل: <span style="direction:ltr;font-family:'Segoe UI',sans-serif">+966537366522</span>
-      </div>
-      <div style="border-top:1px solid #e5e7eb;padding-top:12px">
-        <div style="font-weight:800;font-size:13px;color:#111;margin-bottom:6px">الشروط والأحكام!</div>
-        <div style="font-size:11px;color:#444;margin-bottom:6px">
-          طلبكم لخدمات " شيب بيك " توافق باعتبارك "الشاحن" ، نيابة عن نفسك ونيابة عن مستلم الشحنة "المستلم" ، وأي شخص آخر لديه مصلحة في الشحنة أن تطبق هذه الشروط والأحكام:
-        </div>
-        <ol style="font-size:10px;color:#555;line-height:1.8;padding-right:16px;margin-bottom:12px;">
-          <li>أن تكون جميع المعلومات المقدمة من قبل الشاحن أو ممثليه تامة ودقيقة.</li>
-          <li>أن لا تكون الشحنة من الشحنات التي تحتوي على المواد الغير مقبولة مثل: سلع مقلدة وحيوانات وسبائك وعملات وأحجار كريمة وأسلحة ومتفجرات وذخيرة، وأيضا موواد غير قانونية مثل العاج والمخدرات وغيرها من المواد المحظورة.</li>
-          <li>تحسب رسوم الشحن وفقا لأعلى وزن فعلي أو حجمي للقطعة الواحدة ويجوز إعادة وزن أي قطعة وإعادة قياسها من قبل شيب بيك لتأكيد صحة الحساب، ويلزم على المستلم أو الشاحن بدفع إعادة النفقات أو الرسوم الإضافية في حال وجود فرق في الوزن أو الحجم التي تم تزويدنا به من قبل الشاحن أو المستلم حتى بعد استلام العميل لشحنته.</li>
-        </ol>
-        ${tmpl.note ? `<div style="font-size:11px;color:#333;line-height:1.8;white-space:pre-line;margin-top:12px;padding-top:12px;border-top:1px dashed #e5e7eb;font-weight:700;">${escapeHtml(tmpl.note)}</div>` : ''}
-      </div>
+    <div style="padding:20px 28px;border-top:1px solid #e5e7eb">
+      <div style="font-size:11px;color:#333;line-height:1.8;white-space:pre-line;font-weight:700;">${escapeHtml(tmpl.note)}</div>
     </div>
   `
 }
