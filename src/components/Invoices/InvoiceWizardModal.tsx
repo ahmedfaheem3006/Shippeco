@@ -469,8 +469,12 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
 
                  <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-gray-500 dark:text-gray-400">مسار إتمام الدفع</label>
-                    <select className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50" value={draft.payment} onChange={(e) => setDraft((p) => ({ ...p, payment: e.target.value }))}>
-                       
+                     <select className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50" value={draft.payment} onChange={(e) => setDraft((p) => ({ ...p, payment: e.target.value }))}>
+                       <option value="">بدون مسار / قيد الانتظار</option>
+                       <option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option>
+                       <option value="سداد إلكتروني">عبر روابط الدفع (Paymob)</option>
+                     </select>
+                  </div>
 
                   {/* Detailed Items List */}
                   <div className="sm:col-span-2 bg-gray-100/50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700 mt-2">
@@ -579,9 +583,7 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                     </div>
                  )}
 
-                      <option value="">بدون مسار / قيد الانتظار</option><option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option><option value="سداد إلكتروني">عبر روابط الدفع (Paymob)</option>
-                   </select>
-                 </div>
+                      
 
                  {draft.payment === 'تحويل بنكي' && (
                    <div className="flex flex-col gap-2 sm:col-span-2 mt-1">

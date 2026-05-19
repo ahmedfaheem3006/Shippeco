@@ -33,19 +33,39 @@ function getInvItems(inv: Invoice): InvoiceItem[] {
   if (typeof items === 'string') {
     try { items = JSON.parse(items) } catch { items = [] }
   }
+  const price = Number(inv.price || inv.total || 0)
   if (Array.isArray(items) && items.length) {
-    // Normalize items from backend format to display format
-    return items.map((it: any) => ({
-      type: it.type || it.description || 'بند',
-      details: it.details || it.description || '',
-      price: Number(it.price || it.total || it.unit_price || 0),
-    }))
+    const list = items.map((it: any) => {
+      const desc = it.type || it.description || 'بند'
+      let t = desc
+      let d = it.details || ''
+      if (!it.details && desc.includes(' - ')) {
+        const parts = desc.split(' - ')
+        t = parts[0]
+        d = parts.slice(1).join(' - ')
+      }
+      return {
+        type: t,
+        details: d,
+        price: Number(it.price || it.total || it.unit_price || 0),
+      }
+    })
+
+    const sum = list.reduce((s, it) => s + it.price, 0)
+    const diff = price - sum
+    if (diff > 0.1) {
+      list.unshift({
+        type: inv.itemType || 'شحن دولي',
+        details: '',
+        price: diff,
+      })
+    }
+    return list
   }
-  // No items — create one from invoice data
   return [{
     type: inv.itemType || 'شحن دولي',
-    details: inv.details || '',
-    price: Number(inv.price || 0),
+    details: '',
+    price,
   }]
 }
 

@@ -848,27 +848,8 @@ export function InvoicesPage() {
           void (async () => {
             setMutating(true)
             try {
-              const allItems = Array.isArray(next.items) ? next.items : []
-              const newItem = allItems[allItems.length - 1]
-
-              if (newItem) {
-                const { api } = await import('../utils/apiClient')
-
-                await api.post(`/invoices/${addItemInvoiceId}/items`, {
-                  description: (newItem as any).type || (newItem as any).details || 'بند إضافي',
-                  quantity: 1,
-                  unit_price: Number(newItem.price) || 0,
-                  total: Number(newItem.price) || 0,
-                })
-
-                const newTotal = allItems.reduce((s, it) => s + (Number(it.price) || 0), 0)
-                await api.put(`/invoices/${addItemInvoiceId}`, {
-                  total: newTotal,
-                })
-
-                console.log(`[Invoices] ✅ Added item to #${addItemInvoiceId}, total: ${newTotal}`)
-              }
-
+              await invoiceService.updateInvoice(addItemInvoiceId, next)
+              console.log(`[Invoices] ✅ Added/updated items for #${addItemInvoiceId}`)
               await syncFromDb()
               setAddItemInvoiceId(null)
             } catch (e: any) {

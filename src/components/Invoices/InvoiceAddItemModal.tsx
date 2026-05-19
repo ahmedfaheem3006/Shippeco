@@ -18,15 +18,25 @@ function getInvItems(inv: Invoice): InvoiceItem[] {
     try { items = JSON.parse(items) } catch { items = [] }
   }
   if (Array.isArray(items) && items.length) {
-    return (items as any[]).map((it: any) => ({
-      type: it.type || it.description || 'بند',
-      details: it.details || it.description || '',
-      price: Number(it.price || it.total || it.unit_price || 0),
-    }))
+    return (items as any[]).map((it: any) => {
+      const desc = it.type || it.description || 'بند'
+      let t = desc
+      let d = it.details || ''
+      if (!it.details && desc.includes(' - ')) {
+        const parts = desc.split(' - ')
+        t = parts[0]
+        d = parts.slice(1).join(' - ')
+      }
+      return {
+        type: t,
+        details: d,
+        price: Number(it.price || it.total || it.unit_price || 0),
+      }
+    })
   }
   return [{
     type: inv.itemType || 'شحن دولي',
-    details: inv.details || '',
+    details: '',
     price: Number(inv.price || 0),
   }]
 }
