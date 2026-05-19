@@ -436,7 +436,13 @@ export function DashboardPage() {
         <KpiCard title="فواتير خاسرة" value={dash.cards.losing.value} detail={dash.cards.losing.detail} icon={TrendingDown} colorClass="text-red-600 dark:text-red-400" bgClass="bg-red-50 dark:bg-red-900/20" />
       </div>
 
-      {/* Collection Rate + Revenue Chart */}
+      {/* 
+        ======== HIDDEN DASHBOARD SECTIONS ========
+        The user requested to hide these sections for now.
+      */}
+      {false && (
+        <>
+          {/* Collection Rate + Revenue Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex flex-col items-center justify-center gap-4">
           <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide">نسبة التحصيل</h3>
@@ -552,6 +558,8 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {/* Recent Invoices */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
