@@ -146,15 +146,17 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
   const receiverAddress = inv.receiver_address || ''
   const receiverCountry = inv.receiver_country || ''
 
-  const itemsRows = items.map((it: any) => {
-    const itemDesc = [it.details, desc].filter(Boolean).join('\n\n')
+  const itemsRows = items.map((it: any, idx: number) => {
+    const itemDesc = idx === 0
+      ? [it.details, desc].filter(Boolean).join('\n\n')
+      : it.details || ''
     return `
-    <tr style="border-bottom:1px solid #e5e7eb">
-      <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1e293b;font-size:12px;vertical-align:top;width:18%">${escapeHtml(it.type)}</td>
-      <td style="padding:10px 8px;text-align:right;font-size:12px;color:#555;vertical-align:top;width:40%;white-space:pre-line;line-height:1.7">${escapeHtml(itemDesc)}</td>
-      <td style="padding:10px 8px;text-align:center;font-size:12px;width:10%">1</td>
-      <td style="padding:10px 8px;text-align:center;font-size:12px;font-family:'Segoe UI',sans-serif;direction:ltr;width:16%">${formatCurrency(it.price)}</td>
-      <td style="padding:10px 8px;text-align:center;font-size:12px;font-weight:700;font-family:'Segoe UI',sans-serif;direction:ltr;width:16%">${formatCurrency(it.price)}</td>
+    <tr style="border-bottom:1px solid #d1d5db">
+      <td style="border:1px solid #d1d5db;padding:10px 8px;text-align:right;font-weight:700;color:#1e293b;font-size:12px;vertical-align:top;width:18%">${escapeHtml(it.type)}</td>
+      <td style="border:1px solid #d1d5db;padding:10px 8px;text-align:right;font-size:12px;color:#555;vertical-align:top;width:40%;white-space:pre-line;line-height:1.7">${escapeHtml(itemDesc)}</td>
+      <td style="border:1px solid #d1d5db;padding:10px 8px;text-align:center;font-size:12px;width:10%">1</td>
+      <td style="border:1px solid #d1d5db;padding:10px 8px;text-align:center;font-size:12px;font-family:'Segoe UI',sans-serif;direction:ltr;width:16%">${formatCurrency(it.price)}</td>
+      <td style="border:1px solid #d1d5db;padding:10px 8px;text-align:center;font-size:12px;font-weight:700;font-family:'Segoe UI',sans-serif;direction:ltr;width:16%">${formatCurrency(it.price)}</td>
     </tr>
   `}).join('')
 

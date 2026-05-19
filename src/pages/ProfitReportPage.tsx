@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../hooks/useAuthStore'
 import { InvoiceWizardModal } from '../components/Invoices/InvoiceWizardModal'
-import { toDraftFromInvoice } from '../utils/invoiceWizard'
+import { toDraftFromInvoice, toInvoiceFromDraft } from '../utils/invoiceWizard'
 import { api } from '../utils/apiClient'
 import s from './ProfitReportPage.module.css'
 
@@ -358,13 +358,12 @@ export function ProfitReportPage() {
   }
 
   const onWizardSave = async (draft: any, options: { asDraft: boolean }) => {
-    if (mutating) return
+    if (mutating || !editingInvoiceId) return
     setMutating(true)
     try {
-      await api.put(`/invoices/${editingInvoiceId}`, {
-        ...draft,
-        isDraft: options.asDraft,
-      })
+      const { invoiceService } = await import('../services/invoiceService')
+      const next = toInvoiceFromDraft(editingInvoiceId, draft, { forceDraft: options.asDraft })
+      await invoiceService.updateInvoice(editingInvoiceId, next)
       setWizardOpen(false)
       void rep.refresh()
     } catch (e: any) {

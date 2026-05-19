@@ -409,32 +409,9 @@ export function InvoicesPage() {
         let savedInvoiceId = editingInvoiceId ? String(editingInvoiceId) : ''
 
         if (editingInvoiceId) {
-          const { api } = await import('../utils/apiClient')
-
-          const updatePayload: Record<string, any> = {}
-
-          if (draft.client) updatePayload.client_name = draft.client
-          if (draft.phone) updatePayload.phone = draft.phone
-          if (draft.awb) updatePayload.awb = draft.awb
-          if (draft.carrier) updatePayload.carrier = draft.carrier
-          if (draft.price) updatePayload.total = Number(draft.price) || 0
-          if (draft.dhlCost) updatePayload.dhl_cost = Number(draft.dhlCost) || 0
-          if (draft.weight) updatePayload.weight = Number(draft.weight) || 0
-          if (draft.dimensions) updatePayload.dimensions = draft.dimensions
-          if (draft.status) updatePayload.status = draft.status
-          if (draft.date) updatePayload.invoice_date = draft.date
-          if (draft.details) updatePayload.details = draft.details
-          if (draft.itemType) updatePayload.shipping_type = draft.itemType
-          if (draft.codeType) updatePayload.code_type = draft.codeType
-          if (draft.payment !== undefined) updatePayload.payment_method = draft.payment || null
-
-          // Handle partial payment amount
-          if (draft.status === 'partial' && draft.partialPaid) {
-            updatePayload.paid_amount = Number(draft.partialPaid) || 0
-          }
-
-          console.log(`[Invoices] Updating #${id}:`, updatePayload)
-          await api.put(`/invoices/${id}`, updatePayload)
+          const next = toInvoiceFromDraft(id, draft, { forceDraft: options.asDraft })
+          console.log(`[Invoices] Updating #${id}:`, next)
+          await invoiceService.updateInvoice(id, next)
           savedInvoiceId = id
           console.log(`[Invoices] ✅ Updated invoice #${id}`)
         } else {

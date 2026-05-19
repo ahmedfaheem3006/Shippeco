@@ -114,6 +114,22 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
     }
   }, [mode, open, step])
 
+  useEffect(() => {
+    if (open && step === 2) {
+      if (!draft.items || draft.items.length === 0) {
+        const itemPrice = Number(draft.price) || 0
+        setDraft(p => ({
+          ...p,
+          items: [{
+            type: p.itemType || 'شحن دولي',
+            details: p.details || '',
+            price: itemPrice
+          }]
+        }))
+      }
+    }
+  }, [open, step])
+
   const canSubmit = useMemo(() => {
     return Boolean(draft.client.trim() && draft.phone.trim())
   }, [draft.client, draft.phone])
@@ -451,6 +467,111 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                    </select>
                  </div>
 
+                 <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">مسار إتمام الدفع</label>
+                    <select className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50" value={draft.payment} onChange={(e) => setDraft((p) => ({ ...p, payment: e.target.value }))}>
+                       
+
+                  {/* Detailed Items List */}
+                  <div className="sm:col-span-2 bg-gray-100/50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700 mt-2">
+                    <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-700 pb-2 mb-3">
+                      <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <Box size={14} className="text-indigo-500" />
+                        بنود الفاتورة التفصيلية
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+                        onClick={() => {
+                          const newItems = [...(draft.items || [])]
+                          newItems.push({
+                            type: 'بند جديد',
+                            details: '',
+                            price: 0
+                          })
+                          setDraft(p => {
+                            const updatedPrice = newItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0)
+                            return { ...p, items: newItems, price: String(updatedPrice) }
+                          })
+                        }}
+                      >
+                        + إضافة بند جديد
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      {(draft.items || []).map((item, idx) => (
+                        <div key={idx} className="flex flex-col sm:flex-row items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm relative group animate-in fade-in">
+                          <div className="w-full sm:flex-1 flex flex-col gap-1">
+                            <label className="text-[10px] font-bold text-gray-400">اسم/تصنيف البند</label>
+                            <input
+                              type="text"
+                              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-xs text-gray-900 dark:text-white focus:ring-1 focus:ring-indigo-500 outline-none"
+                              value={item.type}
+                              onChange={(e) => {
+                                const newItems = [...(draft.items || [])]
+                                newItems[idx] = { ...newItems[idx], type: e.target.value }
+                                setDraft(p => ({ ...p, items: newItems }))
+                              }}
+                              placeholder="شحن دولي، رسوم تغيير عنوان..."
+                            />
+                          </div>
+
+                          <div className="w-full sm:flex-1 flex flex-col gap-1">
+                            <label className="text-[10px] font-bold text-gray-400">التفاصيل</label>
+                            <input
+                              type="text"
+                              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-xs text-gray-900 dark:text-white focus:ring-1 focus:ring-indigo-500 outline-none"
+                              value={item.details || ''}
+                              onChange={(e) => {
+                                const newItems = [...(draft.items || [])]
+                                newItems[idx] = { ...newItems[idx], details: e.target.value }
+                                setDraft(p => ({ ...p, items: newItems }))
+                              }}
+                              placeholder="توضيح البند..."
+                            />
+                          </div>
+
+                          <div className="w-full sm:w-[100px] flex flex-col gap-1">
+                            <label className="text-[10px] font-bold text-gray-400">السعر (ر.س)</label>
+                            <input
+                              type="number"
+                              className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-xs font-mono font-bold text-yellow-600 dark:text-yellow-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                              value={item.price === 0 ? '' : item.price}
+                              onChange={(e) => {
+                                const newPrice = Number(e.target.value) || 0
+                                const newItems = [...(draft.items || [])]
+                                newItems[idx] = { ...newItems[idx], price: newPrice }
+                                setDraft(p => {
+                                  const updatedPrice = newItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+                                  return { ...p, items: newItems, price: String(updatedPrice) }
+                                })
+                              }}
+                              placeholder="0.00"
+                            />
+                          </div>
+
+                          {(draft.items || []).length > 1 && (
+                            <button
+                              type="button"
+                              className="sm:self-end p-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors shadow-sm"
+                              onClick={() => {
+                                const newItems = (draft.items || []).filter((_, i) => i !== idx)
+                                setDraft(p => {
+                                  const updatedPrice = newItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+                                  return { ...p, items: newItems, price: String(updatedPrice) }
+                                })
+                              }}
+                              aria-label="حذف البند"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                  {draft.status === 'partial' && (
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-yellow-600 dark:text-yellow-500">المبلغ المدفوع جزئياً والمستلم (ر.س)</label>
@@ -458,9 +579,6 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                     </div>
                  )}
 
-                 <div className="flex flex-col gap-1.5">
-                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">مسار إتمام الدفع</label>
-                   <select className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50" value={draft.payment} onChange={(e) => setDraft((p) => ({ ...p, payment: e.target.value }))}>
                       <option value="">بدون مسار / قيد الانتظار</option><option value="تحويل بنكي">تحويل مباشر للحساب البنكي</option><option value="سداد إلكتروني">عبر روابط الدفع (Paymob)</option>
                    </select>
                  </div>

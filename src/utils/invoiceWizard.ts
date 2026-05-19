@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceStatus } from './models'
+import type { Invoice, InvoiceItem, InvoiceStatus } from './models'
 
 export type WizardMode = 'calc' | 'direct'
 export type WizardStep = 0 | 1 | 2
@@ -28,6 +28,7 @@ export type InvoiceDraftInput = {
   receiverAddress: string
   receiverCountry: string
   transferReceiptUrl: string
+  items?: InvoiceItem[]
 }
 
 export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput {
@@ -133,6 +134,7 @@ export function toInvoiceFromDraft(
     receiverCountry: draft.receiverCountry.trim() || undefined,
     codeType: draft.codeType,
     isDraft: Boolean(options.forceDraft || !draft.client || !draft.phone),
+    items: draft.items,
   }
 }
 
@@ -164,6 +166,29 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
     receiverAddress: inv.receiverAddress ?? '',
     receiverCountry: inv.receiverCountry ?? 'Saudi Arabia',
     transferReceiptUrl: (inv as any).transfer_receipt_url ?? '',
+    items: (() => {
+      let rawList: any[] = []
+      if (typeof inv.items === 'string') {
+        try { rawList = JSON.parse(inv.items) } catch {}
+      } else if (Array.isArray(inv.items)) {
+        rawList = inv.items
+      }
+      return rawList.map((it: any) => {
+        const desc = it.type || it.description || 'بند'
+        let t = desc
+        let d = it.details || ''
+        if (!it.details && desc.includes(' - ')) {
+          const parts = desc.split(' - ')
+          t = parts[0]
+          d = parts.slice(1).join(' - ')
+        }
+        return {
+          type: t,
+          details: d,
+          price: Number(it.price || it.total || it.unit_price || 0),
+        }
+      })
+    })(),
   }
 }
 

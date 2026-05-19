@@ -216,7 +216,14 @@ function mapToRailway(inv: Partial<Invoice>): any {
     status: i.status,
     paid_amount: Number(i.partialPaid || i.partial_paid || i.paid_amount || 0),
     invoice_date: normalizeDate(i.date || i.invoice_date),
-    items: Array.isArray(i.items) ? i.items : undefined,
+    items: Array.isArray(i.items)
+      ? i.items.map((it: any) => ({
+          description: it.details ? `${it.type} - ${it.details}` : it.type || it.description || 'بند',
+          quantity: 1,
+          unit_price: Number(it.price || it.total || it.unit_price || 0),
+          total: Number(it.price || it.total || it.unit_price || 0),
+        }))
+      : undefined,
     notes: i.notes,
     details: i.details,
     shipping_type: i.shippingType || i.shipping_type,

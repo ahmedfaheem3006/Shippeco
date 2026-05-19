@@ -99,16 +99,39 @@ export function computeInvoiceTotal(inv: Invoice): {
   }
 
   if (parsedItems.length > 0) {
+    let sum = 0
     for (const it of parsedItems) {
+      const itPrice = parseFloat(toEnglishDigits(it.price || it.amount || it.total || it.unit_price || 0)) || 0
+      sum += itPrice
+      
+      // Split description if it contains " - " and details is missing
+      const desc = it.type || it.description || 'بند'
+      let t = desc
+      let d = it.details || ''
+      if (!it.details && desc.includes(' - ')) {
+        const parts = desc.split(' - ')
+        t = parts[0]
+        d = parts.slice(1).join(' - ')
+      }
+
       items.push({
-        type: it.description || it.type || it.name || 'فرق وزن أو أبعاد',
-        details: it.details || it.notes || '',
-        price: parseFloat(toEnglishDigits(it.price || it.amount || 0)) || 0,
+        type: t,
+        details: d,
+        price: itPrice,
+      })
+    }
+    // If the sum of items is less than the invoice total/price, prepend the base shipping charge
+    const diff = price - sum
+    if (diff > 0.1) {
+      items.unshift({
+        type: inv.itemType || (inv as any).shipping_type || (inv.carrier ? 'شحن دولي' : 'خدمة شحن'),
+        details: '',
+        price: diff,
       })
     }
   } else {
     items.push({
-      type: inv.itemType || (inv as any).shipping_type || (inv.carrier ? 'فرق وزن أو أبعاد' : 'خدمة شحن'),
+      type: inv.itemType || (inv as any).shipping_type || (inv.carrier ? 'شحن دولي' : 'خدمة شحن'),
       details: '',
       price,
     })
