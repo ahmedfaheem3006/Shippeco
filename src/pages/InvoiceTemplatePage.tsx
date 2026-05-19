@@ -8,9 +8,8 @@ import {
   toEnglishDigits,
   getPaymentStatusLabel,
   TEMPLATE_STYLES,
-  getTemplateStyle,
 } from '../utils/invoiceTemplate'
-import { downloadInvoicePDF, shareInvoiceWhatsApp } from '../utils/pdfGenerator'
+import { downloadInvoicePDF, shareInvoiceWhatsApp, generateInvoiceHTML } from '../utils/pdfGenerator'
 import {
   Building2, Image as ImageIcon, FileText, Eye, Save, UploadCloud,
   Trash2, RotateCcw, RefreshCw, Search, CheckCircle2, AlertCircle,
@@ -34,277 +33,25 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function fmtDate(raw: any): string {
-  if (!raw) return ''
-  try {
-    const d = new Date(raw)
-    if (isNaN(d.getTime())) return safe(String(raw).slice(0, 10))
-    return `${safe(String(d.getDate()).padStart(2, '0'))}/${safe(String(d.getMonth() + 1).padStart(2, '0'))}/${safe(String(d.getFullYear()))}`
-  } catch { return safe(String(raw).slice(0, 10)) }
-}
-
-function buildDesc(inv: Record<string, any>): string {
-  const p: string[] = []
-  if (inv.awb) p.push('رقم البوليصة:' + safe(inv.awb))
-  if (inv.invoice_number) p.push('رقم الفاتورة:' + safe(inv.invoice_number))
-  if (inv.weight) p.push('الوزن: ' + safe(inv.weight) + ' كيلو')
-  if (inv.dimensions) p.push('أبعاد الشحنة: ' + safe(inv.dimensions))
-  if (inv.final_weight) p.push('الوزن النهائي: ' + safe(inv.final_weight) + ' كيلو')
-  return p.join('\n')
-}
-
-function PreviewHeader({ tmpl, themeKey }: { tmpl: any; accentColor: string; themeKey: string }) {
-  const t = tmpl.template
-
-  if (themeKey === 'modern') {
-    return (
-      <>
-        <div className="h-2 w-full" style={{ background: 'linear-gradient(to right, #4f46e5, #7c3aed)' }} />
-        <div className="flex justify-between items-start p-5 sm:p-7 border-b-2" style={{ borderColor: '#e0e7ff' }}>
-          <div>
-            <h2 className="text-2xl sm:text-3xl font-black" style={{ background: 'linear-gradient(to right, #4f46e5, #7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>فاتورة</h2>
-            <div className="text-[11px] font-bold tracking-widest uppercase" style={{ color: '#6366f1', fontFamily: "'Segoe UI', sans-serif" }}>INVOICE</div>
-          </div>
-          <div className="text-left flex flex-col items-end gap-1">
-            {t.logoDataUrl ? <img src={t.logoDataUrl} alt="Logo" className="h-14 sm:h-16 object-contain" /> : null}
-            <div className="text-[10px] sm:text-[11px] text-gray-600 text-right leading-relaxed mt-1">
-              <div className="font-bold text-xs" style={{ color: '#4f46e5' }}>{t.companyAr || 'شيب بيك'}</div>
-              {t.phone && <div dir="ltr" className="text-left">{safe(t.phone)}</div>}
-              {t.email && <div style={{ color: '#6366f1' }}>{t.email}</div>}
-            </div>
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  if (themeKey === 'minimal') {
-    return (
-      <>
-        <div className="h-[3px] w-full" style={{ background: '#111827' }} />
-        <div className="flex justify-between items-center p-5 sm:p-7 border-b border-gray-200">
-          <div className="text-2xl font-black" style={{ color: '#111827', letterSpacing: '-0.5px' }}>فاتورة</div>
-          <div className="text-left text-[11px] text-gray-500 leading-relaxed">
-            <div className="font-bold text-gray-900">{t.companyAr || ''}</div>
-            {t.phone && <div dir="ltr" className="text-left">{safe(t.phone)}</div>}
-            {t.email && <div>{t.email}</div>}
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  if (themeKey === 'classic') {
-    return (
-      <>
-        <div className="h-1.5 w-full" style={{ background: '#1e293b' }} />
-        <div className="flex justify-between items-start p-5 sm:p-7" style={{ borderBottom: '3px solid #1e293b' }}>
-          <div>
-            <h2 className="text-2xl sm:text-3xl font-black" style={{ color: '#1e293b' }}>فاتورة</h2>
-            <div className="text-xs text-slate-500 font-semibold" style={{ fontFamily: "'Segoe UI', sans-serif" }}>{t.companyEn || ''}</div>
-          </div>
-          <div className="text-left flex flex-col items-end gap-1">
-            {t.logoDataUrl ? <img src={t.logoDataUrl} alt="Logo" className="h-14 sm:h-16 object-contain" /> : null}
-            <div className="text-[10px] sm:text-[11px] text-gray-600 text-right leading-relaxed mt-1">
-              <div className="font-bold text-xs" style={{ color: '#1e293b' }}>{t.companyAr || ''}</div>
-              {t.vat && <div dir="ltr" className="text-left text-slate-500"><span className="text-slate-400">VAT:</span> {safe(t.vat)}</div>}
-              {t.cr && <div dir="ltr" className="text-left text-slate-500"><span className="text-slate-400">CR:</span> {safe(t.cr)}</div>}
-              {t.phone && <div dir="ltr" className="text-left">{safe(t.phone)}</div>}
-              {t.email && <div style={{ color: '#1e293b' }}>{t.email}</div>}
-            </div>
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <div className="h-1.5 bg-blue-600 w-full" />
-      <div className="flex justify-between items-start p-5 sm:p-7 border-b-2 border-gray-200">
-        <div><h2 className="text-2xl sm:text-3xl font-black text-gray-900">فاتورة</h2></div>
-        <div className="text-left flex flex-col items-end gap-1">
-          {t.logoDataUrl ? (
-            <img src={t.logoDataUrl} alt="Logo" className="h-14 sm:h-16 object-contain" />
-          ) : (
-            <div className="text-xl sm:text-2xl font-black tracking-wide" style={{ fontFamily: "'Segoe UI', sans-serif" }}>
-              <span className="text-blue-600">SHi</span>PP<span className="text-amber-500">E</span>C
-            </div>
-          )}
-          <div className="text-[10px] sm:text-[11px] text-gray-600 text-right leading-relaxed mt-1">
-            <div className="font-bold text-gray-900 text-xs">{t.companyAr || 'شيب بيك'}</div>
-            {t.cr && <div>س.ج {safe(t.cr)}</div>}
-            {t.address && <div>{t.address}</div>}
-            {t.phone && <div dir="ltr" className="text-left">{safe(t.phone)}</div>}
-            {t.email && <div className="text-blue-600">{t.email}</div>}
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
 // ═══════════════════════════════════════════════════
-// A4 PREVIEW — extracted as its own component to fix null checks
+// A4 PREVIEW — using an iframe for 100% accuracy matching the PDF
 // ═══════════════════════════════════════════════════
 function InvoicePreview({
   inv,
-  items,
-  total,
   tmpl,
-  accentColor,
-  themeKey,
 }: {
   inv: Record<string, any>
-  items: Array<{ type: string; details?: string; price: number }>
-  total: number
   tmpl: any
-  accentColor: string
-  themeKey: string
 }) {
-  const paid = parseFloat(String(inv.paid_amount || inv.partialPaid || 0)) || 0
-  const remaining = total - paid
+  const html = generateInvoiceHTML(inv as any, tmpl.template)
 
   return (
-    <div className="bg-white rounded-sm shadow-md text-black mx-auto font-cairo" style={{ width: '100%', maxWidth: '794px', minHeight: '900px' }}>
-
-      <PreviewHeader tmpl={tmpl} accentColor={accentColor} themeKey={themeKey} />
-
-      {/* Bill To + Meta */}
-      <div className="flex justify-between items-start p-5 sm:p-7 gap-4">
-        <div className="flex-1">
-          <div className="font-extrabold text-sm text-gray-900 mb-1">فاتورة إلى:</div>
-          <div className="font-bold text-sm text-gray-800">{inv.receiver || inv.client || '—'}</div>
-          {(inv.receiver_phone || inv.phone) && (
-            <div className="text-xs text-gray-600" dir="ltr" style={{ textAlign: 'right' }}>
-              {safe(inv.receiver_phone || inv.phone)}
-            </div>
-          )}
-          {inv.receiver_address && <div className="text-xs text-gray-600">{inv.receiver_address}</div>}
-          {inv.receiver_country && <div className="text-xs text-gray-600">{inv.receiver_country}</div>}
-        </div>
-        <div className="text-left text-xs min-w-[200px]">
-          <table className="w-full">
-            <tbody>
-              <tr>
-                <td className="py-1 pr-3 font-bold text-gray-600 text-right whitespace-nowrap">رقم الفاتورة</td>
-                <td className="py-1 font-extrabold text-gray-900 text-left font-inter" dir="ltr">{safe(inv.invoice_number || inv.id)}</td>
-              </tr>
-              <tr>
-                <td className="py-1 pr-3 font-bold text-gray-600 text-right whitespace-nowrap">تاريخ الفاتورة</td>
-                <td className="py-1 font-extrabold text-gray-900 text-left font-inter" dir="ltr">{fmtDate(inv.date)}</td>
-              </tr>
-              {inv.awb && (
-                <tr>
-                  <td className="py-1 pr-3 font-bold text-gray-600 text-right whitespace-nowrap">رقم بوليصة الشحن</td>
-                  <td className="py-1 font-extrabold text-gray-900 text-left font-inter" dir="ltr">{safe(inv.awb)}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Items Table */}
-      <div className="px-5 sm:px-7">
-        <table className="w-full border-collapse border border-gray-300 text-xs sm:text-sm">
-          <thead>
-            <tr style={{ background: accentColor + '12' }}>
-              <th className="border border-gray-300 px-2 py-2 text-right font-extrabold" style={{ color: accentColor }}>البند</th>
-              <th className="border border-gray-300 px-2 py-2 text-right font-extrabold" style={{ color: accentColor }}>الوصف</th>
-              <th className="border border-gray-300 px-2 py-2 text-center font-extrabold w-16" style={{ color: accentColor }}>الكمية</th>
-              <th className="border border-gray-300 px-2 py-2 text-center font-extrabold w-24" style={{ color: accentColor }}>سعر الوحدة</th>
-              <th className="border border-gray-300 px-2 py-2 text-center font-extrabold w-24" style={{ color: accentColor }}>الإجمالي</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, idx) => (
-              <tr key={idx}>
-                <td className="border border-gray-300 px-2 py-2.5 font-bold text-gray-800 align-top" style={{ width: '18%' }}>{it.type}</td>
-                <td className="border border-gray-300 px-2 py-2.5 text-gray-700 align-top whitespace-pre-line leading-relaxed" style={{ width: '40%' }}>{buildDesc(inv) || it.details || ''}</td>
-                <td className="border border-gray-300 px-2 py-2.5 text-center" style={{ width: '10%' }}>1</td>
-                <td className="border border-gray-300 px-2 py-2.5 text-center font-inter font-bold" dir="ltr" style={{ width: '16%' }}>{formatCurrency(it.price)}</td>
-                <td className="border border-gray-300 px-2 py-2.5 text-center font-inter font-bold" dir="ltr" style={{ width: '16%' }}>{formatCurrency(it.price)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr style={{ background: accentColor + '08' }}>
-              <td colSpan={4} className="border border-gray-300 px-2 py-2 text-left font-extrabold text-gray-800">الإجمالي</td>
-              <td className="border border-gray-300 px-2 py-2 text-center font-black font-inter" dir="ltr">{formatCurrency(total)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      {/* Summary */}
-      <div className="px-5 sm:px-7 py-4">
-        <table className="min-w-[250px]">
-          <tbody>
-            <tr>
-              <td className="py-1.5 pl-4 font-extrabold text-gray-800 text-sm border-b border-gray-200" style={{ background: '#fef3c7' }}>الإجمالي</td>
-              <td className="py-1.5 pr-4 font-black text-gray-900 text-sm text-left font-inter border-b border-gray-200 min-w-[120px]" dir="ltr" style={{ background: '#fef3c7' }}>
-                {formatCurrency(total)} <span className="font-cairo text-xs">﷼</span>
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1.5 pl-4 font-extrabold text-gray-700 text-sm border-b border-gray-200">مدفوع</td>
-              <td className="py-1.5 pr-4 font-bold text-gray-700 text-sm text-left font-inter border-b border-gray-200" dir="ltr">
-                {formatCurrency(paid)} <span className="font-cairo text-xs">﷼</span>
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1.5 pl-4 font-black text-red-700 text-sm border-b-2 border-red-400" style={{ background: '#fee2e2' }}>الرصيد المستحق</td>
-              <td className="py-1.5 pr-4 font-black text-red-700 text-sm text-left font-inter border-b-2 border-red-400" dir="ltr" style={{ background: '#fee2e2' }}>
-                {formatCurrency(remaining > 0 ? remaining : 0)} <span className="font-cairo text-xs">﷼</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Total Bar */}
-      <div className="px-5 sm:px-7">
-        <div className="w-full sm:w-1/2 mr-auto text-white rounded-lg p-3 sm:p-4 flex justify-between items-center" style={{ background: accentColor }}>
-          <span className="font-bold text-xs sm:text-sm">الإجمالي</span>
-          <div className="font-inter font-black text-lg sm:text-xl">
-            {formatCurrency(total)}
-            <span className="text-[10px] sm:text-sm font-cairo font-normal opacity-80 mr-1">SAR</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Thank You + Terms */}
-      <div className="px-5 sm:px-7 py-4">
-        <div className="text-center font-extrabold text-sm text-gray-900 mb-3">شكراً لثقتكم ونتمنى لكم يوماً سعيداً!</div>
-        <p className="text-[10px] sm:text-[11px] text-gray-500 text-center leading-relaxed mb-4 px-4">
-          {tmpl.template.companyAr || 'شيب بيك'} تقدم الخدمات اللوجستية ومتخصصة بالشحن الجوي لجميع دول العالم بجودة عالية وأسعار تنافسية، أيضاً متخصصون بشحن المواد الخطرة والسائلة، وتقديم خدمات التوزيع للمتاجر، وخدمات إدارة المتاجر الإلكترونية.
-          {tmpl.template.phone && (
-            <span className="block mt-1">للتواصل: <span dir="ltr" className="font-inter">{safe(tmpl.template.phone)}</span></span>
-          )}
-        </p>
-        <div className="border-t border-gray-200 pt-3">
-          <div className="font-extrabold text-xs text-gray-900 mb-1">الشروط والأحكام:</div>
-          <p className="text-[10px] text-gray-600 mb-1 leading-relaxed">
-            طلبكم لخدمات &quot;{tmpl.template.companyAr || 'شيب بيك'}&quot; توافق باعتباركم &quot;الشاحن&quot;، نيابة عن نفسكم ونيابة عن مستلم الشحنة &quot;المستلم&quot;، وأي شخص آخر ذي صلة في الشحنة أن تطبق هذه الشروط والأحكام:
-          </p>
-          <ol className="text-[9px] sm:text-[10px] text-gray-500 leading-relaxed list-decimal pr-4 space-y-0.5">
-            <li>أن تكون جميع المعلومات المقدمة من قبل الشاحن أو ممثله تامه ودقيقة.</li>
-            <li>أن لا تكون الشحنة من البضائع التي تحتوي على المواد الغير مقبولة مثل: سلع مقلدة وحيوانات وسبائك وعملات وأحجار كريمة وأسلحة ومتفجرات وذخيرة، وأيضاً مواد غير قانونية مثل المخدرات وغيرها من المواد المحظورة.</li>
-            <li>في حال تأكيد وزن فعلي أو حجمي للقطعة الواحدة يجوز إعادة وزن أي قطعة وإعادة قياسها من قبل شيب بيك للتأكيد على صحة الحساب ويلتزم المستلم أو الشاحن بدفع إعادة الفارق في الوزن أو الرسوم الإضافية في حال وجود فرق في الوزن عن الوزن المقدم من الشاحن.</li>
-          </ol>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex flex-wrap justify-center items-center gap-2 sm:gap-4 text-[8px] sm:text-xs font-semibold text-slate-400 px-5 sm:px-7 pb-5 font-inter pt-4 border-t border-slate-100">
-        {tmpl.template.address && <span>{tmpl.template.address}</span>}
-        {tmpl.template.address && tmpl.template.phone && <span className="w-1 h-1 rounded-full bg-slate-300 hidden sm:block" />}
-        {tmpl.template.phone && <span dir="ltr">{safe(tmpl.template.phone)}</span>}
-        {tmpl.template.phone && tmpl.template.email && <span className="w-1 h-1 rounded-full bg-slate-300 hidden sm:block" />}
-        {tmpl.template.email && <span dir="ltr">{tmpl.template.email}</span>}
-      </div>
-    </div>
+    <iframe
+      srcDoc={html}
+      className="w-full bg-white rounded-lg shadow-sm border border-gray-200 dark:border-slate-700"
+      style={{ height: 'calc(100vh - 16rem)', minHeight: '650px', border: 'none' }}
+      title="معاينة الفاتورة"
+    />
   )
 }
 
@@ -320,9 +67,6 @@ export function InvoiceTemplatePage() {
     void tmpl.loadInvoices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const activeStyle = getTemplateStyle(tmpl.template.templateStyle)
-  const accentColor = activeStyle.accentColor
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-300 pb-24 lg:pb-0" dir="rtl">
@@ -472,9 +216,9 @@ export function InvoiceTemplatePage() {
               <h2 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">ملاحظة أسفل الفاتورة</h2>
             </div>
             <div className="p-4 sm:p-5 flex flex-col gap-3">
-              <textarea rows={3} value={tmpl.template.note} onChange={(e) => tmpl.setTemplate((p: any) => ({ ...p, note: e.target.value }))}
+              <textarea rows={12} value={tmpl.template.note} onChange={(e) => tmpl.setTemplate((p: any) => ({ ...p, note: e.target.value }))}
                 placeholder="شكراً لتعاملكم معنا..." disabled={tmpl.saving}
-                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all disabled:opacity-50 resize-none placeholder:text-gray-400" />
+                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all disabled:opacity-50 resize-y placeholder:text-gray-400" />
               <button type="button" onClick={() => tmpl.restoreDefaults()} disabled={tmpl.saving}
                 className="flex items-center gap-1.5 py-1.5 px-3 text-[10px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-900 hover:text-gray-900 rounded-lg border border-gray-200 dark:border-slate-700">
                 <RotateCcw size={12} /> استعادة الافتراضي
@@ -567,11 +311,7 @@ export function InvoiceTemplatePage() {
             {tmpl.preview ? (
               <InvoicePreview
                 inv={tmpl.preview.inv}
-                items={tmpl.preview.items}
-                total={tmpl.preview.total}
                 tmpl={tmpl}
-                accentColor={accentColor}
-                themeKey={activeStyle.key}
               />
             ) : (
               <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 py-20">

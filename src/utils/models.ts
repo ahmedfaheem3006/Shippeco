@@ -37,6 +37,10 @@ export type Invoice = {
   status: InvoiceStatus
   payment?: string
   payment_method?: string
+  shipping_type?: string
+  transferReceiptBase64?: string
+  transfer_receipt_url?: string
+  transferReceiptUrl?: string
   price: number
   total?: number
   paid_amount?: number

@@ -79,6 +79,11 @@ function mapInvoice(inv: any): Invoice {
     dimensions: String(inv.dimensions || ''),
     items: inv.items_json || inv.items || [],
     isDraft: false,
+    shipping_type: String(inv.shipping_type || ''),
+    payment_method: String(inv.payment_method || inv.payment || ''),
+    transferReceiptBase64: inv.transferReceiptBase64 || '',
+    transfer_receipt_url: inv.transfer_receipt_url || '',
+    transferReceiptUrl: inv.transferReceiptUrl || '',
   } as Invoice
 }
 
