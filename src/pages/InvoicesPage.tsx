@@ -426,6 +426,7 @@ export function InvoicesPage() {
           if (draft.details) updatePayload.details = draft.details
           if (draft.itemType) updatePayload.shipping_type = draft.itemType
           if (draft.codeType) updatePayload.code_type = draft.codeType
+          if (draft.payment !== undefined) updatePayload.payment_method = draft.payment || null
 
           // Handle partial payment amount
           if (draft.status === 'partial' && draft.partialPaid) {

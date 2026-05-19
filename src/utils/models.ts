@@ -36,6 +36,7 @@ export type Invoice = {
   date: string
   status: InvoiceStatus
   payment?: string
+  payment_method?: string
   price: number
   total?: number
   paid_amount?: number

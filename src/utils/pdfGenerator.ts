@@ -206,6 +206,10 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
           <td class="en" style="padding:6px 12px;font-weight:700;color:#555;font-size:13px;text-align:left;direction:ltr;border-bottom:1px solid #e5e7eb">${formatCurrency(paid)} ﷼</td>
         </tr>
         <tr>
+          <td style="padding:6px 12px;font-weight:800;color:#555;font-size:13px;border-bottom:1px solid #e5e7eb">مسار الدفع</td>
+          <td style="padding:6px 12px;font-weight:700;color:#111;font-size:13px;text-align:left;border-bottom:1px solid #e5e7eb">${escapeHtml((inv as any).payment_method || inv.payment || '—')}</td>
+        </tr>
+        <tr>
           <td style="padding:6px 12px;font-weight:900;color:#dc2626;font-size:13px;background:#fee2e2;border-bottom:2px solid #ef4444">الرصيد المستحق</td>
           <td class="en" style="padding:6px 12px;font-weight:900;color:#dc2626;font-size:13px;text-align:left;direction:ltr;background:#fee2e2;border-bottom:2px solid #ef4444">${formatCurrency(remaining > 0 ? remaining : 0)} ﷼</td>
         </tr>

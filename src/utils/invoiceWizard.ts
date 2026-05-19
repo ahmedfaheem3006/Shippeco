@@ -116,6 +116,7 @@ export function toInvoiceFromDraft(
     date: draft.date || new Date().toISOString().slice(0, 10),
     status: draft.status,
     payment: draft.payment || undefined,
+    payment_method: draft.payment || undefined,
     price,
     partialPaid,
     dhlCost,
@@ -151,7 +152,7 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
       ? inv.status 
       : 'unpaid',
     partialPaid: inv.partialPaid !== undefined ? String(inv.partialPaid) : '',
-    payment: inv.payment ?? '',
+    payment: inv.payment_method ?? inv.payment ?? '',
     codeType: inv.codeType ?? 'barcode',
     details: inv.details ?? '',
     shipperSameAsClient: Boolean(!inv.shipperName && !inv.shipperPhone),

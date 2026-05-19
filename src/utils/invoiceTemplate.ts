@@ -103,7 +103,7 @@ export function computeInvoiceTotal(inv: Invoice): {
     }
   } else {
     items.push({
-      type: inv.carrier ? 'فرق وزن أو أبعاد' : 'خدمة شحن',
+      type: inv.itemType || (inv as any).shipping_type || (inv.carrier ? 'فرق وزن أو أبعاد' : 'خدمة شحن'),
       details: '',
       price,
     })

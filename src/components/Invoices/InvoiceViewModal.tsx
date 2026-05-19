@@ -597,6 +597,17 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
                 </div>
               </div>
             )}
+            {/* Payment Method */}
+            {(displayInv as any).payment_method && (
+              <div className="px-3 pb-3 pt-2 border-t border-gray-100 dark:border-slate-700 mt-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-400">
+                  <span>مسار إتمام الدفع:</span>
+                  <span className="text-gray-900 dark:text-white px-2 py-0.5 bg-gray-50 dark:bg-slate-900 rounded-md border border-gray-200 dark:border-slate-600">
+                    {(displayInv as any).payment_method}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ─── تكلفة الناقل + الربح ─── */}
