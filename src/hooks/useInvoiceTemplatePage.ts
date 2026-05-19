@@ -350,15 +350,16 @@ const filteredInvoices = useMemo(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await apiFetch<any>(`/invoices/${selectedInvoiceId}`)
+        const { invoiceService } = await import('../services/invoiceService')
+        const inv = await invoiceService.getInvoice(selectedInvoiceId)
         if (cancelled) return
-        const inv = res?.data !== undefined && res?.success ? res.data : res
-
         if (inv) {
+          // Since getInvoice already runs mapRailwayToCloudflare,
+          // we map it using mapInvoice to keep the exact models expected by this page
           setSelectedInvoiceFull(mapInvoice(inv))
         }
-      } catch {
-        // Fall back to allInvoices data
+      } catch (e) {
+        console.warn('[InvoiceTemplate] Failed to fetch full invoice details:', e)
       }
     })()
     return () => { cancelled = true }

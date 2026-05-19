@@ -378,7 +378,7 @@ ${themeContent}
 // ═══ Download PDF ═══
 export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
   let fullInv = inv
-  if (inv && inv.id && (!inv.items || inv.items.length === 0)) {
+  if (inv && inv.id) {
     try {
       const { invoiceService } = await import('../services/invoiceService')
       fullInv = await invoiceService.getInvoice(String(inv.id))
@@ -462,7 +462,7 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
 // ═══ Share PDF via WhatsApp ═══
 export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) {
   let fullInv = inv
-  if (inv && inv.id && (!inv.items || inv.items.length === 0)) {
+  if (inv && inv.id) {
     try {
       const { invoiceService } = await import('../services/invoiceService')
       fullInv = await invoiceService.getInvoice(String(inv.id))

@@ -236,8 +236,22 @@ export function InvoiceTemplatePage() {
             <div className="flex items-center gap-2">
               {tmpl.selectedInvoice && (
                 <>
-                  <button type="button" onClick={() => downloadInvoicePDF(tmpl.selectedInvoice!, tmpl.template)} className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-[10px] sm:text-xs font-bold py-1.5 px-3 rounded-lg"><Download size={13} /><span className="hidden sm:inline">PDF</span></button>
-                  <button type="button" onClick={() => void shareInvoiceWhatsApp(tmpl.selectedInvoice!, tmpl.template)} className="flex items-center gap-1.5 bg-green-50 hover:bg-green-100 border border-green-200 text-green-600 text-[10px] sm:text-xs font-bold py-1.5 px-3 rounded-lg"><MessageCircle size={13} /><span className="hidden sm:inline">واتساب</span></button>
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoicePDF(tmpl.selectedInvoice!, tmpl.template)}
+                    className="p-1.5 rounded-lg text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-150"
+                    title="تحميل PDF"
+                  >
+                    <Download size={16} strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void shareInvoiceWhatsApp(tmpl.selectedInvoice!, tmpl.template)}
+                    className="p-1.5 rounded-lg text-green-500 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all duration-150"
+                    title="واتساب"
+                  >
+                    <MessageCircle size={16} strokeWidth={2} />
+                  </button>
                 </>
               )}
               <span className="text-[9px] sm:text-xs bg-gray-100 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 px-2 py-0.5 rounded-md text-gray-500 font-bold font-mono">A4</span>
