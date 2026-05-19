@@ -115,7 +115,7 @@ async function fetchProfitData(params: {
       totalCost += cost
       totalProfit += price - cost
       countedCount++
-      if (price > 0) margins.push(((price - cost) / price) * 100)
+      if (cost > 0) margins.push(((price - cost) / cost) * 100)
       if (price < cost) losingCount++
     } else {
       uncountedCount++
@@ -173,7 +173,7 @@ async function fetchProfitData(params: {
     clientRows: [...clientMap.values()]
       .map((r) => ({
         ...r,
-        marginPct: r.hasCostCount > 0 && r.revenue > 0 ? (r.profit / r.revenue) * 100 : null,
+        marginPct: r.hasCostCount > 0 && r.cost > 0 ? (r.profit / r.cost) * 100 : null,
       }))
       .sort((a, b) => b.revenue - a.revenue),
     pagination: paginationInfo,
@@ -258,7 +258,7 @@ export function useProfitReportPage() {
               const cost = Number(inv.dhlCost) || 0
               const hasCost = cost > 0
               const profit = hasCost ? price - cost : null
-              const marginPct = hasCost && price > 0 ? (profit! / price) * 100 : null
+              const marginPct = hasCost && cost > 0 ? (profit! / cost) * 100 : null
               return {
                 id: String(inv.id || ''),
                 invoiceNumber: inv.invoiceNumber || String(inv.id || ''),
@@ -322,7 +322,7 @@ export function useProfitReportPage() {
             return [...map.values()]
               .map((r) => ({
                 ...r,
-                marginPct: r.revenue > 0 && r.cost > 0 ? (r.profit / r.revenue) * 100 : null,
+                marginPct: r.cost > 0 ? (r.profit / r.cost) * 100 : null,
               }))
               .sort((a, b) => b.month.localeCompare(a.month))
           }
@@ -398,7 +398,7 @@ export function useProfitReportPage() {
           const cost = Number(inv.dhlCost) || 0
           const hasCost = cost > 0
           const profit = hasCost ? price - cost : null
-          const marginPct = hasCost && price > 0 ? (profit! / price) * 100 : null
+          const marginPct = hasCost && cost > 0 ? (profit! / cost) * 100 : null
           return {
             id: String(inv.id || ''), invoiceNumber: inv.invoiceNumber || String(inv.id || ''),
             client: inv.client || '—', awb: inv.awb || '', carrier: inv.carrier || '—',

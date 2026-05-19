@@ -233,7 +233,7 @@ export function calcInvoiceProfit(inv: Invoice): InvoiceProfit {
   const cost = n(inv.dhlCost)
   const hasCost = cost > 0
   const profit = hasCost ? price - cost : null
-  const marginPct = hasCost && price > 0 ? (profit! / price) * 100 : null
+  const marginPct = hasCost && cost > 0 ? (profit! / cost) * 100 : null
   return { price, cost, hasCost, profit, marginPct }
 }
 
@@ -353,7 +353,7 @@ export function computeClientProfitRows(filtered: Invoice[]): ClientProfitRow[] 
   return [...map.values()]
     .map((r) => ({
       ...r,
-      marginPct: r.hasCostCount && r.revenue > 0 ? (r.profit / r.revenue) * 100 : null,
+      marginPct: r.hasCostCount && r.cost > 0 ? (r.profit / r.cost) * 100 : null,
     }))
     .sort((a, b) => b.revenue - a.revenue)
 }
@@ -379,7 +379,7 @@ export function computeMonthlyProfitRows(filtered: Invoice[]): MonthlyProfitRow[
   return [...map.values()]
     .map((r) => ({
       ...r,
-      marginPct: r.hasCostCount && r.revenue > 0 ? (r.profit / r.revenue) * 100 : null,
+      marginPct: r.hasCostCount && r.cost > 0 ? (r.profit / r.cost) * 100 : null,
     }))
     .sort((a, b) => b.month.localeCompare(a.month))
 }

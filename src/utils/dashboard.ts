@@ -165,7 +165,7 @@ export function computeDashboardKpis(invoices: Invoice[]): DashboardKpis {
     const cost = getDhlCost(inv)
     if (cost > 0 && price > 0 && st !== 'returned') {
       const profit = price - cost
-      profitTotal += profit; profitCount++; marginSum += (profit / price) * 100
+      profitTotal += profit; profitCount++; marginSum += (profit / cost) * 100
       if (profit < 0) losingCount++
     }
   }
