@@ -237,11 +237,89 @@ function generateReceiptHtml(inv: Invoice): string {
   ` : ''
 }
 
+function formatNoteToHtml(note: string): string {
+  if (!note) return ''
+
+  const lines = note.split('\n').map(l => l.trim()).filter(Boolean)
+  let warningHtml = ''
+  let bankHtml = ''
+  let otherHtml = ''
+
+  const bankFields: { label: string; value: string }[] = []
+
+  for (const line of lines) {
+    if (line.includes('الآيبان') || line.includes('الابان') || line.includes('SA47') || line.includes('SA50') || line.includes('SA0') || line.includes('SA3') || line.includes('SA6')) {
+      const parts = line.split(':')
+      const label = parts[0] || 'رقم الآيبان'
+      const val = parts.slice(1).join(':').trim() || line
+      bankFields.push({ label, value: val })
+    } else if (line.includes('البنك') || line.includes('بنك')) {
+      const parts = line.split(':')
+      const label = parts[0] || 'البنك'
+      const val = parts.slice(1).join(':').trim() || line
+      bankFields.push({ label, value: val })
+    } else if (line.includes('الاسم التجاري') || line.includes('المؤسسة')) {
+      const parts = line.split(':')
+      const label = parts[0] || 'الاسم التجاري'
+      const val = parts.slice(1).join(':').trim() || line
+      bankFields.push({ label, value: val })
+    } else if (line.startsWith('(') && line.endsWith(')')) {
+      warningHtml += `<div style="font-weight:700;color:#9a3412;margin-bottom:8px;font-size:11px;line-height:1.6">${escapeHtml(line)}</div>`
+    } else if (line.startsWith('هام:') || line.includes('تنبيه') || line.includes('تعذر تحصيل')) {
+      warningHtml += `<div style="font-weight:700;color:#991b1b;margin-bottom:8px;font-size:11px;line-height:1.6;padding:8px 12px;background:#fef2f2;border-right:4px solid #ef4444;border-radius:4px">${escapeHtml(line)}</div>`
+    } else {
+      otherHtml += `<div style="margin-bottom:6px;font-size:11px;color:#374151;line-height:1.6">${escapeHtml(line)}</div>`
+    }
+  }
+
+  if (bankFields.length > 0) {
+    bankHtml = `
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;margin-top:16px">
+        <div style="font-weight:800;color:#16a34a;font-size:12px;margin-bottom:10px;text-align:right">
+          🏦 تفاصيل الحساب البنكي للسداد / Bank Details
+        </div>
+        <table style="width:100%;font-size:11px;border-collapse:collapse" dir="rtl">
+          <tbody>
+            ${bankFields.map(field => {
+              const val = field.value
+              const isIban = val.toUpperCase().startsWith('SA') || /\d{22,}/.test(val)
+              const valueStyle = isIban
+                ? `direction:ltr;font-family:'Courier New',monospace;font-weight:800;color:#1e3a8a;font-size:13px;letter-spacing:0.5px;text-align:left;padding:6px 0`
+                : `font-weight:700;color:#111827;text-align:left;padding:6px 0`
+              return `
+                <tr style="border-bottom:1px dashed #e2e8f0">
+                  <td style="padding:6px 0;font-weight:800;color:#4b5563;text-align:right;width:120px">${escapeHtml(field.label)}:</td>
+                  <td style="${valueStyle}">${escapeHtml(val)}</td>
+                </tr>
+              `
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+  }
+
+  return `
+    <div style="font-family:'Cairo',sans-serif">
+      ${warningHtml ? `
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:16px;text-align:right">
+          <div style="font-weight:800;color:#d97706;font-size:12px;margin-bottom:8px">⚠️ تنبيه هام وتعليمات الخدمة / Important Notice</div>
+          ${warningHtml}
+        </div>
+      ` : ''}
+      
+      ${otherHtml ? `<div style="margin-bottom:12px;text-align:right">${otherHtml}</div>` : ''}
+      
+      ${bankHtml}
+    </div>
+  `
+}
+
 function generateFooter(tmpl: InvoiceTemplate): string {
   if (!tmpl.note) return ''
   return `
     <div style="padding:20px 28px;border-top:1px solid #e5e7eb">
-      <div style="font-size:11px;color:#333;line-height:1.8;white-space:pre-line;font-weight:700;">${escapeHtml(tmpl.note)}</div>
+      ${formatNoteToHtml(tmpl.note)}
     </div>
   `
 }
