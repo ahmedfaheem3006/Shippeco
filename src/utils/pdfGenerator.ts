@@ -383,33 +383,52 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
     const canvas = await htmlToCanvas(html)
     if (canvas) {
       const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF
-      if (jspdf) {
         const pdf = new jspdf('p', 'mm', 'a4')
         const imgData = canvas.toDataURL('image/jpeg', 1.0)
         const pdfWidth = pdf.internal.pageSize.getWidth()
         const pdfHeight = pdf.internal.pageSize.getHeight()
-        const imgWidth = pdfWidth
+        
+        const margin = 10
+        const printWidth = pdfWidth - (margin * 2)
+        const printHeight = pdfHeight - (margin * 2)
+        
+        const imgWidth = printWidth
         const imgHeight = (canvas.height * imgWidth) / canvas.width
         
         let heightLeft = imgHeight
-        let position = 0
+        let position = margin
 
         // First page
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST')
-        heightLeft -= pdfHeight
+        pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight, undefined, 'FAST')
+        
+        // Draw white margin borders as a mask
+        pdf.setFillColor(255, 255, 255)
+        pdf.rect(0, 0, pdfWidth, margin, 'F')
+        pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F')
+        pdf.rect(0, 0, margin, pdfHeight, 'F')
+        pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F')
+        
+        heightLeft -= printHeight
 
         // Additional pages
         while (heightLeft > 0) {
-          position = heightLeft - imgHeight
+          position = margin - (imgHeight - heightLeft)
           pdf.addPage()
-          pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST')
-          heightLeft -= pdfHeight
+          pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight, undefined, 'FAST')
+          
+          // Draw margins mask on subsequent pages
+          pdf.setFillColor(255, 255, 255)
+          pdf.rect(0, 0, pdfWidth, margin, 'F')
+          pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F')
+          pdf.rect(0, 0, margin, pdfHeight, 'F')
+          pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F')
+          
+          heightLeft -= printHeight
         }
 
         const fileName = `invoice-${inv.invoice_number || inv.id}.pdf`
         pdf.save(fileName)
         return // Success!
-      }
     }
   } catch (err) {
     console.warn('[PDF Download] Direct canvas download failed, falling back to print window:', err)
@@ -539,7 +558,6 @@ async function htmlToCanvas(html: string): Promise<HTMLCanvasElement | null> {
   }
 }
 
-// ═══ Helper: Canvas to PDF Blob (using jsPDF if available) ═══
 async function canvasToPDFBlob(canvas: HTMLCanvasElement, _inv: Invoice, _tmpl: InvoiceTemplate): Promise<Blob> {
   try {
     const jsPDF = (window as any).jspdf?.jsPDF || (window as any).jsPDF
@@ -547,8 +565,46 @@ async function canvasToPDFBlob(canvas: HTMLCanvasElement, _inv: Invoice, _tmpl: 
       const pdf = new jsPDF('p', 'mm', 'a4')
       const imgData = canvas.toDataURL('image/jpeg', 0.95)
       const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight)
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      
+      const margin = 10
+      const printWidth = pdfWidth - (margin * 2)
+      const printHeight = pdfHeight - (margin * 2)
+      
+      const imgWidth = printWidth
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      
+      let heightLeft = imgHeight
+      let position = margin
+
+      // First page
+      pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight, undefined, 'FAST')
+      
+      // Draw white margin borders as a mask
+      pdf.setFillColor(255, 255, 255)
+      pdf.rect(0, 0, pdfWidth, margin, 'F')
+      pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F')
+      pdf.rect(0, 0, margin, pdfHeight, 'F')
+      pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F')
+      
+      heightLeft -= printHeight
+
+      // Additional pages
+      while (heightLeft > 0) {
+        position = margin - (imgHeight - heightLeft)
+        pdf.addPage()
+        pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight, undefined, 'FAST')
+        
+        // Draw margins mask
+        pdf.setFillColor(255, 255, 255)
+        pdf.rect(0, 0, pdfWidth, margin, 'F')
+        pdf.rect(0, pdfHeight - margin, pdfWidth, margin, 'F')
+        pdf.rect(0, 0, margin, pdfHeight, 'F')
+        pdf.rect(pdfWidth - margin, 0, margin, pdfHeight, 'F')
+        
+        heightLeft -= printHeight
+      }
+
       return pdf.output('blob')
     }
   } catch {}
