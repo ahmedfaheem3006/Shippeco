@@ -228,8 +228,8 @@ function mapToRailway(inv: Partial<Invoice>): any {
     details: i.details,
     shipping_type: i.shippingType || i.shipping_type,
     dimensions: i.dimensions,
-    weight: i.weight || undefined,
-    final_weight: i.final_weight || undefined,
+    weight: i.weight,
+    final_weight: i.final_weight,
     code_type: i.codeType || i.code_type,
   };
 }

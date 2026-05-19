@@ -232,7 +232,16 @@ export function NewInvoicePage() {
     const unitLabel = calcDimUnit === 'metric' ? 'سم' : 'إنش'
     const dimsStr = hasDims ? `${l} × ${w} × ${h} ${unitLabel}` : ''
     setDraft((p) => ({
-      ...p, price: grandTotal.toFixed(2), dhlCost: calcResult.baseRate.toFixed(2), finalWeight: calcResult.chargeableWeight.toFixed(2), weight: actualW ? String(actualW) : '', dimensions: dimsStr, details: detailsLines.join('\n'), notes: adminNotes, itemType: 'شحن دولي', carrier: 'DHL Express'
+      ...p,
+      price: grandTotal.toFixed(2),
+      dhlCost: calcResult.baseRate.toFixed(2),
+      weight: calcResult.chargeableWeight.toFixed(2),
+      final_weight: Number(calcWeight).toFixed(2),
+      dimensions: dimsStr,
+      details: detailsLines.join('\n'),
+      notes: adminNotes,
+      itemType: 'شحن دولي',
+      carrier: 'DHL Express'
     }))
     setMode('calc')
     setStep(2)
@@ -686,7 +695,7 @@ export function NewInvoicePage() {
             <div className={styles.calcPanel}>
               <div className={styles.calcTotal} style={{ border: 'none', paddingTop: 0, marginTop: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  {draft.finalWeight && <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', background: '#f3f4f6', padding: '0.25rem 0.625rem', borderRadius: '0.375rem' }}>{draft.finalWeight} كجم</span>}
+                  {draft.weight && <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', background: '#f3f4f6', padding: '0.25rem 0.625rem', borderRadius: '0.375rem' }}>{draft.weight} كجم</span>}
                   <span className={styles.calcTotalLabel}>إجمالي التسعيرة</span>
                 </div>
                 <span className={styles.calcTotalValue}>{draft.price} ر.س</span>
@@ -755,15 +764,15 @@ export function NewInvoicePage() {
             </div>
             <div className={styles.field}>
               <label className={styles.fieldLabel}><Weight size={12} /> وزن المحاسبة (كجم)</label>
-              <input className={`${styles.fieldInput} ${styles.fieldMono}`} value={draft.finalWeight} onChange={(e) => setDraft((p) => ({ ...p, finalWeight: e.target.value }))} placeholder="0.0" dir="ltr" style={{ textAlign: 'left' }} />
-            </div>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي (كجم)</label>
               <input className={`${styles.fieldInput} ${styles.fieldMono}`} value={draft.weight} onChange={(e) => setDraft((p) => ({ ...p, weight: e.target.value }))} placeholder="0.0" dir="ltr" style={{ textAlign: 'left' }} />
             </div>
             <div className={styles.field}>
               <label className={styles.fieldLabel}><Ruler size={12} /> الأبعاد (سم)</label>
               <input className={`${styles.fieldInput} ${styles.fieldMono}`} value={draft.dimensions} onChange={(e) => setDraft((p) => ({ ...p, dimensions: e.target.value }))} placeholder="طول × عرض × ارتفاع" dir="ltr" style={{ textAlign: 'left' }} />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel}><Weight size={12} /> الوزن الفعلي (كجم)</label>
+              <input className={`${styles.fieldInput} ${styles.fieldMono}`} value={draft.final_weight} onChange={(e) => setDraft((p) => ({ ...p, final_weight: e.target.value }))} placeholder="0.0" dir="ltr" style={{ textAlign: 'left' }} />
             </div>
           </div>
         </div>

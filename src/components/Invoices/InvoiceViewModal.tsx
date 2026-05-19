@@ -559,15 +559,15 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
           {(displayInv.weight || displayInv.final_weight || displayInv.dimensions) && (
             <div className={styles.topGrid} style={{ marginTop: 12, gridTemplateColumns: '1fr 1fr 1fr' }}>
               <div className={styles.card}>
-                <div className={styles.k}><Scale size={13} /> الوزن الفعلي</div>
-                <div className={styles.v}>{displayInv.weight || '—'}</div>
+                <div className={styles.k}><Scale size={13} /> وزن المحاسبة</div>
+                <div className={styles.v}>{displayInv.weight ? `${displayInv.weight} كجم` : '—'}</div>
               </div>
               <div className={styles.card} style={{ background: displayInv.final_weight ? 'rgba(245, 158, 11, 0.08)' : undefined, borderColor: displayInv.final_weight ? 'rgba(245, 158, 11, 0.2)' : undefined }}>
                 <div className={styles.k} style={{ color: displayInv.final_weight ? '#d97706' : undefined }}>
-                  <Scale size={13} /> وزن المحاسبة
+                  <Scale size={13} /> الوزن الفعلي
                 </div>
                 <div className={styles.v} style={{ color: displayInv.final_weight ? '#b45309' : undefined, fontFamily: 'var(--mono)' }}>
-                  {displayInv.final_weight || '—'}
+                  {displayInv.final_weight ? `${displayInv.final_weight} كجم` : '—'}
                 </div>
               </div>
               <div className={styles.card}>

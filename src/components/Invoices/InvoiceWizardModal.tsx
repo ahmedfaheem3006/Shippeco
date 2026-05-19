@@ -365,7 +365,15 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                   const adminNotes = `أساسي: ${r.baseRate.toFixed(2)} ر.س  وقود: +${r.fuelAmt.toFixed(2)} ر.س  GoGreen: +${r.goGreen.toFixed(2)} ر.س`
 
                   setDraft((p) => ({
-                    ...p, price: r.total.toFixed(2), dhlCost: r.baseRate.toFixed(2), weight: round2(chargeW).toFixed(2), details: detailsLines.join('\n'), notes: adminNotes, itemType: 'شحن دولي', carrier: 'DHL Express'
+                    ...p,
+                    price: r.total.toFixed(2),
+                    dhlCost: r.baseRate.toFixed(2),
+                    weight: round2(chargeW).toFixed(2),
+                    final_weight: Number(calcWeight).toFixed(2),
+                    details: detailsLines.join('\n'),
+                    notes: adminNotes,
+                    itemType: 'شحن دولي',
+                    carrier: 'DHL Express'
                   }))
                   setMode('calc')
                   setStep(2)
@@ -448,16 +456,16 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                  </div>
                  <div className="flex flex-col gap-1.5">
                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">وزن المحاسبة النهائي (كجم)</label>
-                   <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.finalWeight} onChange={(e) => setDraft((p) => ({ ...p, finalWeight: e.target.value }))} placeholder="0.0" dir="ltr" />
-                 </div>
-                 <div className="flex flex-col gap-1.5">
-                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الوزن الفعلي (كجم)</label>
                    <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.weight} onChange={(e) => setDraft((p) => ({ ...p, weight: e.target.value }))} placeholder="0.0" dir="ltr" />
                  </div>
 
                  <div className="flex flex-col gap-1.5">
                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الأبعاد (سم)</label>
                    <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.dimensions} onChange={(e) => setDraft((p) => ({ ...p, dimensions: e.target.value }))} placeholder="طول × عرض × ارتفاع" dir="ltr" />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الوزن الفعلي (كجم)</label>
+                    <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.final_weight} onChange={(e) => setDraft((p) => ({ ...p, final_weight: e.target.value }))} placeholder="0.0" dir="ltr" />
                  </div>
 
                  <div className="flex flex-col gap-1.5">
