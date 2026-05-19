@@ -377,8 +377,18 @@ ${themeContent}
 
 // ═══ Download PDF ═══
 export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
-  await preloadInvoiceReceipt(inv)
-  const html = generateInvoiceHTML(inv, tmpl)
+  let fullInv = inv
+  if (inv && inv.id && (!inv.items || inv.items.length === 0)) {
+    try {
+      const { invoiceService } = await import('../services/invoiceService')
+      fullInv = await invoiceService.getInvoice(String(inv.id))
+    } catch (e) {
+      console.warn('[pdfGenerator] Failed to fetch full invoice for PDF download:', e)
+    }
+  }
+
+  await preloadInvoiceReceipt(fullInv)
+  const html = generateInvoiceHTML(fullInv, tmpl)
   
   // Try direct download using canvas -> jspdf
   try {
@@ -428,7 +438,7 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
           heightLeft -= printHeight
         }
 
-        const fileName = `invoice-${inv.invoice_number || inv.id}.pdf`
+        const fileName = `invoice-${fullInv.invoice_number || fullInv.id}.pdf`
         pdf.save(fileName)
         return // Success!
     }
@@ -451,36 +461,46 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
 
 // ═══ Share PDF via WhatsApp ═══
 export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) {
-  await preloadInvoiceReceipt(inv)
-  const { total } = computeInvoiceTotal(inv)
-  const paid = parseFloat(String(inv.paid_amount || inv.partialPaid || 0)) || 0
+  let fullInv = inv
+  if (inv && inv.id && (!inv.items || inv.items.length === 0)) {
+    try {
+      const { invoiceService } = await import('../services/invoiceService')
+      fullInv = await invoiceService.getInvoice(String(inv.id))
+    } catch (e) {
+      console.warn('[pdfGenerator] Failed to fetch full invoice for WhatsApp share:', e)
+    }
+  }
+
+  await preloadInvoiceReceipt(fullInv)
+  const { total } = computeInvoiceTotal(fullInv)
+  const paid = parseFloat(String(fullInv.paid_amount || fullInv.partialPaid || 0)) || 0
   const remaining = total - paid
 
-  const phone = String(inv.phone || inv.receiver_phone || '').replace(/[^0-9+]/g, '')
+  const phone = String(fullInv.phone || fullInv.receiver_phone || '').replace(/[^0-9+]/g, '')
   const cleanPhone = phone.startsWith('+')
     ? phone.slice(1)
     : phone.startsWith('0')
       ? '966' + phone.slice(1)
       : phone
 
-  const fileName = `invoice-${safe(inv.invoice_number || inv.id)}.pdf`
+  const fileName = `invoice-${safe(fullInv.invoice_number || fullInv.id)}.pdf`
 
   // ═══ Try Web Share API with file (works on mobile + WhatsApp) ═══
   if (navigator.share && navigator.canShare) {
     try {
-      const html = generateInvoiceHTML(inv, tmpl)
+      const html = generateInvoiceHTML(fullInv, tmpl)
 
       // Create a printable page in a hidden iframe and convert to PDF
       const canvas = await htmlToCanvas(html)
       if (canvas) {
-        const pdfBlob = await canvasToPDFBlob(canvas, inv, tmpl)
+        const pdfBlob = await canvasToPDFBlob(canvas, fullInv, tmpl)
 
         const file = new File([pdfBlob], fileName, { type: 'application/pdf' })
 
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({
-            title: `فاتورة #${safe(inv.invoice_number || inv.id)}`,
-            text: `فاتورة #${safe(inv.invoice_number || inv.id)} — ${inv.client || ''} — ${formatCurrency(total)} ﷼`,
+            title: `فاتورة #${safe(fullInv.invoice_number || fullInv.id)}`,
+            text: `فاتورة #${safe(fullInv.invoice_number || fullInv.id)} — ${fullInv.client || ''} — ${formatCurrency(total)} ﷼`,
             files: [file],
           })
           return
@@ -493,14 +513,14 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
 
   // ═══ Fallback: Download PDF first, then open WhatsApp ═══
   // Step 1: Generate and auto-download the PDF
-  const html = generateInvoiceHTML(inv, tmpl)
+  const html = generateInvoiceHTML(fullInv, tmpl)
   const blob = new Blob([html], { type: 'text/html' })
   const htmlUrl = URL.createObjectURL(blob)
 
   // Open print dialog for PDF save
   const printWin = window.open('', '_blank', 'width=800,height=1100')
   if (printWin) {
-    printWin.document.write(generateInvoiceHTML(inv, tmpl))
+    printWin.document.write(generateInvoiceHTML(fullInv, tmpl))
     printWin.document.close()
 
     printWin.onload = () => {
@@ -510,8 +530,8 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
         // After print dialog, open WhatsApp
         setTimeout(() => {
           const msg = [
-            `\u{1F4C4} *فاتورة #${safe(inv.invoice_number || inv.id)}*`,
-            `\u{1F464} ${inv.receiver || inv.client || '—'}`,
+            `\u{1F4C4} *فاتورة #${safe(fullInv.invoice_number || fullInv.id)}*`,
+            `\u{1F464} ${fullInv.receiver || fullInv.client || '—'}`,
             `\u{1F4B0} الإجمالي: ${formatCurrency(total)} \u{FDFC}`,
             remaining > 0 ? `\u{1F534} المستحق: ${formatCurrency(remaining)} \u{FDFC}` : '\u{2705} مدفوعة بالكامل',
             '',
