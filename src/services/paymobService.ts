@@ -13,6 +13,7 @@ export type CreatePaymentRequest = {
   amount: number;
   client_name: string;
   client_phone: string;
+  client_email?: string;
   description: string;
   integration_type?: string;
 };
@@ -135,69 +136,28 @@ export async function createPaymentLink(
   });
 
   try {
-    // Try Worker first
-    const result = await workerFetch<CreatePaymentResponse>(
-      `${env.workerUrl}?action=create-payment`,
-      {
-        method: 'POST',
-        body: JSON.stringify(normalizedPayload),
-        signal,
-      }
-    );
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      if (!result.payment_url && !result.payment_url_full) {
-        // Check if it's a phone/validation issue
-        const errorMsg = result.client_secret 
-          ? 'لم يتم إرجاع رابط الدفع'
-          : 'Paymob رفضت الطلب — تأكد من صحة البيانات (الرقم يجب أن يكون سعودي)';
-        throw new Error(errorMsg);
-      }
-
-    // NEW: Save to Backend DB so it shows in history immediately
-    try {
-      await api.post('/paymob/links', {
-        ...normalizedPayload,
-        payment_url: result.payment_url || result.payment_url_full,
-        payment_url_full: result.payment_url_full || result.payment_url,
-        paymob_order_id: String(result.order_id || ''),
-        client_secret: result.client_secret || '',
-      });
-    } catch (saveErr) {
-      console.warn('[Paymob] Silent save to DB failed:', saveErr);
-    }
-
-    return result;
-  } catch (workerError: any) {
-    console.warn('[Paymob] Worker failed, trying Backend...', workerError);
-    
-    // Fallback: try Backend
-    try {
-      const backendResult = await api.post<any>('/paymob/create-link', normalizedPayload);
-      const d = backendResult?.data || backendResult;
+    // We intentionally bypass the Worker to ensure the new Backend logic
+    // for forcing the Contact Information on Paymob checkout is used.
+    const backendResult = await api.post<any>('/paymob/create-link', normalizedPayload);
+    const d = backendResult?.data || backendResult;
       
-      if (!d?.payment_url && !d?.payment_link) {
-        throw new Error(d?.error || 'فشل إنشاء الرابط');
-      }
-
-      return {
-        payment_url: d.payment_url,
-        payment_link: d.payment_link,
-        payment_url_full: d.payment_url_full,
-        order_id: d.order_id || d.paymob_order_id,
-        paymob_order_id: d.paymob_order_id || d.order_id,
-        client_secret: d.client_secret,
-        already_exists: d.already_exists,
-        message: d.message,
-      };
-    } catch (backendError: any) {
-      // Both failed — show the backend error as it's more relevant now
-      const msg = backendError?.message || workerError?.message || 'فشل إنشاء رابط الدفع';
-      throw new Error(msg);
+    if (!d?.payment_url && !d?.payment_link) {
+      throw new Error(d?.error || 'فشل إنشاء الرابط');
     }
+
+    return {
+      payment_url: d.payment_url,
+      payment_link: d.payment_link,
+      payment_url_full: d.payment_url_full,
+      order_id: d.order_id || d.paymob_order_id,
+      paymob_order_id: d.paymob_order_id || d.order_id,
+      client_secret: d.client_secret,
+      already_exists: d.already_exists,
+      message: d.message,
+    };
+  } catch (backendError: any) {
+    const msg = backendError?.response?.data?.error?.message || backendError?.message || 'فشل إنشاء رابط الدفع';
+    throw new Error(msg);
   }
 }
 
