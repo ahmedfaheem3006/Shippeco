@@ -11,7 +11,7 @@ import {
   Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check,
   ExternalLink, Link
 } from 'lucide-react'
-import { checkPayment } from '../../services/paymobService'
+import { checkPayment, createPaymentLink } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
@@ -216,20 +216,84 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     }
 
     setCreatingLink(true)
+    let newWindow: Window | null = null;
     
+    if (action === 'open' && window.innerWidth < 768) {
+      newWindow = window.open('', '_blank');
+    }
+
     try {
-      const baseUrl = window.location.origin + window.location.pathname
-      const localCheckoutUrl = `${baseUrl}#/pay/${displayInv.id}`
-      
-      if (action === 'open') {
-        window.open(localCheckoutUrl, '_blank')
-      } else {
-        await navigator.clipboard.writeText(localCheckoutUrl)
-        setLocalToast({ type: 'success', message: 'تم نسخ رابط صفحة الدفع للعميل بنجاح' })
+      const res = await createPaymentLink({
+        invoice_id: String(displayInv.id),
+        amount: remainingAmount,
+        client_name: displayInv.client,
+        client_phone: displayInv.phone || '0500000000',
+        client_email: (displayInv as any).email || undefined,
+        description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
+      })
+
+      if (res?.already_exists) {
+        if (!window.confirm(action === 'open' ? 'رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد استخدامه؟' : 'رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد نسخ الرابط القديم؟')) {
+          setCreatingLink(false);
+          return;
+        }
+      }
+
+      const url = res.payment_url_full || res.payment_url || res.payment_link || res.url
+      if (url) {
+        if (action === 'open') {
+          if (newWindow) {
+            newWindow.location.href = url!;
+          } else {
+            window.open(url!, '_blank')
+          }
+          setLocalToast({ type: 'success', message: res.already_exists ? 'تم فتح الرابط الموجود مسبقاً' : 'تم إنشاء رابط الدفع وفتحه بنجاح' })
+        } else {
+          // Copy action
+          let success = false;
+          if (window.innerWidth < 768) {
+            try {
+              const el = document.createElement('textarea');
+              el.value = url; el.style.position = 'fixed'; el.style.left = '-9999px';
+              document.body.appendChild(el); el.focus(); el.select(); 
+              success = document.execCommand('copy');
+              document.body.removeChild(el);
+            } catch { success = false; }
+          }
+          if (!success) {
+            try { 
+              await navigator.clipboard.writeText(url); 
+              success = true; 
+            } catch {
+              try {
+                const el = document.createElement('textarea');
+                el.value = url; el.style.position = 'fixed'; el.style.left = '-9999px';
+                document.body.appendChild(el); el.select(); 
+                success = document.execCommand('copy');
+                document.body.removeChild(el);
+              } catch { success = false; }
+            }
+          }
+          if (success) {
+            setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع بنجاح' })
+          } else {
+            setLocalToast({ type: 'error', message: 'فشل النسخ التلقائي. الرابط: ' + url })
+          }
+        }
+        
+        try {
+          await api.post('/audit/write', {
+            action: res.already_exists ? 'payment_link_existing' : 'payment_link',
+            entityType: 'invoice',
+            entityId: parseInt(String(displayInv.id), 10),
+            newData: { amount: remainingAmount, url }
+          })
+        } catch { /* silent */ }
       }
     } catch (err: any) {
       console.error('[Paymob] Error:', err)
-      setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء الرابط' })
+      setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء رابط الدفع' })
+      if (newWindow) newWindow.close();
     } finally {
       setCreatingLink(false)
       setTimeout(() => setLocalToast(null), 4000)

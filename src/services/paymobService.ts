@@ -167,9 +167,8 @@ export async function checkPayment(
   // IMPORTANT: Always call Backend first — it both checks Paymob AND updates the invoice in DB.
   // The Worker only checks status without updating anything.
   try {
-    const result = await api.get<any>(`/paymob/check/${orderId}`);
-    const d = result?.data || result;
-    console.log('[Paymob] checkPayment via Backend:', d);
+    const res = await api.get<{ data: any }>(`/paymob/check/${orderId}`);
+    const d = res?.data || res;
     return d;
   } catch (backendErr) {
     console.warn('[Paymob] Backend check failed, trying Worker...', backendErr);
