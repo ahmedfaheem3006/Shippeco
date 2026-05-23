@@ -239,7 +239,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         }
       }
 
-      const url = res.payment_url_full || res.payment_url || res.payment_link || res.url
+      const url = (res as any).payment_url_full || (res as any).payment_url || (res as any).payment_link || (res as any).url
       if (url) {
         if (action === 'open') {
           if (newWindow) {
