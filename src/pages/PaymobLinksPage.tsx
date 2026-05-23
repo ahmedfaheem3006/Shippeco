@@ -8,7 +8,7 @@ import {
   CreditCard, Link, Send, Copy, Search, RefreshCw,
   Trash2, X, Smartphone, User, FileText, CheckCircle2,
   AlertCircle, Check, CircleDollarSign, ExternalLink,
-  Clock, Loader2,
+  Clock, Loader2, Mail,
 } from 'lucide-react';
 import { useSocket } from '../contexts/SocketContext';
 
@@ -132,6 +132,7 @@ export function PaymobLinksPage() {
   // Form
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('خدمة شحن');
   const [integrationType, setIntegrationType] = useState<string>('PL');
@@ -329,6 +330,7 @@ export function PaymobLinksPage() {
     if (newSelected.length === 1) {
       setClientName(inv.client || '');
       setClientPhone(inv.phone || '');
+      setClientEmail((inv as any).email || '');
     }
     
     // Sum up total remaining
@@ -366,6 +368,7 @@ export function PaymobLinksPage() {
 
     const name = clientName.trim();
     const phone = clientPhone.trim();
+    const email = clientEmail.trim();
     const amountNum = safeAmountNumber(amount);
     const desc = description.trim() || 'خدمة شحن';
 
@@ -382,6 +385,7 @@ export function PaymobLinksPage() {
         amount: amountNum,
         client_name: name,
         client_phone: phone,
+        client_email: email || undefined,
         description: desc.slice(0, 200),
         integration_type: integrationType,
       });
@@ -569,8 +573,8 @@ export function PaymobLinksPage() {
             )}
           </div>
 
-          {/* Name + Phone */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Name + Phone + Email */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1"><User size={12} /> اسم العميل *</label>
               <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="اسم العميل"
@@ -580,6 +584,12 @@ export function PaymobLinksPage() {
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1"><Smartphone size={12} /> رقم الجوال *</label>
               <input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="05XXXXXXXX" dir="ltr"
+                className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-inter transition-all disabled:opacity-50 text-right"
+                disabled={busy} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1"><Mail size={12} /> الإيميل (اختياري)</label>
+              <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="email@example.com" type="email" dir="ltr"
                 className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-inter transition-all disabled:opacity-50 text-right"
                 disabled={busy} />
             </div>

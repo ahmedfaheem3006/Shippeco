@@ -31,6 +31,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+import { PublicCheckoutPage } from './pages/PublicCheckoutPage'
+
 function App() {
   return (
     <SocketProvider>
@@ -106,6 +108,7 @@ function App() {
       <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/pay/:invoiceId" element={<PublicCheckoutPage />} />
         <Route
           element={
             <RequireAuth>
