@@ -661,14 +661,13 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             </div>
           )}
 
-          {/* Action Buttons */}
           <div className="flex flex-wrap gap-2 mt-2">
             <button
               onClick={handlePaymob}
               disabled={creatingLink || displayInv.status === 'paid' || displayInv.status === 'returned'}
               className="flex-1 min-w-[120px] justify-center items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20"
             >
-              {creatingLink && paymobFormAction === 'open' ? <Loader2 size={16} className="animate-spin" /> : <ExternalLink size={16} />}
+              {creatingLink ? <Loader2 size={16} className="animate-spin" /> : <ExternalLink size={16} />}
               رابط دفع
             </button>
             <button
@@ -676,7 +675,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
               disabled={creatingLink || displayInv.status === 'paid' || displayInv.status === 'returned'}
               className="flex-1 min-w-[120px] justify-center items-center gap-1.5 px-4 py-2.5 bg-gray-50 dark:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-bold hover:bg-gray-100 dark:hover:bg-slate-600 transition-all border border-gray-200 dark:border-slate-600 disabled:opacity-50"
             >
-              {creatingLink && paymobFormAction === 'copy' ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
+              {creatingLink ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
               نسخ الرابط
             </button>
           </div>
