@@ -114,8 +114,7 @@ export async function pingPaymobWorker(signal?: AbortSignal): Promise<PaymobPing
 }
 
 export async function createPaymentLink(
-  payload: CreatePaymentRequest,
-  signal?: AbortSignal
+  payload: CreatePaymentRequest
 ): Promise<CreatePaymentResponse> {
   // Normalize phone to Saudi format BEFORE sending to Worker
   const normalizedPayload = {

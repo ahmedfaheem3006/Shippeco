@@ -8,7 +8,8 @@ import {
   Phone, Package, Truck, DollarSign, FileText, Send,
   Edit3, Trash2, Plus, Calendar, Hash, CreditCard,
   ArrowUpRight, ArrowDownRight, User, MapPin, Box, Scale,
-  Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check
+  Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check,
+  ExternalLink, Link
 } from 'lucide-react'
 import { createPaymentLink, checkPayment } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
@@ -84,7 +85,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
   const [creatingLink, setCreatingLink] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied] = useState(false)
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   
   const [showPaymobForm, setShowPaymobForm] = useState(false)
