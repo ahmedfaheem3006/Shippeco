@@ -231,6 +231,7 @@ function mapToRailway(inv: Partial<Invoice>): any {
     weight: i.weight,
     final_weight: i.final_weight,
     code_type: i.codeType || i.code_type,
+    payment_method: i.payment_method || i.payment || null,
   };
 }
 
@@ -303,6 +304,8 @@ function mapRailwayToCloudflare(result: any): Invoice {
     isDraft: false,
     assigned_to: result.assigned_to,
     assigned_employee_name: result.assigned_employee_name,
+    payment_method: result.payment_method || '',
+    payment: result.payment_method || result.payment || '',
   } as Invoice;
 }
 
