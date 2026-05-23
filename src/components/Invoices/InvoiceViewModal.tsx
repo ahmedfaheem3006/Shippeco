@@ -86,6 +86,11 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [creatingLink, setCreatingLink] = useState(false)
   const [copied, setCopied] = useState(false)
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  
+  const [showPaymobForm, setShowPaymobForm] = useState(false)
+  const [paymobFormPhone, setPaymobFormPhone] = useState('')
+  const [paymobFormEmail, setPaymobFormEmail] = useState('')
+  const [paymobFormAction, setPaymobFormAction] = useState<'open'|'copy'|null>(null)
 
   const user = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'admin'
@@ -200,25 +205,36 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     finally { setEnriching(false) }
   }
 
-  const handlePaymob = async () => {
+  const openPaymobForm = (action: 'open' | 'copy') => {
     if (!displayInv) return
-    
     if (displayInv.status === 'paid') {
       setLocalToast({ type: 'error', message: 'الفاتورة مدفوعة بالفعل!' })
       setTimeout(() => setLocalToast(null), 3000)
       return
     }
-
     if (displayInv.status === 'returned') {
       setLocalToast({ type: 'error', message: 'الفاتورة مرتجعة، لا يمكن الدفع.' })
       setTimeout(() => setLocalToast(null), 3000)
       return
     }
+    setPaymobFormPhone(displayInv.phone || '')
+    setPaymobFormEmail((displayInv as any).email || '')
+    setPaymobFormAction(action)
+    setShowPaymobForm(true)
+  }
+
+  const handlePaymobConfirm = async () => {
+    if (!displayInv || !paymobFormAction) return
+    setShowPaymobForm(false)
+    
+    const action = paymobFormAction;
+    const phone = paymobFormPhone.trim() || '0500000000';
+    const email = paymobFormEmail.trim();
 
     setCreatingLink(true)
     let newWindow: Window | null = null;
-    // On some mobile browsers, window.open must be called directly in the click event
-    if (window.innerWidth < 768) {
+    
+    if (action === 'open' && window.innerWidth < 768) {
       newWindow = window.open('', '_blank');
     }
 
@@ -227,27 +243,60 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         invoice_id: String(displayInv.id),
         amount: remainingAmount,
         client_name: displayInv.client,
-        client_phone: displayInv.phone || '0500000000',
+        client_phone: phone,
+        client_email: email || undefined,
         description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
       })
 
       if (res?.already_exists) {
-        if (!window.confirm('رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد استخدامه؟')) {
+        if (!window.confirm(action === 'open' ? 'رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد استخدامه؟' : 'رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد نسخ الرابط القديم؟')) {
           setCreatingLink(false);
           return;
         }
       }
 
-      if (res.payment_url_full || res.payment_url || res.payment_link) {
-        const url = res.payment_url_full || res.payment_url || res.payment_link
-        if (newWindow) {
-          newWindow.location.href = url!;
+      const url = res.payment_url_full || res.payment_url || res.payment_link
+      if (url) {
+        if (action === 'open') {
+          if (newWindow) {
+            newWindow.location.href = url!;
+          } else {
+            window.open(url!, '_blank')
+          }
+          setLocalToast({ type: 'success', message: res.already_exists ? 'تم فتح الرابط الموجود مسبقاً' : 'تم إنشاء رابط الدفع وفتحه بنجاح' })
         } else {
-          window.open(url!, '_blank')
+          // Copy action
+          let success = false;
+          if (window.innerWidth < 768) {
+            try {
+              const el = document.createElement('textarea');
+              el.value = url; el.style.position = 'fixed'; el.style.left = '-9999px';
+              document.body.appendChild(el); el.focus(); el.select(); 
+              success = document.execCommand('copy');
+              document.body.removeChild(el);
+            } catch { success = false; }
+          }
+          if (!success) {
+            try { 
+              await navigator.clipboard.writeText(url); 
+              success = true; 
+            } catch {
+              try {
+                const el = document.createElement('textarea');
+                el.value = url; el.style.position = 'fixed'; el.style.left = '-9999px';
+                document.body.appendChild(el); el.select(); 
+                success = document.execCommand('copy');
+                document.body.removeChild(el);
+              } catch { success = false; }
+            }
+          }
+          if (success) {
+            setLocalToast({ type: 'success', message: 'تم نسخ رابط الدفع بنجاح' })
+          } else {
+            setLocalToast({ type: 'error', message: 'فشل النسخ التلقائي. الرابط: ' + url })
+          }
         }
-        setLocalToast({ type: 'success', message: res.already_exists ? 'تم فتح الرابط الموجود مسبقاً' : 'تم إنشاء رابط الدفع وفتحه بنجاح' })
         
-        // Audit: generate paymob link
         try {
           await api.post('/audit/write', {
             action: res.already_exists ? 'payment_link_existing' : 'payment_link',
@@ -267,97 +316,9 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     }
   }
 
-  const handleCopyLink = async () => {
-    if (!displayInv || creatingLink) return
-    
-    if (displayInv.status === 'paid') {
-      setLocalToast({ type: 'error', message: 'الفاتورة مدفوعة بالفعل!' })
-      setTimeout(() => setLocalToast(null), 3000)
-      return
-    }
-
-    setCreatingLink(true)
-    try {
-      const res = await createPaymentLink({
-        invoice_id: String(displayInv.id),
-        amount: remainingAmount,
-        client_name: displayInv.client,
-        client_phone: displayInv.phone || '0500000000',
-        description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
-      })
-
-      if (res?.already_exists) {
-        if (!window.confirm('رابط دفع معلق موجود بالفعل لهذه الفاتورة. هل تريد نسخ الرابط القديم؟')) {
-          setCreatingLink(false);
-          return;
-        }
-      }
-
-      const url = res.payment_url_full || res.payment_url || res.payment_link
-      if (url) {
-        let success = false;
-        // On mobile, navigator.clipboard often fails due to strict permission/context rules.
-        // We use the textarea fallback as a primary or reliable secondary.
-        if (window.innerWidth < 768) {
-          const textArea = document.createElement("textarea");
-          textArea.value = url;
-          textArea.style.position = "fixed";
-          textArea.style.left = "-9999px";
-          textArea.style.top = "0";
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          try {
-            success = document.execCommand('copy');
-          } catch (copyErr) {
-            console.error('Mobile fallback copy failed', copyErr);
-          }
-          document.body.removeChild(textArea);
-        }
-
-        if (!success) {
-          try {
-            await navigator.clipboard.writeText(url);
-            success = true;
-          } catch (err) {
-            const textArea = document.createElement("textarea");
-            textArea.value = url;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-              success = document.execCommand('copy');
-            } catch (copyErr) {
-              console.error('Final fallback copy failed', copyErr);
-            }
-            document.body.removeChild(textArea);
-          }
-        }
-        
-        if (success) {
-          setCopied(true)
-          setLocalToast({ type: 'success', message: res.already_exists ? 'تم نسخ الرابط الموجود مسبقاً!' : 'تم نسخ رابط الدفع!' })
-          setTimeout(() => setCopied(false), 2000)
-        } else {
-          setLocalToast({ type: 'error', message: 'فشل النسخ تلقائياً، يرجى نسخ الرابط يدوياً' })
-        }
-        
-        // Audit
-        try {
-          await api.post('/audit/write', {
-            action: res.already_exists ? 'payment_link_copy_existing' : 'payment_link_copy',
-            entityType: 'invoice',
-            entityId: parseInt(String(displayInv.id), 10),
-            newData: { amount: remainingAmount, url }
-          })
-        } catch { /* silent */ }
-      }
-    } catch (err: any) {
-      setLocalToast({ type: 'error', message: err.message || 'فشل إنشاء الرابط' })
-    } finally {
-      setCreatingLink(false)
-      setTimeout(() => setLocalToast(null), 4000)
-    }
-  }
+  // legacy empty functions to replace the old ones
+  const handlePaymob = async () => openPaymobForm('open')
+  const handleCopyLink = async () => openPaymobForm('copy')
 
   const items = useMemo(() => (displayInv ? getInvItems(displayInv) : []), [displayInv])
   const total = useMemo(() => {
@@ -713,6 +674,53 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
               <div className="text-xs text-amber-700 dark:text-amber-400 font-mono leading-relaxed whitespace-pre-wrap">
                 {displayInv.notes}
               </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-2 mt-2">
+            <button
+              onClick={handlePaymob}
+              disabled={creatingLink || displayInv.status === 'paid' || displayInv.status === 'returned'}
+              className="flex-1 min-w-[120px] justify-center items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20"
+            >
+              {creatingLink && paymobFormAction === 'open' ? <Loader2 size={16} className="animate-spin" /> : <ExternalLink size={16} />}
+              رابط دفع
+            </button>
+            <button
+              onClick={handleCopyLink}
+              disabled={creatingLink || displayInv.status === 'paid' || displayInv.status === 'returned'}
+              className="flex-1 min-w-[120px] justify-center items-center gap-1.5 px-4 py-2.5 bg-gray-50 dark:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-bold hover:bg-gray-100 dark:hover:bg-slate-600 transition-all border border-gray-200 dark:border-slate-600 disabled:opacity-50"
+            >
+              {creatingLink && paymobFormAction === 'copy' ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
+              نسخ الرابط
+            </button>
+          </div>
+          
+          {/* Paymob mini form */}
+          {showPaymobForm && (
+            <div className="mt-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex justify-between items-center">
+                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300">تأكيد بيانات العميل للدفع</h4>
+                <button onClick={() => setShowPaymobForm(false)} className="text-gray-400 hover:text-gray-600 p-1"><X size={14}/></button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 mb-1 block">رقم الجوال *</label>
+                  <input value={paymobFormPhone} onChange={e => setPaymobFormPhone(e.target.value)} dir="ltr"
+                    className="w-full text-right text-xs p-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:border-blue-500"/>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 mb-1 block">الإيميل (اختياري)</label>
+                  <input value={paymobFormEmail} onChange={e => setPaymobFormEmail(e.target.value)} dir="ltr" type="email"
+                    className="w-full text-right text-xs p-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:border-blue-500"/>
+                </div>
+              </div>
+              <button onClick={handlePaymobConfirm} disabled={creatingLink}
+                className="w-full mt-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex justify-center items-center gap-2">
+                {creatingLink ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                إنشاء رابط الدفع الآن
+              </button>
             </div>
           )}
         </div>
