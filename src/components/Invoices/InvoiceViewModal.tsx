@@ -88,10 +88,6 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [copied] = useState(false)
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   
-  const [showPaymobForm, setShowPaymobForm] = useState(false)
-  const [paymobFormPhone, setPaymobFormPhone] = useState('')
-  const [paymobFormEmail, setPaymobFormEmail] = useState('')
-  const [paymobFormAction, setPaymobFormAction] = useState<'open'|'copy'|null>(null)
 
   const user = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'admin'
@@ -206,7 +202,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     finally { setEnriching(false) }
   }
 
-  const openPaymobForm = (action: 'open' | 'copy') => {
+  const openPaymobForm = async (action: 'open' | 'copy') => {
     if (!displayInv) return
     if (displayInv.status === 'paid') {
       setLocalToast({ type: 'error', message: 'الفاتورة مدفوعة بالفعل!' })
@@ -218,19 +214,6 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
       setTimeout(() => setLocalToast(null), 3000)
       return
     }
-    setPaymobFormPhone(displayInv.phone || '')
-    setPaymobFormEmail((displayInv as any).email || '')
-    setPaymobFormAction(action)
-    setShowPaymobForm(true)
-  }
-
-  const handlePaymobConfirm = async () => {
-    if (!displayInv || !paymobFormAction) return
-    setShowPaymobForm(false)
-    
-    const action = paymobFormAction;
-    const phone = paymobFormPhone.trim() || '0500000000';
-    const email = paymobFormEmail.trim();
 
     setCreatingLink(true)
     let newWindow: Window | null = null;
@@ -244,8 +227,8 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         invoice_id: String(displayInv.id),
         amount: remainingAmount,
         client_name: displayInv.client,
-        client_phone: phone,
-        client_email: email || undefined,
+        client_phone: displayInv.phone || '0500000000',
+        client_email: (displayInv as any).email || undefined,
         description: `دفع فاتورة #${displayInv.invoice_number || displayInv.id}`
       })
 
@@ -698,32 +681,7 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             </button>
           </div>
           
-          {/* Paymob mini form */}
-          {showPaymobForm && (
-            <div className="mt-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="flex justify-between items-center">
-                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300">تأكيد بيانات العميل للدفع</h4>
-                <button onClick={() => setShowPaymobForm(false)} className="text-gray-400 hover:text-gray-600 p-1"><X size={14}/></button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 mb-1 block">رقم الجوال *</label>
-                  <input value={paymobFormPhone} onChange={e => setPaymobFormPhone(e.target.value)} dir="ltr"
-                    className="w-full text-right text-xs p-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:border-blue-500"/>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 mb-1 block">الإيميل (اختياري)</label>
-                  <input value={paymobFormEmail} onChange={e => setPaymobFormEmail(e.target.value)} dir="ltr" type="email"
-                    className="w-full text-right text-xs p-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:outline-none focus:border-blue-500"/>
-                </div>
-              </div>
-              <button onClick={handlePaymobConfirm} disabled={creatingLink}
-                className="w-full mt-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex justify-center items-center gap-2">
-                {creatingLink ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                إنشاء رابط الدفع الآن
-              </button>
-            </div>
-          )}
+
         </div>
 
         {/* ═══ Footer ═══ */}
