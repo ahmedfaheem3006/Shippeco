@@ -11,7 +11,7 @@ import {
   Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check,
   ExternalLink, Link
 } from 'lucide-react'
-import { createPaymentLink, checkPayment } from '../../services/paymobService'
+import { checkPayment } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
