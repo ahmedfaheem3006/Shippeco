@@ -109,7 +109,7 @@ export function PublicCheckoutPage() {
       <div className="mb-8 flex flex-col items-center gap-3">
         <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center overflow-hidden border border-gray-100">
           <img src="/logo.png" alt="Ship Pec" className="w-12 h-12 object-contain" onError={(e) => {
-            (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM2I4MmY2IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIxIDE2VjhBMiAyIDAgMCAwIDE5LjY2IDYuNjRMMTIuMzQgMi4zYTIgMiAwIDAgMCAtLjY4IDBMMCA2LjY0QTIgMiAwIDAgMCAzIDh2OGEyIDIgMCAwIDAgMS4zNCAxLjM2bDEyLjM0IDQuM2Ey 2MCAwIDAgMS42OCAwTDIwLjY2IDE3LjM2QTIgMiAwIDAgMCAyMSAxNnoiPjwvcGF0aD48cG9seWxpbmUgcG9pbnRzPSIzLjI3IDYuOTYgMTIgMTIuMDEgMjAuNzMgNi45NiI+PC9wb2x5bGluZT48bGluZSB4MT0iMTIiIHkxPSIyMi4wOCIgeDI9IjEyIiB5Mj0iMTIiPjwvbGluZT48L3N2Zz4='
+            (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%233b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>'
           }} />
         </div>
         <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">Ship Pec</h1>
