@@ -30,6 +30,7 @@ export type Invoice = {
   client: string
   invoice_number?: string
   phone?: string
+  client_email?: string
   awb?: string
   carrier?: string
   weight?: string | number

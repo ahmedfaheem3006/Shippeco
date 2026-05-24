@@ -111,8 +111,21 @@ export function NewInvoicePage() {
   }, [mode, step])
 
   const canSubmit = useMemo(() => {
-    return Boolean(draft.client.trim() && draft.phone.trim())
-  }, [draft.client, draft.phone])
+    const hasBase = Boolean(draft.client.trim() && draft.phone.trim());
+    if (!hasBase) return false;
+
+    // Stricter validations if Paymob is chosen
+    if (draft.payment === 'سداد إلكتروني') {
+      const email = (draft.clientEmail || '').trim();
+      const phone = (draft.phone || '').trim();
+
+      const isInvalidEmail = !email || !email.includes('@') || !email.includes('.') || email.includes('example.com') || email.includes('shippec.com');
+      const isInvalidPhone = phone === '0500000000' || phone === '500000000' || phone.includes('00000000');
+
+      return !isInvalidEmail && !isInvalidPhone;
+    }
+    return true;
+  }, [draft.client, draft.phone, draft.payment, draft.clientEmail])
 
   const countryOptions = useMemo<CountryOption[]>(
     () => [{ value: SA, label: 'المملكة العربية السعودية' }, ...COUNTRIES.map((c) => ({ value: c.en, label: c.ar }))],
@@ -720,8 +733,20 @@ export function NewInvoicePage() {
               phoneValue={draft.phone}
               onNameChange={(val) => setDraft((p) => ({ ...p, client: val }))}
               onPhoneChange={(val) => setDraft((p) => ({ ...p, phone: val }))}
-              onSelect={(name, phone) => setDraft((p) => ({ ...p, client: name, phone: phone }))}
+              onSelect={(name, phone, email) => setDraft((p) => ({ ...p, client: name, phone: phone, clientEmail: email || '' }))}
             />
+            <div className={styles.field} style={{ marginTop: '0.75rem' }}>
+              <label className={styles.fieldLabel}>البريد الإلكتروني للعميل {draft.payment === 'سداد إلكتروني' ? '*' : '(اختياري)'}</label>
+              <input
+                className={`${styles.fieldInput}`}
+                value={draft.clientEmail}
+                onChange={(e) => setDraft((p) => ({ ...p, clientEmail: e.target.value }))}
+                placeholder="customer@example.com"
+                type="email"
+                dir="ltr"
+                style={{ textAlign: 'left' }}
+              />
+            </div>
           </div>
         </div>
 

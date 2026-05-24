@@ -132,8 +132,21 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
   }, [open, step])
 
   const canSubmit = useMemo(() => {
-    return Boolean(draft.client.trim() && draft.phone.trim())
-  }, [draft.client, draft.phone])
+    const hasBase = Boolean(draft.client.trim() && draft.phone.trim());
+    if (!hasBase) return false;
+
+    // Stricter validations if Paymob is chosen
+    if (draft.payment === 'سداد إلكتروني') {
+      const email = (draft.clientEmail || '').trim();
+      const phone = (draft.phone || '').trim();
+
+      const isInvalidEmail = !email || !email.includes('@') || !email.includes('.') || email.includes('example.com') || email.includes('shippec.com');
+      const isInvalidPhone = phone === '0500000000' || phone === '500000000' || phone.includes('00000000');
+
+      return !isInvalidEmail && !isInvalidPhone;
+    }
+    return true;
+  }, [draft.client, draft.phone, draft.payment, draft.clientEmail])
 
   const backStep = useMemo(() => computeBackStep(mode, step), [mode, step])
 
@@ -425,7 +438,19 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                      phoneValue={draft.phone}
                      onNameChange={(val) => setDraft((p) => ({ ...p, client: val }))}
                      onPhoneChange={(val) => setDraft((p) => ({ ...p, phone: val }))}
-                     onSelect={(name, phone) => setDraft((p) => ({ ...p, client: name, phone: phone }))}
+                     onSelect={(name, phone, email) => setDraft((p) => ({ ...p, client: name, phone: phone, clientEmail: email || '' }))}
+                   />
+                 </div>
+
+                 <div className="sm:col-span-2 flex flex-col gap-1.5">
+                   <label className="text-xs font-bold text-gray-500 dark:text-gray-400">البريد الإلكتروني للعميل {draft.payment === 'سداد إلكتروني' ? '*' : '(اختياري)'}</label>
+                   <input
+                     className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/50"
+                     value={draft.clientEmail}
+                     onChange={(e) => setDraft((p) => ({ ...p, clientEmail: e.target.value }))}
+                     placeholder="customer@example.com"
+                     type="email"
+                     dir="ltr"
                    />
                  </div>
                  

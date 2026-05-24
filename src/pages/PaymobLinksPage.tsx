@@ -330,7 +330,7 @@ export function PaymobLinksPage() {
     if (newSelected.length === 1) {
       setClientName(inv.client || '');
       setClientPhone(inv.phone || '');
-      setClientEmail((inv as any).email || '');
+      setClientEmail(inv.client_email || (inv as any).email || '');
     }
     
     // Sum up total remaining
@@ -374,6 +374,14 @@ export function PaymobLinksPage() {
 
     if (!name) return setError('أدخل اسم العميل');
     if (!phone) return setError('أدخل رقم الجوال');
+    if (phone === '0500000000' || phone === '500000000' || phone.includes('00000000')) {
+      return setError('الرجاء إدخال رقم جوال حقيقي للعميل (وليس رقماً وهمياً)');
+    }
+    if (!email) return setError('الرجاء إدخال البريد الإلكتروني للعميل');
+    if (!email.includes('@') || !email.includes('.')) return setError('أدخل بريد إلكتروني صحيح');
+    if (email.includes('example.com') || email.includes('shippec.com')) {
+      return setError('الرجاء إدخال بريد إلكتروني حقيقي للعميل (وليس بريداً وهمياً)');
+    }
     if (!amountNum || amountNum <= 0) return setError('أدخل مبلغاً صحيحاً');
 
     setBusy(true);
@@ -588,8 +596,8 @@ export function PaymobLinksPage() {
                 disabled={busy} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1"><Mail size={12} /> الإيميل (اختياري)</label>
-              <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="email@example.com" type="email" dir="ltr"
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1"><Mail size={12} /> البريد الإلكتروني للعميل *</label>
+              <input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="customer@example.com" type="email" dir="ltr"
                 className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-inter transition-all disabled:opacity-50 text-right"
                 disabled={busy} />
             </div>

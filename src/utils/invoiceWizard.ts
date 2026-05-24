@@ -6,6 +6,7 @@ export type WizardStep = 0 | 1 | 2
 export type InvoiceDraftInput = {
   client: string
   phone: string
+  clientEmail: string
   itemType: string
   carrier: string
   awb: string
@@ -36,6 +37,7 @@ export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput 
   return {
     client: '',
     phone: '',
+    clientEmail: '',
     itemType: 'شحن دولي',
     carrier: 'DHL Express',
     awb: '',
@@ -114,6 +116,7 @@ export function toInvoiceFromDraft(
     id,
     client: draft.client || '—',
     phone: draft.phone || undefined,
+    client_email: draft.clientEmail || undefined,
     awb: draft.awb || undefined,
     carrier: draft.carrier || undefined,
     date: draft.date || new Date().toISOString().slice(0, 10),
@@ -145,6 +148,7 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
   return {
     client: inv.client ?? '',
     phone: inv.phone ?? '',
+    clientEmail: inv.client_email ?? (inv as any).email ?? '',
     itemType: inv.itemType ?? 'شحن دولي',
     carrier: inv.carrier ?? 'DHL Express',
     awb: inv.awb ?? '',
