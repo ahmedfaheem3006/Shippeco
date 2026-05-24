@@ -299,9 +299,9 @@ export function PublicPayPage() {
         </header>
 
         {/* Iframe Viewport */}
-        <main className="flex-1 flex flex-col lg:flex-row gap-6 p-4 sm:p-6 max-w-7xl mx-auto w-full">
+        <main className="flex-1 flex flex-col lg:flex-row gap-6 p-4 sm:p-6 max-w-[1440px] mx-auto w-full">
           {/* Right column: Info & actions */}
-          <div className="w-full lg:w-[30%] space-y-6">
+          <div className="w-full lg:w-[320px] xl:w-[360px] flex-shrink-0 space-y-6">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6">
               <h3 className="text-md font-bold text-white border-b border-slate-800 pb-3">تفاصيل المعاملة</h3>
               
@@ -376,7 +376,7 @@ export function PublicPayPage() {
           </div>
 
           {/* Left column: Embedded Paymob Iframe */}
-          <div className="flex-1 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative min-h-[600px] lg:min-h-[700px] flex flex-col">
+          <div className="flex-1 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative min-h-[700px] lg:min-h-[850px] flex flex-col">
             {iframeLoading && (
               <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center space-y-4 z-40">
                 <RefreshCw className="animate-spin text-indigo-500" size={36} />
@@ -389,7 +389,8 @@ export function PublicPayPage() {
               title="بوابة دفع Paymob الآمنة"
               className="w-full flex-1 border-none"
               onLoad={() => setIframeLoading(false)}
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+              allow="payment"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-top-navigation-by-user-activation allow-modals"
             />
           </div>
         </main>
