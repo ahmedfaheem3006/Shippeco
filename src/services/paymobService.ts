@@ -235,4 +235,14 @@ export const paymobBackend = {
       return { status: 'error' };
     }
   },
+
+  getPublicLink: async (id: string | number): Promise<any> => {
+    const result = await api.get<any>(`/paymob/public-link/${id}`);
+    return result?.data || result;
+  },
+
+  payPublicLink: async (id: string | number, email: string, phone: string): Promise<any> => {
+    const result = await api.post<any>(`/paymob/public-link/${id}/pay`, { email, phone });
+    return result?.data || result;
+  },
 };

@@ -20,6 +20,7 @@ import { TasksPage } from './pages/TasksPage'
 import { useAuthStore } from './hooks/useAuthStore'
 import { SocketProvider } from './contexts/SocketContext'
 import { Toaster } from 'react-hot-toast'
+import { PublicPayPage } from './pages/PublicPayPage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user)
@@ -107,6 +108,7 @@ function App() {
       <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/pay/:id" element={<PublicPayPage />} />
 
         <Route
           element={
