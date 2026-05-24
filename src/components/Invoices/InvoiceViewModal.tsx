@@ -14,6 +14,7 @@ import {
 import { checkPayment, createPaymentLink } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
+import { env } from '../../utils/env'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
 import { downloadInvoicePDF, shareInvoiceWhatsApp } from '../../utils/pdfGenerator'
 import { Download, MessageCircle } from 'lucide-react'
@@ -607,7 +608,12 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
               </div>
               <div className="p-3">
                 <img
-                  src={`${import.meta.env.VITE_API_URL || ''}${(displayInv as any).transfer_receipt_url}`}
+                  src={
+                    (displayInv as any).transfer_receipt_url.startsWith('http') ||
+                    (displayInv as any).transfer_receipt_url.startsWith('data:')
+                      ? (displayInv as any).transfer_receipt_url
+                      : `${env.apiUrl}${(displayInv as any).transfer_receipt_url}`
+                  }
                   alt="سند التحويل"
                   className="w-full h-auto object-contain rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900"
                 />

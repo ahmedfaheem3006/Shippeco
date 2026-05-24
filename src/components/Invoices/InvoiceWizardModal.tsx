@@ -10,6 +10,7 @@ import {
   Box, Truck, AlertCircle, ImagePlus, Trash2, Loader2
 } from 'lucide-react'
 import { SearchableClientInput } from '../shared/SearchableClientInput'
+import { env } from '../../utils/env'
 
 type Prefill = {
   price?: string
@@ -605,7 +606,13 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                      {receiptPreview ? (
                        <div className="relative group">
                          <img
-                           src={receiptPreview.startsWith('blob:') ? receiptPreview : `${import.meta.env.VITE_API_URL || ''}${receiptPreview}`}
+                           src={
+                             receiptPreview.startsWith('blob:') ||
+                             receiptPreview.startsWith('http') ||
+                             receiptPreview.startsWith('data:')
+                               ? receiptPreview
+                               : `${env.apiUrl}${receiptPreview}`
+                           }
                            alt="سند التحويل"
                            className="w-full max-h-[240px] object-contain rounded-xl border-2 border-emerald-200 dark:border-emerald-800/40 bg-white dark:bg-slate-900"
                          />

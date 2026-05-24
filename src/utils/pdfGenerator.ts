@@ -2,6 +2,7 @@
 // src/utils/pdfGenerator.ts — Multi-theme + PDF WhatsApp share
 // ═══════════════════════════════════════════════════════════
 import type { Invoice, InvoiceTemplate } from './models'
+import { env } from './env'
 import {
   formatCurrency,
   toEnglishDigits,
@@ -224,7 +225,7 @@ function generateReceiptHtml(inv: Invoice): string {
   const b64 = (inv as any).transferReceiptBase64;
   const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl;
   const receiptImg = b64 || (receiptUrl 
-    ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`)
+    ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${env.apiUrl}${receiptUrl}`)
     : '');
   
   return receiptImg ? `
@@ -660,7 +661,7 @@ async function fetchImageAsBase64(url: string): Promise<string> {
 export async function preloadInvoiceReceipt(inv: Invoice) {
   const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl
   if (receiptUrl && !receiptUrl.startsWith('data:')) {
-    const fullUrl = receiptUrl.startsWith('http') ? receiptUrl : `${import.meta.env.VITE_API_URL || ''}${receiptUrl}`
+    const fullUrl = receiptUrl.startsWith('http') ? receiptUrl : `${env.apiUrl}${receiptUrl}`
     const b64 = await fetchImageAsBase64(fullUrl)
     if (b64) (inv as any).transferReceiptBase64 = b64
   }

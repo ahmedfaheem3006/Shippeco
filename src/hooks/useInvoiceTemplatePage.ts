@@ -10,10 +10,9 @@ import {
 } from '../utils/invoiceTemplate'
 import { useSettingsStore } from './useSettingsStore'
 import { useAuthStore } from './useAuthStore'
+import { env } from '../utils/env'
 
-const API =
-  import.meta.env.VITE_API_URL ||
-  'https://shippeco-backend-production.up.railway.app/api'
+const API = env.apiUrl
 
 function getAuthHeader(): Record<string, string> {
   const token = useAuthStore.getState().token
