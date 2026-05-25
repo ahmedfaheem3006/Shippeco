@@ -448,6 +448,8 @@ export function InvoicesPage() {
         setEditingInvoiceId(null)
         setWizardInitialDraft(undefined)
         setWizardTitle(undefined)
+        // Auto-refresh the invoices list to show updates
+        await syncFromDb(false)
         showToast('success', editingInvoiceId ? `✅ تم تحديث الفاتورة #${id} بنجاح` : '✅ تم إنشاء الفاتورة بنجاح')
       } catch (e: any) {
         console.error('[Invoices] ❌ Save failed:', e)

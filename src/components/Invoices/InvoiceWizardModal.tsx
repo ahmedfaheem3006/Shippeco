@@ -137,13 +137,10 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
 
     // Stricter validations if Paymob is chosen
     if (draft.payment === 'سداد إلكتروني') {
-      const email = (draft.clientEmail || '').trim();
       const phone = (draft.phone || '').trim();
-
-      const isInvalidEmail = !email || !email.includes('@') || !email.includes('.') || email.includes('example.com') || email.includes('shippec.com');
       const isInvalidPhone = phone === '0500000000' || phone === '500000000' || phone.includes('00000000');
 
-      return !isInvalidEmail && !isInvalidPhone;
+      return !isInvalidPhone;
     }
     return true;
   }, [draft.client, draft.phone, draft.payment, draft.clientEmail])
