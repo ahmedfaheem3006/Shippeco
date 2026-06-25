@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "test:e2e:slow": "node scripts/playwright-headed-slow.mjs",
     "test:e2e:debug": "node scripts/playwright-headed-slow.mjs --debug",
-    "preview": "vite preview"
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",
@@ -28,6 +29,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.42.3",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.55.0",
     "@testing-library/jest-dom": "^6.8.0",
@@ -48,6 +50,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^6.0.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "wrangler": "^4.105.0"
   }
 }
