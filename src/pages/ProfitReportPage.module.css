@@ -7,7 +7,6 @@
   --bg: var(--bg-primary, #f9fafb);
   --text: var(--text-primary, #111);
   --muted: var(--text-secondary, #6b7280);
-  --border: var(--border, #e5e7eb);
 
   display: flex;
   flex-direction: column;
