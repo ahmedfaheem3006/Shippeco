@@ -3,6 +3,12 @@
    ═══════════════════════════════════════════════════ */
 
 .pageWrap {
+  --card: var(--bg-card, #fff);
+  --bg: var(--bg-primary, #f9fafb);
+  --text: var(--text-primary, #111);
+  --muted: var(--text-secondary, #6b7280);
+  --border: var(--border, #e5e7eb);
+
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -176,6 +182,10 @@
   transition: background 0.2s;
 }
 
+:global(.dark) .toggleDot {
+  background: #4b5563;
+}
+
 .toggleDotActive {
   background: #22c55e;
 }
@@ -338,8 +348,9 @@
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--text, #111);
-  color: white;
+  background: #0f172a;
+  color: #f1f5f9;
+  border: 1px solid var(--border);
   font-size: 10px;
   padding: 4px 8px;
   border-radius: 6px;
@@ -516,6 +527,10 @@
 
 .rowLoss {
   background: rgba(239, 68, 68, 0.03);
+}
+
+:global(.dark) .rowLoss {
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .mono {
