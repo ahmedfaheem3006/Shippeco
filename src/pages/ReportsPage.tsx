@@ -170,7 +170,7 @@ export function ReportsPage() {
                 <span className="text-[10px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 leading-tight">{c.label}</span>
                 <span className={`text-base sm:text-xl ${tone.iconBg} w-7 h-7 sm:w-9 sm:h-9 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0`}>{c.icon}</span>
               </div>
-              <div className={`text-base sm:text-2xl font-black font-inter ${tone.text} leading-tight truncate`}>{c.value}</div>
+              <div className={`text-sm sm:text-lg xl:text-xl font-black font-inter ${tone.text} leading-tight`} title={c.value}>{c.value}</div>
               <div className="text-[9px] sm:text-[11px] font-semibold text-gray-500 dark:text-gray-400 truncate">{c.detail}</div>
             </div>
           );
