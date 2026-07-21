@@ -380,13 +380,13 @@ async function generateSelectedInvoicesPDF(
     const si = statusMap[st] || statusMap.unpaid;
     return `
       <tr style="border-bottom:1px solid #E2E8F0;${idx % 2 === 1 ? 'background:#F8FAFC;' : ''}">
-        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;color:#4F46E5;font-size:12px;">#${inv.daftra_id || inv.id}</td>
-        <td style="padding:10px 12px;font-size:11px;color:#64748B;">${(inv.date || '').slice(0, 10)}</td>
-        <td style="padding:10px 12px;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;color:${si.color};background:${si.bg};">${si.label}</span></td>
-        <td style="padding:10px 12px;font-size:11px;color:#64748B;">${inv.awb || '—'}</td>
-        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#1E293B;">${safe(inv.price).toLocaleString('en-US')} SAR</td>
-        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#10B981;">${paid > 0 ? paid.toLocaleString('en-US') + ' SAR' : '—'}</td>
-        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:800;font-size:12px;color:${rem > 0 ? '#EF4444' : '#94A3B8'};">${rem > 0 ? rem.toLocaleString('en-US') + ' SAR' : '✔'}</td>
+        <td style="padding:14px 16px;font-family:'Inter',monospace;font-weight:700;color:#4F46E5;font-size:12px;">#${inv.daftra_id || inv.id}</td>
+        <td style="padding:14px 16px;font-size:11px;color:#64748B;">${(inv.date || '').slice(0, 10)}</td>
+        <td style="padding:14px 16px;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;color:${si.color};background:${si.bg};">${si.label}</span></td>
+        <td style="padding:14px 16px;font-size:11px;color:#64748B;">${inv.awb || '—'}</td>
+        <td style="padding:14px 16px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#1E293B;">${safe(inv.price).toLocaleString('en-US')} SAR</td>
+        <td style="padding:14px 16px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#10B981;">${paid > 0 ? paid.toLocaleString('en-US') + ' SAR' : '—'}</td>
+        <td style="padding:14px 16px;font-family:'Inter',monospace;font-weight:800;font-size:12px;color:${rem > 0 ? '#EF4444' : '#94A3B8'};">${rem > 0 ? rem.toLocaleString('en-US') + ' SAR' : '✔'}</td>
       </tr>`;
   }).join('');
 
@@ -403,62 +403,62 @@ async function generateSelectedInvoicesPDF(
   @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
 </style>
 </head>
-<body style="padding:32px;">
+<body style="padding:10px;">
 
 <!-- Header -->
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #EF4444;">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:32px;padding-bottom:20px;border-bottom:3px solid #EF4444;">
   <div>
-    <h1 style="font-size:24px;font-weight:800;color:#EF4444;">كشف الفواتير المحددة</h1>
-    <p style="font-size:12px;color:#64748B;margin-top:4px;">تاريخ الإصدار: ${today}</p>
+    <h1 style="font-size:26px;font-weight:800;color:#EF4444;margin-bottom:6px;">كشف الفواتير المحددة</h1>
+    <p style="font-size:12px;color:#64748B;">تاريخ الإصدار: ${today}</p>
   </div>
-  <div style="text-align:left;">
-    <div style="font-size:20px;font-weight:900;color:#4F46E5;">شيب بك</div>
-    <div style="font-size:11px;color:#94A3B8;">SHIPPECO — Shipping Management</div>
+  <div style="text-align:left;line-height:1.4;">
+    <div style="font-size:22px;font-weight:900;color:#4F46E5;">شيب بك</div>
+    <div style="font-size:11px;color:#94A3B8;font-weight:600;">SHIPPECO — Shipping Management</div>
   </div>
 </div>
 
 <!-- Client Summary -->
-<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:16px;padding:24px 32px;margin-bottom:32px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:24px;">
   <div>
-    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:4px;">العميل</div>
-    <div style="font-size:18px;font-weight:800;color:#1E293B;">${client.name}</div>
-    ${client.phone ? `<div style="font-size:12px;color:#64748B;margin-top:4px;">${client.phone}</div>` : ''}
+    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:6px;">العميل</div>
+    <div style="font-size:20px;font-weight:800;color:#1E293B;line-height:1.4;">${client.name}</div>
+    ${client.phone ? `<div style="font-size:12px;color:#64748B;margin-top:6px;font-family:'Inter',sans-serif;">${client.phone}</div>` : ''}
   </div>
   <div style="text-align:center;">
-    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:4px;">الفواتير المحددة</div>
-    <div style="font-size:24px;font-weight:900;color:#1E293B;">${sorted.length}</div>
+    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:6px;">الفواتير المحددة</div>
+    <div style="font-size:26px;font-weight:900;color:#1E293B;font-family:'Inter',sans-serif;">${sorted.length}</div>
   </div>
   <div style="text-align:left;">
-    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:4px;">إجمالي القيمة</div>
-    <div style="font-size:24px;font-weight:900;color:#1E293B;font-family:'Inter',monospace;">${Math.round(totalAmount).toLocaleString('en-US')} SAR</div>
+    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:6px;">إجمالي القيمة</div>
+    <div style="font-size:26px;font-weight:900;color:#1E293B;font-family:'Inter',monospace;">${Math.round(totalAmount).toLocaleString('en-US')} SAR</div>
   </div>
 </div>
 
 <!-- Table -->
-<table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+<table style="width:100%;border-collapse:collapse;margin-bottom:40px;">
   <thead>
     <tr style="background:#F1F5F9;border-bottom:2px solid #CBD5E1;">
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">رقم الفاتورة</th>
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">التاريخ</th>
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">الحالة</th>
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">رقم البوليصة</th>
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">الإجمالي</th>
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">المدفوع</th>
-      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">المتبقي</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">رقم الفاتورة</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">التاريخ</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">الحالة</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">رقم البوليصة</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">الإجمالي</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">المدفوع</th>
+      <th style="padding:14px 16px;text-align:right;font-size:11px;font-weight:700;color:#475569;">المتبقي</th>
     </tr>
   </thead>
   <tbody>${rows}</tbody>
 </table>
 
 <!-- Footer Total -->
-<div style="display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap;">
-  <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:12px 24px;text-align:center;min-width:160px;">
-    <div style="font-size:11px;font-weight:700;color:#059669;margin-bottom:4px;">إجمالي المدفوع</div>
-    <div style="font-size:20px;font-weight:900;color:#047857;font-family:'Inter',monospace;">${Math.round(totalPaid).toLocaleString('en-US')} SAR</div>
+<div style="display:flex;justify-content:flex-end;gap:16px;flex-wrap:wrap;margin-top:24px;">
+  <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:16px;padding:16px 28px;text-align:center;min-width:180px;">
+    <div style="font-size:12px;font-weight:700;color:#059669;margin-bottom:6px;">إجمالي المدفوع</div>
+    <div style="font-size:22px;font-weight:900;color:#047857;font-family:'Inter',monospace;">${Math.round(totalPaid).toLocaleString('en-US')} SAR</div>
   </div>
-  <div style="background:#FEF2F2;border:2px solid #EF4444;border-radius:12px;padding:12px 24px;text-align:center;min-width:180px;">
-    <div style="font-size:11px;font-weight:700;color:#EF4444;margin-bottom:4px;">المتبقي للدفع</div>
-    <div style="font-size:22px;font-weight:900;color:#DC2626;font-family:'Inter',monospace;">${Math.round(totalRemaining).toLocaleString('en-US')} SAR</div>
+  <div style="background:#FEF2F2;border:2px solid #EF4444;border-radius:16px;padding:16px 28px;text-align:center;min-width:200px;">
+    <div style="font-size:12px;font-weight:700;color:#EF4444;margin-bottom:6px;">المتبقي للدفع</div>
+    <div style="font-size:24px;font-weight:900;color:#DC2626;font-family:'Inter',monospace;">${Math.round(totalRemaining).toLocaleString('en-US')} SAR</div>
   </div>
 </div>
 
@@ -474,7 +474,10 @@ async function generateSelectedInvoicesPDF(
       container.style.position = 'fixed';
       container.style.left = '-9999px';
       container.style.top = '0';
-      container.style.width = '794px';
+      container.style.width = '840px';
+      container.style.padding = '40px';
+      container.style.boxSizing = 'border-box';
+      container.style.background = '#ffffff';
       container.innerHTML = html;
       document.body.appendChild(container);
 
