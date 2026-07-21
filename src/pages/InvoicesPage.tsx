@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAppLayout } from '../components/AppLayout/useAppLayout'
 import { InvoiceAddItemModal } from '../components/Invoices/InvoiceAddItemModal'
@@ -7,6 +7,7 @@ import { InvoiceWizardModal } from '../components/Invoices/InvoiceWizardModal'
 import { useLegacyInvoicesPage } from '../hooks/useLegacyInvoicesPage'
 import { useInvoicesStore } from '../hooks/useInvoicesStore'
 import { invoiceService } from '../services/invoiceService'
+import { clientService } from '../services/clientService'
 import { useAuthStore } from '../hooks/useAuthStore'
 import type { Invoice } from '../utils/models'
 import type { InvoiceDraftInput } from '../utils/invoiceWizard'
@@ -18,7 +19,8 @@ import {
   PlusCircle, FileText, ChevronRight, ChevronLeft,
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
-  RotateCcw, X, ListTodo, User, Download
+  RotateCcw, X, ListTodo, User, Download,
+  UserPlus, Users, Building2, Phone, Mail, MapPin, Loader2
 } from 'lucide-react'
 import { useSettingsStore } from '../hooks/useSettingsStore'
 import { downloadInvoicePDF } from '../utils/pdfGenerator'
@@ -70,6 +72,57 @@ export function InvoicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Client Registration Modal State ──
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [name, setName] = useState("")
+  const [phone, setPhone] = useState("")
+  const [email, setEmail] = useState("")
+  const [company, setCompany] = useState("")
+  const [city, setCity] = useState("")
+  const [address, setAddress] = useState("")
+  const [taxNumber, setTaxNumber] = useState("")
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+
+  const handleAddClientSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) {
+      setAddError("الاسم الكامل مطلوب")
+      return
+    }
+    setAdding(true)
+    setAddError(null)
+    try {
+      await clientService.createClient({
+        name: name.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+        company: company.trim() || undefined,
+        city: city.trim() || undefined,
+        address: address.trim() || undefined,
+        tax_number: taxNumber.trim() || undefined,
+      })
+      setName("")
+      setPhone("")
+      setEmail("")
+      setCompany("")
+      setCity("")
+      setAddress("")
+      setTaxNumber("")
+      
+      setShowSuccess(true)
+      setTimeout(() => {
+        setShowSuccess(false)
+        setShowAddModal(false)
+      }, 2000)
+    } catch (err: any) {
+      setAddError(err.message || "حدث خطأ أثناء إضافة العميل")
+    } finally {
+      setAdding(false)
+    }
+  }
 
   // ── Task Modal State ──
   const [taskModalOpen, setTaskModalOpen] = useState(false)
@@ -512,12 +565,25 @@ export function InvoicesPage() {
             {rawCount} فاتورة
           </span>
         </div>
-        <button
-          className="w-full xl:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
-          onClick={openNewWizard}
-        >
-          <PlusCircle size={18} /> إنشاء فاتورة
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto">
+          <button
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 active:scale-95 transition-all duration-200 transform hover:-translate-y-0.5"
+            onClick={() => {
+              setAddError(null)
+              setShowAddModal(true)
+            }}
+            type="button"
+          >
+            <UserPlus size={16} />
+            <span>إضافة عميل جديد</span>
+          </button>
+          <button
+            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+            onClick={openNewWizard}
+          >
+            <PlusCircle size={18} /> إنشاء فاتورة
+          </button>
+        </div>
       </div>
 
       {/* Search & Filters */}
@@ -1008,6 +1074,191 @@ export function InvoicesPage() {
                 <p className="text-[10px] text-gray-400 text-center font-medium">Ctrl + Enter للإرسال السريع</p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Client Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200"
+            dir="rtl"
+          >
+            {showSuccess ? (
+              <div className="p-12 flex flex-col items-center justify-center text-center space-y-4 animate-in zoom-in-95 duration-200">
+                <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500 rounded-full flex items-center justify-center animate-bounce shadow-lg shadow-emerald-500/20">
+                  <CheckCircle2 size={48} className="stroke-[3]" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white">تم تسجيل العميل بنجاح!</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-bold mt-1.5">تم إنشاء ملف تعريف العميل وحفظ بياناته في النظام.</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Modal Header */}
+                <div className="p-5 border-b border-gray-100 dark:border-slate-700/50 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/10">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                      <UserPlus size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-base text-gray-900 dark:text-white">إضافة عميل جديد</h3>
+                      <p className="text-[10px] text-gray-400 font-bold mt-0.5">أدخل بيانات العميل لإنشاء ملف تعريفي خاص به</p>
+                    </div>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Modal Body / Form */}
+                <form onSubmit={handleAddClientSubmit}>
+                  <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+                    {addError && (
+                      <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30 text-red-600 dark:text-red-400 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2">
+                        <AlertCircle size={16} className="shrink-0" />
+                        <span>{addError}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Name Input */}
+                      <div className="flex flex-col gap-1.5 md:col-span-2">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الاسم الكامل *</label>
+                        <div className="relative">
+                          <Users size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            required
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="مثال: أحمد محمد علي"
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Phone Input */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">رقم الجوال</label>
+                        <div className="relative">
+                          <Phone size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="text"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            placeholder="05xxxxxxxx"
+                            dir="ltr"
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all font-mono text-right"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Email Input */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">البريد الإلكتروني</label>
+                        <div className="relative">
+                          <Mail size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="customer@example.com"
+                            dir="ltr"
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all text-right"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Company Input */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">اسم الشركة</label>
+                        <div className="relative">
+                          <Building2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="text"
+                            value={company}
+                            onChange={(e) => setCompany(e.target.value)}
+                            placeholder="مؤسسة الشحن للمقاولات"
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* City Input */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">المدينة</label>
+                        <div className="relative">
+                          <MapPin size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="text"
+                            value={city}
+                            onChange={(e) => setCity(e.target.value)}
+                            placeholder="الرياض / جدة..."
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Address Input */}
+                      <div className="flex flex-col gap-1.5 md:col-span-2">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">العنوان بالتفصيل</label>
+                        <div className="relative">
+                          <MapPin size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="text"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            placeholder="الرمز البريدي، اسم الشارع، رقم البناية"
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Tax Number Input */}
+                      <div className="flex flex-col gap-1.5 md:col-span-2">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الرقم الضريبي (إن وجد)</label>
+                        <div className="relative">
+                          <FileText size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="text"
+                            value={taxNumber}
+                            onChange={(e) => setTaxNumber(e.target.value)}
+                            placeholder="3xxxxxxxxxxxxxx"
+                            className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pr-10 pl-4 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-5 border-t border-gray-100 dark:border-slate-700/50 bg-gray-50/50 dark:bg-slate-900/10 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddModal(false)}
+                      className="px-5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 text-sm font-bold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={adding}
+                      className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50 transition-all"
+                    >
+                      {adding ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
+                      <span>حفظ وإضافة</span>
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
