@@ -330,8 +330,31 @@ function generateFooter(tmpl: InvoiceTemplate): string {
 // ═══ Main HTML generator ═══
 export function generateInvoiceHTML(inv: Invoice, tmpl: InvoiceTemplate): string {
   const { items, total } = computeInvoiceTotal(inv)
-  const paid = parseFloat(String(inv.paid_amount || inv.partialPaid || 0)) || 0
-  const remaining = total - paid
+  
+  let paid = parseFloat(String(inv.paid_amount || inv.partialPaid || 0)) || 0
+  let remaining = total - paid
+
+  if (inv.status === 'paid') {
+    paid = total
+    remaining = 0
+  } else if (inv.status === 'unpaid') {
+    paid = 0
+    remaining = total
+  } else if (inv.status === 'returned') {
+    paid = 0
+    remaining = 0
+  } else if (inv.status === 'partial') {
+    if (paid <= 0) {
+      paid = 0
+      remaining = total
+    } else if (paid >= total) {
+      paid = total
+      remaining = 0
+    } else {
+      remaining = total - paid
+    }
+  }
+
   const style = getTemplateStyle(tmpl.templateStyle)
 
   let themeContent = ''
@@ -474,8 +497,30 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
 
   await preloadInvoiceReceipt(fullInv)
   const { total } = computeInvoiceTotal(fullInv)
-  const paid = parseFloat(String(fullInv.paid_amount || fullInv.partialPaid || 0)) || 0
-  const remaining = total - paid
+  
+  let paid = parseFloat(String(fullInv.paid_amount || fullInv.partialPaid || 0)) || 0
+  let remaining = total - paid
+
+  if (fullInv.status === 'paid') {
+    paid = total
+    remaining = 0
+  } else if (fullInv.status === 'unpaid') {
+    paid = 0
+    remaining = total
+  } else if (fullInv.status === 'returned') {
+    paid = 0
+    remaining = 0
+  } else if (fullInv.status === 'partial') {
+    if (paid <= 0) {
+      paid = 0
+      remaining = total
+    } else if (paid >= total) {
+      paid = total
+      remaining = 0
+    } else {
+      remaining = total - paid
+    }
+  }
 
   const phone = String(fullInv.phone || fullInv.receiver_phone || '').replace(/[^0-9+]/g, '')
   const cleanPhone = phone.startsWith('+')
