@@ -402,7 +402,7 @@ export function useReportsPage() {
       searchTimerRef.current = setTimeout(() => {
         setTablePage(1);
         void fetchData({ search: q, page: 1 });
-      }, 500);
+      }, 300);
     },
     [fetchData]
   );

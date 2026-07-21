@@ -338,7 +338,7 @@ export function ReportsPage() {
         <div className="relative w-full">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-[18px] sm:h-[18px]" />
           <input type="text" placeholder="بحث في الفواتير..." value={rep.query}
-            onChange={(e) => rep.setQuery(e.target.value)} disabled={rep.loading}
+            onChange={(e) => rep.setQuery(e.target.value)}
             className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg sm:rounded-xl py-2 sm:py-3 pr-9 sm:pr-11 pl-3 sm:pl-4 text-xs sm:text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 outline-none" />
         </div>
       </div>
