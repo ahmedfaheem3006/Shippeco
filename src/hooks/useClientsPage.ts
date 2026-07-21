@@ -258,6 +258,32 @@ export function useClientsPage() {
     [selectedClientId, clientService],
   );
 
+  // ═══ Create Client ═══
+  const createClient = useCallback(
+    async (data: {
+      name: string;
+      phone?: string;
+      email?: string;
+      company?: string;
+      address?: string;
+      city?: string;
+      tax_number?: string;
+    }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await clientService.createClient(data);
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "فشل إضافة العميل");
+        throw e;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refresh]
+  );
+
   // ═══ Export ═══
   const exportClients = useCallback(
     async (format: ExportFormat) => {
@@ -371,6 +397,7 @@ export function useClientsPage() {
     openProfile,
     closeProfile,
     updateClient,
+    createClient,
     deleteClient: async (id: string) => {
       try {
         await clientService.deleteClient(id);

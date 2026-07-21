@@ -129,4 +129,9 @@ export const clientService = {
     const result = await unifiedService.post('/sync/clients-from-daftra', { pages });
     return result;
   },
+
+  async createClient(data: any): Promise<any> {
+    const result = await unifiedService.post('/clients', data);
+    return result;
+  },
 };
