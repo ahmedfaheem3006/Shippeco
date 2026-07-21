@@ -1440,6 +1440,7 @@ function ClientProfilePage({
 
 export function ClientsPage() {
   const cli = useClientsPage();
+  const [showSuccess, setShowSuccess] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -1476,7 +1477,12 @@ export function ClientsPage() {
       setCity("");
       setAddress("");
       setTaxNumber("");
-      setShowAddModal(false);
+      
+      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(false);
+        setShowAddModal(false);
+      }, 2000);
     } catch (err: any) {
       setAddError(err.message || "حدث خطأ أثناء إضافة العميل");
     } finally {
@@ -2004,28 +2010,40 @@ export function ClientsPage() {
             className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200"
             dir="rtl"
           >
-            {/* Modal Header */}
-            <div className="p-5 border-b border-gray-100 dark:border-slate-700/50 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/10">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
-                  <UserPlus size={20} />
+            {showSuccess ? (
+              <div className="p-12 flex flex-col items-center justify-center text-center space-y-4 animate-in zoom-in-95 duration-200">
+                <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500 rounded-full flex items-center justify-center animate-bounce shadow-lg shadow-emerald-500/20">
+                  <CheckCircle2 size={48} className="stroke-[3]" />
                 </div>
                 <div>
-                  <h3 className="font-black text-base text-gray-900 dark:text-white">إضافة عميل جديد</h3>
-                  <p className="text-[10px] text-gray-400 font-bold mt-0.5">أدخل بيانات العميل لإنشاء ملف تعريفي خاص به</p>
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white">تم تسجيل العميل بنجاح!</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-bold mt-1.5">تم إنشاء ملف تعريف العميل وحفظ بياناته في النظام.</p>
                 </div>
               </div>
-              <button 
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all"
-              >
-                <X size={18} />
-              </button>
-            </div>
+            ) : (
+              <>
+                {/* Modal Header */}
+                <div className="p-5 border-b border-gray-100 dark:border-slate-700/50 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/10">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                      <UserPlus size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-base text-gray-900 dark:text-white">إضافة عميل جديد</h3>
+                      <p className="text-[10px] text-gray-400 font-bold mt-0.5">أدخل بيانات العميل لإنشاء ملف تعريفي خاص به</p>
+                    </div>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-            {/* Modal Body / Form */}
-            <form onSubmit={handleAddClientSubmit}>
+                {/* Modal Body / Form */}
+                <form onSubmit={handleAddClientSubmit}>
               <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
                 {addError && (
                   <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30 text-red-600 dark:text-red-400 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2">
@@ -2164,6 +2182,8 @@ export function ClientsPage() {
                 </button>
               </div>
             </form>
+          </>
+        )}
           </div>
         </div>
       )}

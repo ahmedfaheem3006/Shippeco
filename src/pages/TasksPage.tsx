@@ -163,7 +163,42 @@ export const TasksPage: React.FC = () => {
                 </div>
                 
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 group-hover:text-indigo-600 transition-colors line-clamp-2">{task.title}</h3>
-                <p className="text-slate-500 dark:text-slate-400 text-xs line-clamp-3 leading-relaxed">{task.description || 'بدون وصف إضافي'}</p>
+                <p className="text-slate-500 dark:text-slate-400 text-xs line-clamp-3 leading-relaxed mb-4">{task.description || 'بدون وصف إضافي'}</p>
+
+                {task.invoice_id && (
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/50 grid grid-cols-2 gap-3 text-xs bg-slate-50/50 dark:bg-slate-900/10 p-3 rounded-2xl">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">رقم البوليصة AWB:</span>
+                      <span className="font-mono font-extrabold text-slate-800 dark:text-slate-200 select-all">{task.invoice_awb || '—'}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 text-left">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">قيمة الفاتورة:</span>
+                      <span className="font-inter font-black text-indigo-600 dark:text-indigo-400">
+                        {task.invoice_total !== undefined && task.invoice_total !== null ? `${parseFloat(task.invoice_total as any).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAR` : '—'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 col-span-2 mt-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">حالة السداد:</span>
+                      <div>
+                        {(() => {
+                          const statusMap: Record<number, { label: string; cls: string }> = {
+                            0: { label: 'غير مدفوعة 🔴', cls: 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400 border-red-100 dark:border-red-900/30' },
+                            1: { label: 'دفعة جزئية 🟡', cls: 'bg-yellow-50 text-yellow-600 dark:bg-yellow-950/20 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/30' },
+                            2: { label: 'مدفوعة بالكامل ✅', cls: 'bg-green-50 text-green-600 dark:bg-green-950/20 dark:text-green-400 border-green-100 dark:border-green-900/30' },
+                            3: { label: 'مرتجعة 🟣', cls: 'bg-purple-50 text-purple-600 dark:bg-purple-950/20 dark:text-purple-400 border-purple-100 dark:border-purple-900/30' },
+                          };
+                          const pStatus = task.invoice_payment_status ?? 0;
+                          const s = statusMap[pStatus] || statusMap[0];
+                          return (
+                            <span className={`inline-flex px-2.5 py-1 rounded-xl text-[10px] font-black border ${s.cls}`}>
+                              {s.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-50 dark:border-slate-700 flex items-center justify-between">

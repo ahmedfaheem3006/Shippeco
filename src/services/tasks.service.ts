@@ -13,6 +13,9 @@ export interface Task {
   assigned_by_name?: string;
   invoice_id?: number;
   invoice_number?: string;
+  invoice_awb?: string;
+  invoice_total?: number;
+  invoice_payment_status?: number;
   messages?: TaskMessage[];
 }
 
