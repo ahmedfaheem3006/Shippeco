@@ -20,6 +20,8 @@ export type ProfitInvoiceRow = {
   cost: number | null
   profit: number | null
   marginPct: number | null
+  weight: number | null
+  finalWeight: string
   hasCost: boolean
   losing: boolean
   isLocal: boolean
@@ -291,6 +293,8 @@ export function toProfitInvoiceRows(filtered: Invoice[]): ProfitInvoiceRow[] {
         hasCost: p.hasCost,
         losing,
         isLocal: isLocalInvoice(inv),
+        weight: (inv as any).weight ? Number((inv as any).weight) : null,
+        finalWeight: String((inv as any).finalWeight || (inv as any).final_weight || ''),
       }
     })
 }

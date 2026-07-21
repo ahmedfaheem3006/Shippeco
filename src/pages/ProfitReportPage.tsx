@@ -593,6 +593,8 @@ export function ProfitReportPage() {
                   <th className={s.th}>التاريخ</th>
                   <th className={s.th}>العميل</th>
                   <th className={s.th}>AWB</th>
+                  <th className={s.th}>الوزن الفعلي</th>
+                  <th className={s.th}>الوزن المحاسب</th>
                   <th className={s.th}>الناقل</th>
                   <th className={s.th}>الحالة</th>
                   <th className={s.th}>السعر</th>
@@ -619,6 +621,12 @@ export function ProfitReportPage() {
                         </td>
                         <td className={`${s.td} ${s.mono}`} style={{ color: 'var(--muted)' }}>
                           {r.awb || '—'}
+                        </td>
+                        <td className={`${s.td} ${s.mono}`} style={{ color: 'var(--muted)' }}>
+                          {r.weight != null ? `${r.weight} كجم` : '—'}
+                        </td>
+                        <td className={`${s.td} ${s.mono}`} style={{ color: 'var(--muted)' }}>
+                          {r.finalWeight || '—'}
                         </td>
                         <td className={s.td} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
                           {r.carrier}
@@ -688,7 +696,7 @@ export function ProfitReportPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={11} className={s.emptyState}>
+                    <td colSpan={13} className={s.emptyState}>
                       <RefreshCw
                         size={24}
                         style={{ margin: '0 auto 8px', display: 'block' }}

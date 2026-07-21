@@ -274,6 +274,8 @@ export function useProfitReportPage() {
                 hasCost,
                 losing: hasCost && (profit ?? 0) < 0,
                 isLocal: isLocalInvoice(inv),
+                weight: inv.weight ? Number(inv.weight) : null,
+                finalWeight: String(inv.finalWeight || ''),
                 raw: inv,
               }
             }),
@@ -375,8 +377,10 @@ export function useProfitReportPage() {
 
   const summaryCards = useMemo(() => {
     const profitColor = summary.profit >= 0 ? '#22c55e' : '#ef4444'
+    const shippecoCost = summary.cost + summary.profit
     return {
       revenue: { label: 'الإيرادات', value: formatSar(summary.revenue), sub: `من ${summary.totalCount} فاتورة`, color: '#eab308', icon: 'revenue' as const },
+      shippecoCost: { label: 'تكلفة Shippeco', value: formatSar(shippecoCost), sub: `من ${summary.countedCount} فاتورة محسوبة`, color: '#8b5cf6', icon: 'margin' as const },
       cost: { label: 'تكلفة DHL', value: formatSar(summary.cost), sub: `من ${summary.countedCount} فاتورة محسوبة`, color: '#ef4444', icon: 'cost' as const },
       profit: { label: 'صافي الربح', value: formatSar(summary.profit), sub: `من ${summary.countedCount} فاتورة`, color: profitColor, icon: 'profit' as const },
       margin: { label: 'متوسط الهامش', value: `${summary.avgMarginPct.toFixed(1)}%`, sub: `${summary.countedCount} فاتورة محسوبة`, color: '#6366f1', icon: 'margin' as const },
