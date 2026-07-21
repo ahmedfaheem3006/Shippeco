@@ -348,6 +348,180 @@ async function generateUnpaidClientPDF(
   pw.onload = () => { setTimeout(() => pw.print(), 600); };
 }
 
+async function generateSelectedInvoicesPDF(
+  client: ClientRecord,
+  selectedInvs: ClientProfileInvoice[],
+) {
+  const sorted = [...selectedInvs].sort((a, b) => {
+    if ((b.date || '') > (a.date || '')) return 1;
+    if ((b.date || '') < (a.date || '')) return -1;
+    return 0;
+  });
+
+  const today = new Date().toLocaleDateString('ar-SA', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const totalAmount = sorted.reduce((sum, inv) => sum + safe(inv.price), 0);
+  const totalPaid = sorted.reduce((sum, inv) => sum + realPaid(inv), 0);
+  const totalRemaining = sorted.reduce((sum, inv) => sum + realRemaining(inv), 0);
+
+  const statusMap: Record<string, { label: string; color: string; bg: string }> = {
+    paid: { label: "مدفوعة", color: "#059669", bg: "#ECFDF5" },
+    partial: { label: "جزئية", color: "#D97706", bg: "#FFFBEB" },
+    unpaid: { label: "غير مدفوعة", color: "#DC2626", bg: "#FEF2F2" },
+    returned: { label: "مرتجع", color: "#7C3AED", bg: "#F5F3FF" },
+  };
+
+  const rows = sorted.map((inv, idx) => {
+    const st = realStatus(inv);
+    const paid = realPaid(inv);
+    const rem = realRemaining(inv);
+    const si = statusMap[st] || statusMap.unpaid;
+    return `
+      <tr style="border-bottom:1px solid #E2E8F0;${idx % 2 === 1 ? 'background:#F8FAFC;' : ''}">
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;color:#4F46E5;font-size:12px;">#${inv.daftra_id || inv.id}</td>
+        <td style="padding:10px 12px;font-size:11px;color:#64748B;">${(inv.date || '').slice(0, 10)}</td>
+        <td style="padding:10px 12px;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;color:${si.color};background:${si.bg};">${si.label}</span></td>
+        <td style="padding:10px 12px;font-size:11px;color:#64748B;">${inv.awb || '—'}</td>
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#1E293B;">${safe(inv.price).toLocaleString('en-US')} SAR</td>
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:700;font-size:12px;color:#10B981;">${paid > 0 ? paid.toLocaleString('en-US') + ' SAR' : '—'}</td>
+        <td style="padding:10px 12px;font-family:'Inter',monospace;font-weight:800;font-size:12px;color:${rem > 0 ? '#EF4444' : '#94A3B8'};">${rem > 0 ? rem.toLocaleString('en-US') + ' SAR' : '✔'}</td>
+      </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>كشف الفواتير المحددة — ${client.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;600;700;800&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Cairo','Inter',sans-serif; background:#fff; color:#1E293B; }
+  @page { size:A4; margin:12mm; }
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body style="padding:32px;">
+
+<!-- Header -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #EF4444;">
+  <div>
+    <h1 style="font-size:24px;font-weight:800;color:#EF4444;">كشف الفواتير المحددة</h1>
+    <p style="font-size:12px;color:#64748B;margin-top:4px;">تاريخ الإصدار: ${today}</p>
+  </div>
+  <div style="text-align:left;">
+    <div style="font-size:20px;font-weight:900;color:#4F46E5;">شيب بك</div>
+    <div style="font-size:11px;color:#94A3B8;">SHIPPECO — Shipping Management</div>
+  </div>
+</div>
+
+<!-- Client Summary -->
+<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+  <div>
+    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:4px;">العميل</div>
+    <div style="font-size:18px;font-weight:800;color:#1E293B;">${client.name}</div>
+    ${client.phone ? `<div style="font-size:12px;color:#64748B;margin-top:4px;">${client.phone}</div>` : ''}
+  </div>
+  <div style="text-align:center;">
+    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:4px;">الفواتير المحددة</div>
+    <div style="font-size:24px;font-weight:900;color:#1E293B;">${sorted.length}</div>
+  </div>
+  <div style="text-align:left;">
+    <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:4px;">إجمالي القيمة</div>
+    <div style="font-size:24px;font-weight:900;color:#1E293B;font-family:'Inter',monospace;">${Math.round(totalAmount).toLocaleString('en-US')} SAR</div>
+  </div>
+</div>
+
+<!-- Table -->
+<table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+  <thead>
+    <tr style="background:#F1F5F9;border-bottom:2px solid #CBD5E1;">
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">رقم الفاتورة</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">التاريخ</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">الحالة</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">رقم البوليصة</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">الإجمالي</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">المدفوع</th>
+      <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#475569;">المتبقي</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>
+
+<!-- Footer Total -->
+<div style="display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap;">
+  <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:12px 24px;text-align:center;min-width:160px;">
+    <div style="font-size:11px;font-weight:700;color:#059669;margin-bottom:4px;">إجمالي المدفوع</div>
+    <div style="font-size:20px;font-weight:900;color:#047857;font-family:'Inter',monospace;">${Math.round(totalPaid).toLocaleString('en-US')} SAR</div>
+  </div>
+  <div style="background:#FEF2F2;border:2px solid #EF4444;border-radius:12px;padding:12px 24px;text-align:center;min-width:180px;">
+    <div style="font-size:11px;font-weight:700;color:#EF4444;margin-bottom:4px;">المتبقي للدفع</div>
+    <div style="font-size:22px;font-weight:900;color:#DC2626;font-family:'Inter',monospace;">${Math.round(totalRemaining).toLocaleString('en-US')} SAR</div>
+  </div>
+</div>
+
+</body>
+</html>`;
+
+  try {
+    const html2canvas = (window as any).html2canvas;
+    const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF;
+
+    if (html2canvas && jspdf) {
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '794px';
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      const canvas = await html2canvas(container, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+
+      document.body.removeChild(container);
+
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      const pdf = new jspdf('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`selected-invoices-${client.name}-${today}.pdf`);
+      return;
+    }
+  } catch (err) {
+    console.warn('[PDF Download] Failed, falling back to print window:', err);
+  }
+
+  // Fallback: Original print window method
+  const pw = window.open('', '_blank', 'width=900,height=1200');
+  if (!pw) { alert('يرجى السماح بالنوافذ المنبثقة'); return; }
+  pw.document.write(html);
+  pw.document.close();
+  pw.onload = () => { setTimeout(() => pw.print(), 600); };
+}
+
 async function generateClientPDF(
   client: ClientRecord,
   invoices: ClientProfileInvoice[],
@@ -916,6 +1090,13 @@ function ClientProfilePage({
     }
   };
 
+  const handleSelectedPDF = useCallback(async () => {
+    if (client && selectedInvs.length > 0) {
+      const selectedData = allInvoices.filter(i => selectedInvs.includes(i.id));
+      await generateSelectedInvoicesPDF(client, selectedData);
+    }
+  }, [client, selectedInvs, allInvoices]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -1414,17 +1595,30 @@ function ClientProfilePage({
               </div>
 
               {selectedInvs.length > 0 && (
-                <button
-                  onClick={handleBulkPaymob}
-                  disabled={creatingLink}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {creatingLink ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
-                  <span>إنشاء رابط دفع ({selectedInvs.length})</span>
-                  <span className="font-inter border-r border-indigo-400 pr-2 mr-2">
-                    {formatSar(invoices.filter(i => selectedInvs.includes(i.id)).reduce((s, i) => s + realRemaining(i), 0))}
-                  </span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBulkPaymob}
+                    disabled={creatingLink}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {creatingLink ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
+                    <span>إنشاء رابط دفع ({selectedInvs.length})</span>
+                    <span className="font-inter border-r border-indigo-400 pr-2 mr-2">
+                      {formatSar(invoices.filter(i => selectedInvs.includes(i.id)).reduce((s, i) => s + realRemaining(i), 0))}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSelectedPDF}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95"
+                  >
+                    <FileDown size={16} />
+                    <span>إنشاء PDF ({selectedInvs.length})</span>
+                    <span className="font-inter border-r border-red-400 pr-2 mr-2">
+                      {formatSar(invoices.filter(i => selectedInvs.includes(i.id)).reduce((s, i) => s + realRemaining(i), 0))}
+                    </span>
+                  </button>
+                </div>
               )}
             </div>
           );
