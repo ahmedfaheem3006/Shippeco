@@ -346,6 +346,11 @@ export function useProfitReportPage() {
     [range.from, range.to, localOnly, debouncedQuery, currentPage],
   )
 
+  // ── Auto-fetch on search, period, date range, or localOnly change ──
+  useEffect(() => {
+    void fetchData()
+  }, [fetchData])
+
   const refresh = useCallback(async () => {
     if (!from || !to) {
       const init = computeProfitRange(period, { from: '', to: '' })
@@ -367,7 +372,8 @@ export function useProfitReportPage() {
   const triggerSearch = useCallback(() => {
     setDebouncedQuery(query)
     setCurrentPage(1)
-  }, [query])
+    void fetchData(1)
+  }, [query, fetchData])
 
   const onSetQuery = useCallback((q: string) => { setQuery(q); setCurrentPage(1) }, [])
   const onSetTab = useCallback((t: ProfitTab) => { setTab(t); setCurrentPage(1) }, [])
