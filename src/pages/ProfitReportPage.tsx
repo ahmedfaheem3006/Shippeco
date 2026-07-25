@@ -629,10 +629,10 @@ export function ProfitReportPage() {
                           {r.awb || '—'}
                         </td>
                         <td className={`${s.td} ${s.mono}`} style={{ color: 'var(--muted)' }}>
-                          {r.weight != null ? `${r.weight} كجم` : '—'}
+                          {r.finalWeight ? (r.finalWeight.includes('كجم') ? r.finalWeight : `${r.finalWeight} كجم`) : '—'}
                         </td>
                         <td className={`${s.td} ${s.mono}`} style={{ color: 'var(--muted)' }}>
-                          {r.finalWeight || '—'}
+                          {r.weight != null ? `${r.weight} كجم` : '—'}
                         </td>
                         <td className={s.td} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
                           {r.carrier}
