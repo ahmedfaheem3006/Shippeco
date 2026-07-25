@@ -572,9 +572,15 @@ export function ProfitReportPage() {
             <input
               className={s.searchInput}
               type="text"
-              placeholder="بحث بالعميل أو رقم الفاتورة أو AWB..."
+              placeholder="بحث بالعميل، رقم الفاتورة، AWB، الناقل، الحالة..."
               value={rep.query}
               onChange={(e) => rep.setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  rep.triggerSearch()
+                }
+              }}
             />
           </div>
         </div>

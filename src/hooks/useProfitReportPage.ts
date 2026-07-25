@@ -228,7 +228,7 @@ export function useProfitReportPage() {
           date_from: range.from,
           date_to: range.to,
           local_only: localOnly,
-          search: query,
+          search: debouncedQuery,
           page: pg,
           limit: PAGE_SIZE,
         })
@@ -364,6 +364,11 @@ export function useProfitReportPage() {
     setCurrentPage(1)
   }, [])
 
+  const triggerSearch = useCallback(() => {
+    setDebouncedQuery(query)
+    setCurrentPage(1)
+  }, [query])
+
   const onSetQuery = useCallback((q: string) => { setQuery(q); setCurrentPage(1) }, [])
   const onSetTab = useCallback((t: ProfitTab) => { setTab(t); setCurrentPage(1) }, [])
   const onSetLocalOnly = useCallback((val: boolean) => { setLocalOnly(val); setCurrentPage(1) }, [])
@@ -430,7 +435,7 @@ export function useProfitReportPage() {
     loading, error, refresh,
     period, setPeriod: onSetPeriod,
     from, setFrom, to, setTo,
-    query, setQuery: onSetQuery,
+    query, setQuery: onSetQuery, triggerSearch,
     tab, setTab: onSetTab,
     localOnly, setLocalOnly: onSetLocalOnly,
     range, summary, summaryCards,
