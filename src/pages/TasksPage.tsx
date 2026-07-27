@@ -223,8 +223,10 @@ export const TasksPage: React.FC = () => {
                     <User size={14} />
                   </div>
                   <div className="text-[11px]">
-                    <div className="text-slate-400 font-bold uppercase scale-90 origin-right">المكلف بها</div>
-                    <div className="text-slate-700 dark:text-slate-300 font-bold">{task.assigned_to_name}</div>
+                    <div className="text-slate-400 font-bold uppercase scale-90 origin-right">المكلف بها: <span className="text-slate-700 dark:text-slate-300">{task.assigned_to_name || '—'}</span></div>
+                    {task.assigned_by_name && (
+                      <div className="text-slate-400 font-medium text-[10px]">بواسطة: {task.assigned_by_name}</div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-bold text-xs">
