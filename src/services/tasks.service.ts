@@ -29,9 +29,10 @@ export interface TaskMessage {
 }
 
 export const tasksService = {
-  async getTasks(params: { status?: string } = {}): Promise<Task[]> {
+  async getTasks(params: { status?: string; scope?: string } = {}): Promise<Task[]> {
     const qp = new URLSearchParams();
     if (params.status) qp.set('status', params.status);
+    if (params.scope) qp.set('scope', params.scope);
     const result = await unifiedService.get<any>(`/tasks?${qp.toString()}`);
     return result.success ? result.data : result;
   },

@@ -10,14 +10,22 @@ export const TasksPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
+  type FilterTab = 'all' | 'mine' | 'open' | 'closed';
+  const [statusFilter, setStatusFilter] = useState<FilterTab>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
 
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const params = statusFilter === 'all' ? {} : { status: statusFilter };
+      const params: { status?: string; scope?: string } = {};
+      if (statusFilter === 'mine') {
+        params.scope = 'mine';
+      } else if (statusFilter === 'open') {
+        params.status = 'open';
+      } else if (statusFilter === 'closed') {
+        params.status = 'closed';
+      }
       const data = await tasksService.getTasks(params);
       setTasks(data);
     } catch (err) {
@@ -36,7 +44,15 @@ export const TasksPage: React.FC = () => {
     t.assigned_to_name?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const isAdmin = user?.role === 'admin';
   const isManager = user?.role === 'admin' || user?.role === 'manager';
+
+  const filterTabs: { id: FilterTab; label: string }[] = [
+    { id: 'all', label: 'الكل' },
+    ...(isAdmin ? [{ id: 'mine' as const, label: 'مهامي' }] : []),
+    { id: 'open', label: 'مفتوحة' },
+    { id: 'closed', label: 'مغلقة' },
+  ];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -110,17 +126,17 @@ export const TasksPage: React.FC = () => {
           />
         </div>
         <div className="flex bg-white dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-          {(['all', 'open', 'closed'] as const).map((s) => (
+          {filterTabs.map((tab) => (
             <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
+              key={tab.id}
+              onClick={() => setStatusFilter(tab.id)}
               className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${
-                statusFilter === s 
+                statusFilter === tab.id 
                   ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
-              {s === 'all' ? 'الكل' : s === 'open' ? 'مفتوحة' : 'مغلقة'}
+              {tab.label}
             </button>
           ))}
         </div>
