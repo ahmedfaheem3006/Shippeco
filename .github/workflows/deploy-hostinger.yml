@@ -41,17 +41,45 @@ jobs:
         run: |
           test -f dist/index.html
           test -d dist/assets
-          echo "Production build verified successfully"
 
-      - name: Deploy dist to Hostinger
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-        with:
-          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
-          username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
-          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
-          protocol: ftp
-          port: 21
-          local-dir: ./dist/
-          server-dir: ./public_html/
-          state-name: .ftp-deploy-sync-state-public-html.json
-          log-level: verbose
+          echo "Files prepared for deployment:"
+          find dist -maxdepth 2 -type f -print
+
+      - name: Install lftp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lftp
+
+      - name: Deploy dist to Hostinger public_html
+        env:
+          FTP_HOST: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+        run: |
+          lftp <<EOF
+          set cmd:fail-exit true
+          set ftp:ssl-allow no
+          set ftp:passive-mode true
+          set net:max-retries 3
+          set net:timeout 20
+
+          open -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST"
+
+          echo "FTP root contents:"
+          cls -la /
+
+          echo "Uploading dist contents to /public_html..."
+
+          mirror \
+            --reverse \
+            --delete \
+            --verbose \
+            --parallel=2 \
+            ./dist/ \
+            /public_html/
+
+          echo "Final public_html contents:"
+          cls -la /public_html
+
+          bye
+          EOF
