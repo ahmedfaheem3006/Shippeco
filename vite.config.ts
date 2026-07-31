@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
   const dbTarget = (env.VITE_DB_URL || 'https://broad-glade-c30a.ibrahim-h-kh.workers.dev').trim()
 
   return {
+    base: '/',
     plugins: [react()],
     server: {
       proxy: {
