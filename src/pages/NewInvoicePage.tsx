@@ -730,7 +730,15 @@ export function NewInvoicePage() {
               phoneValue={draft.phone}
               onNameChange={(val) => setDraft((p) => ({ ...p, client: val }))}
               onPhoneChange={(val) => setDraft((p) => ({ ...p, phone: val }))}
-              onSelect={(name, phone, email) => setDraft((p) => ({ ...p, client: name, phone: phone, clientEmail: email || '' }))}
+              onSelect={(name, phone, email, category) =>
+                setDraft((p) => ({
+                  ...p,
+                  client: name,
+                  phone: phone,
+                  clientEmail: email || '',
+                  collection_category: category || p.collection_category || 'B',
+                }))
+              }
             />
             <div className={styles.field} style={{ marginTop: '0.75rem' }}>
               <label className={styles.fieldLabel}>البريد الإلكتروني للعميل {draft.payment === 'سداد إلكتروني' ? '*' : '(اختياري)'}</label>
@@ -743,6 +751,19 @@ export function NewInvoicePage() {
                 dir="ltr"
                 style={{ textAlign: 'left' }}
               />
+            </div>
+            <div className={styles.field} style={{ marginTop: '0.75rem' }}>
+              <label className={styles.fieldLabel}>فئة التحصيل / الفاتورة (A, B, C, D)</label>
+              <select
+                className={styles.fieldSelect}
+                value={draft.collection_category || 'B'}
+                onChange={(e) => setDraft((p) => ({ ...p, collection_category: e.target.value }))}
+              >
+                <option value="A">فئة A (VIP - عميل متميز، لا إشعارات)</option>
+                <option value="B">فئة B (إشعار سداد بعد 7 أيام من الصدور)</option>
+                <option value="C">فئة C (إشعار سداد بعد 3 أيام من الصدور)</option>
+                <option value="D">فئة D (إشعار سداد في الحال فوراً)</option>
+              </select>
             </div>
           </div>
         </div>

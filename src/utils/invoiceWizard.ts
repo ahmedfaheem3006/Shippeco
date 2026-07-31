@@ -7,6 +7,7 @@ export type InvoiceDraftInput = {
   client: string
   phone: string
   clientEmail: string
+  collection_category?: string
   itemType: string
   carrier: string
   awb: string
@@ -38,6 +39,7 @@ export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput 
     client: '',
     phone: '',
     clientEmail: '',
+    collection_category: 'B',
     itemType: 'شحن دولي',
     carrier: 'DHL Express',
     awb: '',
@@ -139,6 +141,7 @@ export function toInvoiceFromDraft(
     receiverAddress: draft.receiverAddress.trim() || undefined,
     receiverCountry: draft.receiverCountry.trim() || undefined,
     codeType: draft.codeType,
+    collection_category: draft.collection_category || undefined,
     isDraft: Boolean(options.forceDraft || !draft.client || !draft.phone),
     items: draft.items,
   }
@@ -149,6 +152,7 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
     client: inv.client ?? '',
     phone: inv.phone ?? '',
     clientEmail: inv.client_email ?? (inv as any).email ?? '',
+    collection_category: (inv as any).collection_category ?? 'B',
     itemType: inv.itemType ?? 'شحن دولي',
     carrier: inv.carrier ?? 'DHL Express',
     awb: inv.awb ?? '',

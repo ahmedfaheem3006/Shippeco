@@ -6,12 +6,13 @@ type ClientResult = {
   name: string
   phone: string
   email?: string | null
+  collection_category?: string | null
 }
 
 type Props = {
   nameValue: string
   phoneValue: string
-  onSelect: (name: string, phone: string, email?: string) => void
+  onSelect: (name: string, phone: string, email?: string, category?: string) => void
   onNameChange: (val: string) => void
   onPhoneChange: (val: string) => void
 }
@@ -82,8 +83,8 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
     searchTimeoutRef.current = setTimeout(() => searchClients(trimmed), 300)
   }
 
-  const handleSelect = (name: string, phone: string, email?: string | null) => {
-    onSelect(name, phone, email || undefined)
+  const handleSelect = (name: string, phone: string, email?: string | null, category?: string | null) => {
+    onSelect(name, phone, email || undefined, category || undefined)
     setHasSelected(true)
     setOpen(false)
     setResults([])
@@ -147,7 +148,7 @@ export function SearchableClientInput({ nameValue, phoneValue, onSelect, onNameC
                   key={idx}
                   type="button"
                   className="w-full text-right px-3 py-2.5 hover:bg-indigo-50 dark:hover:bg-slate-700/50 rounded-md transition-colors flex flex-wrap justify-between items-center gap-2 group"
-                  onClick={() => handleSelect(r.name, r.phone, r.email)}
+                  onClick={() => handleSelect(r.name, r.phone, r.email, r.collection_category)}
                 >
                   <div className="flex flex-col items-start min-w-0 flex-1">
                     <span className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate w-full">{r.name}</span>

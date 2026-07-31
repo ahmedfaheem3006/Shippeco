@@ -17,6 +17,8 @@ import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WaTemplatesPage } from './pages/WaTemplatesPage'
 import { TasksPage } from './pages/TasksPage'
+import { CollectionModelPage } from './pages/CollectionModelPage'
+import { ExpensesPage } from './pages/ExpensesPage'
 import { useAuthStore } from './hooks/useAuthStore'
 import { SocketProvider } from './contexts/SocketContext'
 import { Toaster } from 'react-hot-toast'
@@ -123,6 +125,8 @@ function App() {
           <Route path="/new-invoice" element={<NewInvoicePage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/collection-model" element={<CollectionModelPage />} />
+          <Route path="/expenses" element={<ExpensesPage />} />
           <Route path="/calculator" element={<CalculatorPage />} />
           <Route path="/reconcile" element={<ReconcilePage />} />
           <Route path="/invoice-template" element={<InvoiceTemplatePage />} />
