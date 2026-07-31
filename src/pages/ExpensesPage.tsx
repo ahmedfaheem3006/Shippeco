@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAppLayout } from '../components/AppLayout/useAppLayout';
-import { expenseService, ExpenseItem, ExpenseSummaryData } from '../services/expenseService';
+import { expenseService, type ExpenseItem, type ExpenseSummaryData } from '../services/expenseService';
 import {
-  CreditCard, Plus, Search, Filter, Trash2, Edit3, DollarSign,
-  Briefcase, Box, AlertTriangle, TrendingDown, Calendar, User,
-  FileText, CheckCircle2, X, Loader2, Download
+  CreditCard, Plus, Search, Filter, Trash2, Edit3,
+  Briefcase, Box, AlertTriangle, TrendingDown,
+  X, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 

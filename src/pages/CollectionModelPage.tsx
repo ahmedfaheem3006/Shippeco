@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAppLayout } from '../components/AppLayout/useAppLayout';
-import { collectionService, CollectionSummaryData, CollectionInvoiceItem } from '../services/collectionService';
+import { collectionService, type CollectionSummaryData, type CollectionInvoiceItem } from '../services/collectionService';
 import {
-  ClipboardCheck, Search, Filter, ShieldCheck, Clock, AlertTriangle, Zap,
+  ClipboardCheck, Search, Filter, Clock, AlertTriangle, Zap,
   MessageCircle, CheckCircle2, RefreshCw, Loader2, Sparkles, UserCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -75,7 +75,7 @@ export function CollectionModelPage() {
     const newCategory = selectedCategories[invoiceId] || null;
     setUpdatingId(invoiceId);
     try {
-      const res = await collectionService.updateCategory(invoiceId, newCategory);
+      await collectionService.updateCategory(invoiceId, newCategory);
       toast.success(`تم حفظ الفئة (${newCategory || 'بدون فئة'}) وحساب فئة العميل بنجاح`);
       
       // Update local invoice state

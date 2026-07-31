@@ -54,6 +54,7 @@ export type Invoice = {
   itemType?: string
   details?: string
   notes?: string
+  collection_category?: string
 
   // ═══ بيانات المرسل (Shipper) ═══
   shipperName?: string
