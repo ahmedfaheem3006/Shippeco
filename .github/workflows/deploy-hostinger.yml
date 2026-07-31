@@ -52,6 +52,6 @@ jobs:
           protocol: ftp
           port: 21
           local-dir: ./dist/
-          server-dir: ./
-          state-name: .ftp-deploy-sync-state.json
-          log-level: standard
+          server-dir: ./public_html/
+          state-name: .ftp-deploy-sync-state-public-html.json
+          log-level: verbose
