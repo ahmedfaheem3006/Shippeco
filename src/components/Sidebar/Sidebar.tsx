@@ -38,11 +38,11 @@ export function Sidebar({ onNavigate }: Props) {
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900/95 border-l border-gray-200 dark:border-slate-800 shadow-sm w-64 overflow-y-auto hidden-scrollbar">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-6 border-b border-gray-200 dark:border-slate-800">
-        <img src={shippecLogo} alt="Shippeco" className="w-11 h-11 rounded-xl object-cover shadow-md ring-2 ring-indigo-100 dark:ring-slate-700" />
+      <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-200 dark:border-slate-800">
+        <img src={shippecLogo} alt="Shippec" className="h-11 w-auto max-w-[140px] object-contain rounded-xl shadow-sm p-1 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700" />
         <div>
           <div className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">
-            Ship<span className="text-indigo-600 dark:text-indigo-400">peco</span>
+            Ship<span className="text-indigo-600 dark:text-indigo-400">pec</span>
           </div>
           <div className="text-[10px] text-gray-500 dark:text-slate-400 font-medium uppercase tracking-widest">Shipping Management</div>
         </div>

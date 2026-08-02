@@ -284,7 +284,7 @@ export function PublicPayPage() {
         {/* Navigation / Header */}
         <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
           <div className="flex items-center gap-3">
-            <img src={shippecLogo} alt="Ship Pec" className="w-10 h-10 rounded-xl object-cover" />
+            <img src={shippecLogo} alt="Ship Pec" className="h-10 w-auto max-w-[130px] object-contain rounded-xl p-1 bg-white shadow-sm" />
             <div>
               <h2 className="text-lg font-black text-white">بوابة دفع ShipPec الآمنة</h2>
               <p className="text-gray-400 text-xs">سداد فاتورة العميل: {linkDetails.client_name}</p>
@@ -408,7 +408,7 @@ export function PublicPayPage() {
           <img 
             src={shippecLogo} 
             alt="ShipPec Logo" 
-            className="relative w-16 h-16 rounded-2xl object-cover shadow-2xl ring-2 ring-white/10 mx-auto animate-pulse" 
+            className="relative h-16 w-auto max-w-[180px] object-contain rounded-2xl p-1 bg-white shadow-2xl ring-2 ring-white/10 mx-auto animate-pulse" 
           />
         </div>
         <h1 className="text-2xl font-black text-white">منصة ShipPec للتحصيل الإلكتروني</h1>

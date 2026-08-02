@@ -51,8 +51,8 @@ export function LoginPage() {
             <div className="flex items-center gap-4 mb-2">
               <img 
                 src={shippecLogo} 
-                alt="Shippeco" 
-                className="w-14 h-14 rounded-2xl object-cover shadow-2xl ring-2 ring-white/10" 
+                alt="Shippec" 
+                className="h-14 w-auto max-w-[180px] object-contain rounded-2xl p-1 bg-white/90 shadow-2xl ring-2 ring-white/10" 
               />
               <div>
                 <h2 className="text-2xl font-bold text-white tracking-tight">ShipPec</h2>
@@ -138,8 +138,8 @@ export function LoginPage() {
                 <div className="absolute -inset-2 bg-gradient-to-br from-indigo-500/30 to-sky-500/30 rounded-3xl blur-xl animate-pulse" />
                 <img 
                   src={shippecLogo} 
-                  alt="Shippeco" 
-                  className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl ring-2 ring-white/20" 
+                  alt="Shippec" 
+                  className="relative h-16 w-auto max-w-[180px] object-contain rounded-2xl p-1 bg-white/90 shadow-2xl ring-2 ring-white/20" 
                 />
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">ShipPec</h2>

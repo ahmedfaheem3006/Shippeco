@@ -47,18 +47,18 @@ function buildDesc(inv: Record<string, any>): string {
 // THEME-BASED HTML GENERATION
 // ═══════════════════════════════════════════════════════════
 
+import { SHIPPEC_LOGO_BASE64 } from './shippecLogoBase64'
+
 function generateShippecTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[], total: number, paid: number, remaining: number): string {
   const desc = buildDesc(inv)
+  const logoSrc = tmpl.logoDataUrl || SHIPPEC_LOGO_BASE64
+
   return `
     <div class="top-bar" style="background:#2563eb;height:6px;width:100%"></div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 28px 16px;border-bottom:2px solid #e5e7eb">
-      <div><div style="font-size:32px;font-weight:900;color:#111">فاتورة</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 32px 18px;border-bottom:2px solid #e5e7eb">
+      <div><div style="font-size:36px;font-weight:900;color:#111;line-height:1">فاتورة</div></div>
       <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-        ${tmpl.logoDataUrl
-          ? `<img src="${tmpl.logoDataUrl}" style="height:75px;max-width:240px;object-fit:contain;margin-bottom:4px" alt="شيب بيك" />`
-          : `<div style="font-size:28px;font-weight:900;font-family:'Segoe UI',sans-serif"><span style="color:#2563eb">SHi</span>PP<span style="color:#f59e0b">E</span>C</div>
-             <div style="font-size:11px;color:#666;font-weight:700">شيب بيك</div>`
-        }
+        <img src="${logoSrc}" style="height:95px;max-width:300px;width:auto;object-fit:contain;margin-bottom:6px;display:block" alt="شيب بيك" />
         <div style="font-size:11px;color:#333;text-align:right;line-height:1.5">
           <div style="font-weight:800;font-size:12px;color:#111">${escapeHtml(tmpl.companyAr || 'شيب بيك - مؤسسة نور. خ. م. آل دهنيم')}</div>
           ${tmpl.cr ? `<div>س.ج ${safe(tmpl.cr)}</div>` : ''}
@@ -76,15 +76,17 @@ function generateShippecTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
 
 function generateClassicTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[], total: number, paid: number, remaining: number): string {
   const desc = buildDesc(inv)
+  const logoSrc = tmpl.logoDataUrl || SHIPPEC_LOGO_BASE64
+
   return `
     <div style="background:#1e293b;height:6px;width:100%"></div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 28px 16px;border-bottom:3px solid #1e293b">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 32px 18px;border-bottom:3px solid #1e293b">
       <div>
-        <div style="font-size:28px;font-weight:900;color:#1e293b">فاتورة</div>
+        <div style="font-size:32px;font-weight:900;color:#1e293b">فاتورة</div>
         <div class="en" style="font-size:12px;color:#64748b;font-weight:600">${escapeHtml(tmpl.companyEn || '')}</div>
       </div>
       <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-        ${tmpl.logoDataUrl ? `<img src="${tmpl.logoDataUrl}" style="height:60px;object-fit:contain" />` : ''}
+        <img src="${logoSrc}" style="height:90px;max-width:280px;width:auto;object-fit:contain;margin-bottom:4px;display:block" alt="شيب بيك" />
         <div style="font-size:11px;color:#444;text-align:right;line-height:1.5">
           <div style="font-weight:800;font-size:13px;color:#1e293b">${escapeHtml(tmpl.companyAr || '')}</div>
           ${tmpl.vat ? `<div class="en" style="font-size:11px"><span style="color:#94a3b8">VAT:</span> ${safe(tmpl.vat)}</div>` : ''}
@@ -102,15 +104,17 @@ function generateClassicTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
 
 function generateModernTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[], total: number, paid: number, remaining: number): string {
   const desc = buildDesc(inv)
+  const logoSrc = tmpl.logoDataUrl || SHIPPEC_LOGO_BASE64
+
   return `
     <div style="background:linear-gradient(to right,#4f46e5,#7c3aed);height:8px;width:100%"></div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 28px 20px;border-bottom:2px solid #e0e7ff">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 32px 20px;border-bottom:2px solid #e0e7ff">
       <div>
-        <div style="font-size:30px;font-weight:900;background:linear-gradient(to right,#4f46e5,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent">فاتورة</div>
+        <div style="font-size:32px;font-weight:900;background:linear-gradient(to right,#4f46e5,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent">فاتورة</div>
         <div class="en" style="font-size:11px;color:#6366f1;font-weight:700;letter-spacing:2px;text-transform:uppercase">INVOICE</div>
       </div>
       <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-        ${tmpl.logoDataUrl ? `<img src="${tmpl.logoDataUrl}" style="height:55px;object-fit:contain" />` : ''}
+        <img src="${logoSrc}" style="height:90px;max-width:280px;width:auto;object-fit:contain;margin-bottom:4px;display:block" alt="شيب بيك" />
         <div style="font-size:11px;color:#444;text-align:right;line-height:1.6">
           <div style="font-weight:800;font-size:13px;color:#4f46e5">${escapeHtml(tmpl.companyAr || '')}</div>
           ${tmpl.phone ? `<div class="en">${safe(tmpl.phone)}</div>` : ''}
@@ -126,14 +130,19 @@ function generateModernTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[], 
 
 function generateMinimalTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[], total: number, paid: number, remaining: number): string {
   const desc = buildDesc(inv)
+  const logoSrc = tmpl.logoDataUrl || SHIPPEC_LOGO_BASE64
+
   return `
     <div style="background:#111827;height:3px;width:100%"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:28px;border-bottom:1px solid #e5e7eb">
-      <div style="font-size:24px;font-weight:900;color:#111827;letter-spacing:-0.5px">فاتورة</div>
-      <div style="text-align:left;font-size:11px;color:#6b7280;line-height:1.6">
-        <div style="font-weight:800;color:#111827">${escapeHtml(tmpl.companyAr || '')}</div>
-        ${tmpl.phone ? `<div class="en">${safe(tmpl.phone)}</div>` : ''}
-        ${tmpl.email ? `<div>${tmpl.email}</div>` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:28px 32px;border-bottom:1px solid #e5e7eb">
+      <div style="font-size:28px;font-weight:900;color:#111827;letter-spacing:-0.5px">فاتورة</div>
+      <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <img src="${logoSrc}" style="height:85px;max-width:260px;width:auto;object-fit:contain;margin-bottom:4px;display:block" alt="شيب بيك" />
+        <div style="font-size:11px;color:#6b7280;line-height:1.6;text-align:right">
+          <div style="font-weight:800;color:#111827">${escapeHtml(tmpl.companyAr || '')}</div>
+          ${tmpl.phone ? `<div class="en">${safe(tmpl.phone)}</div>` : ''}
+          ${tmpl.email ? `<div>${tmpl.email}</div>` : ''}
+        </div>
       </div>
     </div>
     ${generateCommonBody(inv, tmpl, items, total, paid, remaining, desc, '#111827')}

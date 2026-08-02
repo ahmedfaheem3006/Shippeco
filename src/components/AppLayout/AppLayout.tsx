@@ -157,7 +157,7 @@ export function AppLayout() {
               <Menu size={20} />
             </button>
             <div className="flex items-center gap-2 lg:hidden">
-              <img src={shippecLogo} alt="Shippeco" className="w-8 h-8 rounded-lg object-cover shadow-sm" />
+              <img src={shippecLogo} alt="Shippec" className="h-9 w-auto max-w-[120px] object-contain rounded-lg p-0.5 bg-white shadow-sm" />
             </div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-none hidden sm:block">
               {pageTitle}
