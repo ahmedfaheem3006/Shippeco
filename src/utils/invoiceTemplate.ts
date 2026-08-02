@@ -42,13 +42,13 @@ export function getPaymentStatusLabel(inv: { status?: string; payment_status?: n
 
 /* ── Defaults ── */
 export const defaultInvoiceTemplate: InvoiceTemplate = {
-  companyAr: 'شيب بيك - مؤسسة نور . خ . م . آل دهشيم',
+  companyAr: 'شيب بيك - مؤسسة نور. خ. م. آل دهنيم',
   companyEn: 'SHIPPEC',
   vat: '',
   cr: '2050174810',
   phone: '+966537366522',
   email: 'info@shippec.com',
-  address: 'حي الروضة 32256، الدمام، المملكة العربية السعودية',
+  address: 'الدمام - EDMA7540 - حي الروضة شارع الأمير متعب ابن عبدالعزيز',
   note: `(يجب عليك قراءة هذه الشروط بعناية قبل الموافقة على الالتزام بها ويجب عليك تحديد ما إذا كانت خدمات شيب بيك متوافقة مع ظروفك)
 هام: حال تعذر تحصيل المبالغ منك من خلال الدفع الإلكتروني أو تحويل بنكي أو الدفع نقداً فإنك تمنح بموجبه الإذن لمؤسسة نور خالد آل دهنيم للخدمات اللوجستية بالترافع قضائياً للجهات المعنية
 
@@ -61,15 +61,21 @@ export const defaultInvoiceTemplate: InvoiceTemplate = {
 
 export function normalizeInvoiceTemplate(raw: any): InvoiceTemplate {
   if (!raw || typeof raw !== 'object') return { ...defaultInvoiceTemplate }
+  
+  const str = (v: any, fallback: string) => {
+    if (v === undefined || v === null || String(v).trim() === '') return fallback
+    return String(v)
+  }
+
   return {
-    companyAr: raw.companyAr || raw.company_name || defaultInvoiceTemplate.companyAr,
-    companyEn: raw.companyEn || raw.company_name_en || defaultInvoiceTemplate.companyEn,
-    vat: raw.vat || raw.tax_number || '',
-    cr: raw.cr || raw.commercial_reg || defaultInvoiceTemplate.cr,
-    phone: raw.phone || defaultInvoiceTemplate.phone,
-    email: raw.email || defaultInvoiceTemplate.email,
-    address: raw.address || defaultInvoiceTemplate.address,
-    note: raw.note ?? raw.footer_text ?? defaultInvoiceTemplate.note,
+    companyAr: str(raw.companyAr || raw.company_name, defaultInvoiceTemplate.companyAr),
+    companyEn: str(raw.companyEn || raw.company_name_en, defaultInvoiceTemplate.companyEn),
+    vat: str(raw.vat || raw.tax_number, ''),
+    cr: str(raw.cr || raw.commercial_reg, defaultInvoiceTemplate.cr),
+    phone: str(raw.phone, defaultInvoiceTemplate.phone),
+    email: str(raw.email, defaultInvoiceTemplate.email),
+    address: str(raw.address, defaultInvoiceTemplate.address),
+    note: str(raw.note || raw.footer_text, defaultInvoiceTemplate.note),
     logoDataUrl: raw.logoDataUrl || raw.logo_url || undefined,
     templateStyle: raw.templateStyle || 'shippec',
   }

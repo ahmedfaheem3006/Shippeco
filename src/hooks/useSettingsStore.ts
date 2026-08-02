@@ -15,16 +15,7 @@ const defaultSettings: PlatformSettings = {
   storeWA: '',
 }
 
-const defaultInvoiceTemplate: InvoiceTemplate = {
-  companyAr: '',
-  companyEn: '',
-  vat: '',
-  cr: '',
-  phone: '',
-  email: '',
-  address: '',
-  note: '',
-}
+import { defaultInvoiceTemplate, normalizeInvoiceTemplate } from '../utils/invoiceTemplate'
 
 function loadSettings(): PlatformSettings {
   if (typeof localStorage === 'undefined') return defaultSettings
@@ -35,7 +26,7 @@ function loadSettings(): PlatformSettings {
 function loadInvoiceTemplate(): InvoiceTemplate {
   if (typeof localStorage === 'undefined') return defaultInvoiceTemplate
   const saved = readJson<Partial<InvoiceTemplate>>(storageKeys.invoiceTemplate, localStorage)
-  return { ...defaultInvoiceTemplate, ...(saved ?? {}) }
+  return normalizeInvoiceTemplate(saved)
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({

@@ -8,6 +8,7 @@ import {
   toEnglishDigits,
   computeInvoiceTotal,
   getTemplateStyle,
+  normalizeInvoiceTemplate,
 } from './invoiceTemplate'
 
 function escapeHtml(str: string): string {
@@ -51,14 +52,15 @@ function generateShippecTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
   return `
     <div class="top-bar" style="background:#2563eb;height:6px;width:100%"></div>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 28px 16px;border-bottom:2px solid #e5e7eb">
-      <div><div style="font-size:28px;font-weight:900;color:#111">فاتورة</div></div>
+      <div><div style="font-size:32px;font-weight:900;color:#111">فاتورة</div></div>
       <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         ${tmpl.logoDataUrl
           ? `<img src="${tmpl.logoDataUrl}" style="height:60px;object-fit:contain" />`
-          : `<div style="font-size:28px;font-weight:900;font-family:'Segoe UI',sans-serif"><span style="color:#2563eb">SHi</span>PP<span style="color:#f59e0b">E</span>C</div>`
+          : `<div style="font-size:28px;font-weight:900;font-family:'Segoe UI',sans-serif"><span style="color:#2563eb">SHi</span>PP<span style="color:#f59e0b">E</span>C</div>
+             <div style="font-size:11px;color:#666;font-weight:700">شيب بيك</div>`
         }
-        <div style="font-size:11px;color:#444;text-align:right;line-height:1.5">
-          <div style="font-weight:800;font-size:12px;color:#111">${escapeHtml(tmpl.companyAr || 'شيب بيك')}</div>
+        <div style="font-size:11px;color:#333;text-align:right;line-height:1.5">
+          <div style="font-weight:800;font-size:12px;color:#111">${escapeHtml(tmpl.companyAr || 'شيب بيك - مؤسسة نور. خ. م. آل دهنيم')}</div>
           ${tmpl.cr ? `<div>س.ج ${safe(tmpl.cr)}</div>` : ''}
           ${tmpl.address ? `<div>${escapeHtml(tmpl.address)}</div>` : ''}
           ${tmpl.phone ? `<div class="en">${safe(tmpl.phone)}</div>` : ''}
@@ -240,95 +242,61 @@ function generateReceiptHtml(inv: Invoice): string {
   ` : ''
 }
 
-function formatNoteToHtml(note: string): string {
-  if (!note) return ''
+function generateFooter(_tmpl: InvoiceTemplate): string {
+  return `
+    <!-- Page 1 Footer: Yellow Important Notice & Thanks text -->
+    <div style="margin:16px 28px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;text-align:center">
+      <div style="font-weight:800;color:#d97706;font-size:12px;margin-bottom:6px">⚠️ تنبيه هام وتعليمات الخدمة / Important Notice</div>
+      <div style="font-weight:700;color:#9a3412;font-size:11px;line-height:1.6">(يجب عليك قراءة هذه الشروط بعناية قبل الموافقة على الالتزام بها ويجب عليك تحديد ما إذا كانت خدمات شيب بيك متوافقة مع ظروفك)</div>
+    </div>
 
-  const lines = note.split('\n').map(l => l.trim()).filter(Boolean)
-  let warningHtml = ''
-  let bankHtml = ''
-  let otherHtml = ''
+    <div style="margin:0 28px 16px;font-size:11px;color:#4b5563;line-height:1.6;text-align:right">
+      <div style="margin-bottom:4px">شكراً لثقتكم ونتمنى لكم يوما سعيدا</div>
+      <div style="margin-bottom:6px">شيب بيك تقدم الخدمات اللوجستية ومختصة بالشحن الجوي لجميع دول العالم بجودة عالية وأسعار تنافسية أيضا مختصون بشحن المواد الخطرة والسائلة, ونقدم خدمات التوزيع للمتاجر, وخدمات التاجر الإلكتروني, لمزيد من المعلومات يرجى التواصل: <span class="en">+966537366522</span></div>
+      <div style="font-weight:800;color:#111;margin-top:6px;margin-bottom:2px">الشروط والأحكام!</div>
+      <div>طلبكم لخدمات "شيب بيك " توافق باعتبارك "الشاحن" , نيابة عن نفسك ونيابة عن مستلم الشحنة "المستلم" , وأي شخص آخر لديه مصلحة في الشحنة أن تطبق هذه</div>
+    </div>
 
-  const bankFields: { label: string; value: string }[] = []
+    <!-- Page 2: Terms & Conditions + Green Bank Details Card -->
+    <div class="page-break" style="page-break-before: always; padding: 24px 28px 16px;">
+      <div style="font-size:11px;color:#4b5563;line-height:1.7;text-align:right;margin-bottom:24px">
+        <div style="font-weight:800;color:#111;font-size:12px;margin-bottom:8px">الشروط والأحكام:</div>
+        <div style="margin-bottom:8px">1. أن تكون جميع المعلومات المقدمة من قبل الشاحن أو ممثليه تامة ودقيقة.</div>
+        <div style="margin-bottom:8px">2. أن لا تكون الشحنة من الشحنات التي تحتوي على المواد الغير مقبولة مثل: سلع مقلدة وحيوانات وسبائك وعملات وأحجار كريمة وسبائك وسائلك وعملات وأحجار كريمة وأسلحة ومتفجرات وذخيرة، وأيضا مواد غير قانونية مثل العاج والمخدرات وغيرها من المواد المحظورة.</div>
+        <div style="margin-bottom:8px">3. تحسب رسوم الشحن وفقا لأعلى وزن فعلي أو حجمي للقطعة الواحدة ويجوز إعادة وزن وأبعاد الشحنة وإعادة قياسها من قبل شيب بيك لتأكيد صحة الحساب، ويلزم على المستلم أو الشاحن بدفع إعادة النفقات أو الرسوم الإضافية في حال وجود فرق في الوزن أو الحجم التي تم تزويدنا به من قبل الشاحن أو المستلم حتى بعد استلام العملاء لشحنته.</div>
+      </div>
 
-  for (const line of lines) {
-    if (line.includes('الآيبان') || line.includes('الابان') || line.includes('SA47') || line.includes('SA50') || line.includes('SA0') || line.includes('SA3') || line.includes('SA6')) {
-      const parts = line.split(':')
-      const label = parts[0] || 'رقم الآيبان'
-      const val = parts.slice(1).join(':').trim() || line
-      bankFields.push({ label, value: val })
-    } else if (line.includes('البنك') || line.includes('بنك')) {
-      const parts = line.split(':')
-      const label = parts[0] || 'البنك'
-      const val = parts.slice(1).join(':').trim() || line
-      bankFields.push({ label, value: val })
-    } else if (line.includes('الاسم التجاري') || line.includes('المؤسسة')) {
-      const parts = line.split(':')
-      const label = parts[0] || 'الاسم التجاري'
-      const val = parts.slice(1).join(':').trim() || line
-      bankFields.push({ label, value: val })
-    } else if (line.startsWith('(') && line.endsWith(')')) {
-      warningHtml += `<div style="font-weight:700;color:#9a3412;margin-bottom:8px;font-size:11px;line-height:1.6">${escapeHtml(line)}</div>`
-    } else if (line.startsWith('هام:') || line.includes('تنبيه') || line.includes('تعذر تحصيل')) {
-      warningHtml += `<div style="font-weight:700;color:#991b1b;margin-bottom:8px;font-size:11px;line-height:1.6;padding:8px 12px;background:#fef2f2;border-right:4px solid #ef4444;border-radius:4px">${escapeHtml(line)}</div>`
-    } else {
-      otherHtml += `<div style="margin-bottom:6px;font-size:11px;color:#374151;line-height:1.6">${escapeHtml(line)}</div>`
-    }
-  }
-
-  if (bankFields.length > 0) {
-    bankHtml = `
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;margin-top:16px">
-        <div style="font-weight:800;color:#16a34a;font-size:12px;margin-bottom:10px;text-align:right">
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px">
+        <div style="font-weight:800;color:#16a34a;font-size:13px;margin-bottom:10px;text-align:right">
           🏦 تفاصيل الحساب البنكي للسداد / Bank Details
+        </div>
+        <div style="font-weight:700;color:#111827;font-size:11px;line-height:1.6;margin-bottom:12px;text-align:right">
+          هام: حال تعذر تحصيل المبالغ منك من خلال الدفع الإلكتروني أو الدفع نقداً فإنك تمنح بموجبه الإذن لمؤسسة نور خالد آل دهنيم للخدمات اللوجستية بالترافع قضائياً للجهات المعنية
         </div>
         <table style="width:100%;font-size:11px;border-collapse:collapse" dir="rtl">
           <tbody>
-            ${bankFields.map(field => {
-              const val = field.value
-              const isIban = val.toUpperCase().startsWith('SA') || /\d{22,}/.test(val)
-              const valueStyle = isIban
-                ? `direction:ltr;font-family:'Courier New',monospace;font-weight:800;color:#1e3a8a;font-size:13px;letter-spacing:0.5px;text-align:left;padding:6px 0`
-                : `font-weight:700;color:#111827;text-align:left;padding:6px 0`
-              return `
-                <tr style="border-bottom:1px dashed #e2e8f0">
-                  <td style="padding:6px 0;font-weight:800;color:#4b5563;text-align:right;width:120px">${escapeHtml(field.label)}:</td>
-                  <td style="${valueStyle}">${escapeHtml(val)}</td>
-                </tr>
-              `
-            }).join('')}
+            <tr style="border-bottom:1px dashed #cbd5e1">
+              <td style="padding:8px 0;font-weight:800;color:#475569;text-align:right;width:120px">رقم الآيبان:</td>
+              <td class="en" style="padding:8px 0;font-family:'Courier New',monospace;font-weight:800;color:#1e3a8a;font-size:13px;letter-spacing:0.5px;text-align:left;direction:ltr">SA4705000068204783026000</td>
+            </tr>
+            <tr style="border-bottom:1px dashed #cbd5e1">
+              <td style="padding:8px 0;font-weight:800;color:#475569;text-align:right">البنك:</td>
+              <td style="padding:8px 0;font-weight:700;color:#111827;text-align:left">مصرف الإنماء</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;font-weight:800;color:#475569;text-align:right">الاسم التجاري:</td>
+              <td style="padding:8px 0;font-weight:700;color:#111827;text-align:left">مؤسسة نور خالد مكي آل دهنيم للخدمات اللوجستية</td>
+            </tr>
           </tbody>
         </table>
       </div>
-    `
-  }
-
-  return `
-    <div style="font-family:'Cairo',sans-serif">
-      ${warningHtml ? `
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:16px;text-align:right">
-          <div style="font-weight:800;color:#d97706;font-size:12px;margin-bottom:8px">⚠️ تنبيه هام وتعليمات الخدمة / Important Notice</div>
-          ${warningHtml}
-        </div>
-      ` : ''}
-      
-      ${otherHtml ? `<div style="margin-bottom:12px;text-align:right">${otherHtml}</div>` : ''}
-      
-      ${bankHtml}
-    </div>
-  `
-}
-
-function generateFooter(tmpl: InvoiceTemplate): string {
-  if (!tmpl.note) return ''
-  return `
-    <div style="padding:20px 28px;border-top:1px solid #e5e7eb">
-      ${formatNoteToHtml(tmpl.note)}
     </div>
   `
 }
 
 // ═══ Main HTML generator ═══
 export function generateInvoiceHTML(inv: Invoice, tmpl: InvoiceTemplate): string {
+  const normTmpl = normalizeInvoiceTemplate(tmpl)
   const { items, total } = computeInvoiceTotal(inv)
   
   let paid = parseFloat(String(inv.paid_amount || inv.partialPaid || 0)) || 0
@@ -355,22 +323,22 @@ export function generateInvoiceHTML(inv: Invoice, tmpl: InvoiceTemplate): string
     }
   }
 
-  const style = getTemplateStyle(tmpl.templateStyle)
+  const style = getTemplateStyle(normTmpl.templateStyle)
 
   let themeContent = ''
   switch (style.key) {
     case 'modern':
-      themeContent = generateModernTheme(inv, tmpl, items, total, paid, remaining)
+      themeContent = generateModernTheme(inv, normTmpl, items, total, paid, remaining)
       break
     case 'minimal':
-      themeContent = generateMinimalTheme(inv, tmpl, items, total, paid, remaining)
+      themeContent = generateMinimalTheme(inv, normTmpl, items, total, paid, remaining)
       break
     case 'classic':
-      themeContent = generateClassicTheme(inv, tmpl, items, total, paid, remaining)
+      themeContent = generateClassicTheme(inv, normTmpl, items, total, paid, remaining)
       break
     case 'shippec':
     default:
-      themeContent = generateShippecTheme(inv, tmpl, items, total, paid, remaining)
+      themeContent = generateShippecTheme(inv, normTmpl, items, total, paid, remaining)
       break
   }
 
