@@ -16,7 +16,7 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -41,54 +41,18 @@ jobs:
         run: |
           test -f dist/index.html
           test -d dist/assets
-
-          echo "Build files:"
+          echo "Production build verified"
           find dist -maxdepth 2 -type f -print
 
-      - name: Install lftp
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lftp
-
-      - name: Deploy to shippeco.com
-        env:
-          FTP_HOST: ${{ secrets.HOSTINGER_FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.HOSTINGER_FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
-        run: |
-          lftp <<EOF
-          set cmd:fail-exit true
-          set ftp:ssl-allow no
-          set ftp:passive-mode true
-          set net:max-retries 3
-          set net:timeout 30
-
-          open -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_HOST"
-
-          echo "FTP root:"
-          cls -la /
-
-          echo "Domains:"
-          cls -la /domains
-
-          echo "Shippeco domain folder:"
-          cls -la /domains/shippeco.com
-
-          echo "Uploading to the real domain document root..."
-
-          mirror \
-            --reverse \
-            --delete \
-            --verbose \
-            --parallel=2 \
-            ./dist/ \
-            /domains/shippeco.com/public_html/
-
-          echo "Final deployed files:"
-          cls -la /domains/shippeco.com/public_html
-
-          echo "Final assets:"
-          cls -la /domains/shippeco.com/public_html/assets
-
-          bye
-          EOF
+      - name: Deploy to Hostinger
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          protocol: ftp
+          port: 21
+          local-dir: ./dist/
+          server-dir: ./domains/shippeco.com/public_html/
+          state-name: .ftp-deploy-shippeco-state.json
+          log-level: verbose
