@@ -55,7 +55,7 @@ function generateShippecTheme(inv: Invoice, tmpl: InvoiceTemplate, items: any[],
       <div><div style="font-size:32px;font-weight:900;color:#111">فاتورة</div></div>
       <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         ${tmpl.logoDataUrl
-          ? `<img src="${tmpl.logoDataUrl}" style="height:60px;object-fit:contain" />`
+          ? `<img src="${tmpl.logoDataUrl}" style="height:75px;max-width:240px;object-fit:contain;margin-bottom:4px" alt="شيب بيك" />`
           : `<div style="font-size:28px;font-weight:900;font-family:'Segoe UI',sans-serif"><span style="color:#2563eb">SHi</span>PP<span style="color:#f59e0b">E</span>C</div>
              <div style="font-size:11px;color:#666;font-weight:700">شيب بيك</div>`
         }
@@ -431,6 +431,24 @@ export async function downloadInvoicePDF(inv: Invoice, tmpl: InvoiceTemplate) {
         }
 
         const fileName = `invoice-${fullInv.invoice_number || fullInv.id}.pdf`
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+
+        if (isIOS) {
+          try {
+            const blob = pdf.output('blob')
+            const file = new File([blob], fileName, { type: 'application/pdf' })
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: fileName,
+              })
+              return
+            }
+          } catch (e) {
+            console.warn('[iOS Share] Native share failed, using pdf.save fallback:', e)
+          }
+        }
+
         pdf.save(fileName)
         return // Success!
     }

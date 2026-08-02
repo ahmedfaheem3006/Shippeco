@@ -40,6 +40,8 @@ export function getPaymentStatusLabel(inv: { status?: string; payment_status?: n
   return { label: 'غير مدفوع', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' }
 }
 
+import { SHIPPEC_LOGO_BASE64 } from './shippecLogoBase64'
+
 /* ── Defaults ── */
 export const defaultInvoiceTemplate: InvoiceTemplate = {
   companyAr: 'شيب بيك - مؤسسة نور. خ. م. آل دهنيم',
@@ -55,7 +57,7 @@ export const defaultInvoiceTemplate: InvoiceTemplate = {
 رقم الآيبان: SA4705000068204783026000
 البنك: مصرف الإنماء
 الاسم التجاري: مؤسسة نور خالد مكي آل دهنيم للخدمات اللوجستية`,
-  logoDataUrl: undefined,
+  logoDataUrl: SHIPPEC_LOGO_BASE64,
   templateStyle: 'shippec',
 }
 
@@ -76,7 +78,7 @@ export function normalizeInvoiceTemplate(raw: any): InvoiceTemplate {
     email: str(raw.email, defaultInvoiceTemplate.email),
     address: str(raw.address, defaultInvoiceTemplate.address),
     note: str(raw.note || raw.footer_text, defaultInvoiceTemplate.note),
-    logoDataUrl: raw.logoDataUrl || raw.logo_url || undefined,
+    logoDataUrl: raw.logoDataUrl || raw.logo_url || SHIPPEC_LOGO_BASE64,
     templateStyle: raw.templateStyle || 'shippec',
   }
 }
