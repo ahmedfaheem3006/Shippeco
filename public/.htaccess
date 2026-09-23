@@ -1,0 +1,26 @@
+# Shippeco SPA (BrowserRouter) fallback for Hostinger (Apache/LiteSpeed).
+# Deployed as-is from Frontend/public/ into dist/ by Vite, then shipped to
+# domains/shippeco.com/public_html/ by the deploy-hostinger workflow.
+#
+# Goal: direct navigation/refresh on app routes (e.g. /dashboard, /invoices,
+# /pay/42) must serve index.html so the SPA can take over routing, while real
+# files (JS/CSS/images, favicon, uploads, etc.) are served normally and never
+# rewritten.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Never touch an existing file or directory (assets, favicon, /assets/*.js…)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else falls back to index.html for the SPA router to handle.
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Fallback for hosts without mod_rewrite: at least route true 404s to the SPA
+# shell instead of Hostinger's default error page, so a direct/refreshed
+# link to an app route still boots the app.
+ErrorDocument 404 /index.html

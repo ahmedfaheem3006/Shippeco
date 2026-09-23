@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import type { SessionUser } from '../utils/models'
 import { readJson, removeKey, storageKeys, writeJson } from '../utils/storage'
+import { disconnectSocket } from '../services/socketClient'
+
+/** Legacy keys from earlier auth implementations — cleared on logout so a
+ *  stale credential from before this fix can never be picked up again. */
+const LEGACY_AUTH_KEYS = ['token', 'auth_token', 'shippec_session'] as const
 
 type AuthState = {
   user: SessionUser | null
@@ -34,9 +39,19 @@ export const useAuthStore = create<AuthState>((set) => {
       if (typeof sessionStorage !== 'undefined') {
         removeKey(storageKeys.session, sessionStorage)
         sessionStorage.removeItem('auth_token')
+        LEGACY_AUTH_KEYS.forEach((key) => sessionStorage.removeItem(key))
       }
+      // Clear any credential a previous build may have left in localStorage
+      // (e.g. services/http.ts used to read localStorage/token) without
+      // touching unrelated persisted data (theme, settings, WA templates...).
+      if (typeof localStorage !== 'undefined') {
+        LEGACY_AUTH_KEYS.forEach((key) => localStorage.removeItem(key))
+      }
+      disconnectSocket()
       set({ user: null, token: null })
-      window.location.href = '/login'
+      // Full reload + history replacement: guarantees in-memory app state
+      // (including protected page data) is gone and Back cannot return to it.
+      window.location.replace('/login')
     },
   }
 })

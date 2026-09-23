@@ -5,7 +5,7 @@ export interface User {
   email: string;
   full_name: string;
   phone?: string;
-  role: 'admin' | 'employee' | 'accountant' | 'viewer';
+  role: 'admin' | 'manager' | 'employee' | 'accountant' | 'viewer';
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason?: string;
   created_at: string;
@@ -14,27 +14,22 @@ export interface User {
 }
 
 export const usersService = {
+  // NOTE: this used to swallow every failure into an empty array, which
+  // made a real fetch error indistinguishable from "there are no users" —
+  // callers need to see the failure to keep showing the last-known list
+  // instead of silently wiping it. Let errors propagate.
   getUsers: async (): Promise<User[]> => {
-    try {
-      const result = await api.get<any>('/users');
-      if (Array.isArray(result)) return result;
-      if (result && Array.isArray(result.data)) return result.data;
-      return [];
-    } catch {
-      console.warn('[Users] Failed to fetch users');
-      return [];
-    }
+    const result = await api.get<any>('/users');
+    if (Array.isArray(result)) return result;
+    if (result && Array.isArray(result.data)) return result.data;
+    return [];
   },
 
   getPendingUsers: async (): Promise<User[]> => {
-    try {
-      const result = await api.get<any>('/users/pending');
-      if (Array.isArray(result)) return result;
-      if (result && Array.isArray(result.data)) return result.data;
-      return [];
-    } catch {
-      return [];
-    }
+    const result = await api.get<any>('/users/pending');
+    if (Array.isArray(result)) return result;
+    if (result && Array.isArray(result.data)) return result.data;
+    return [];
   },
 
   approveUser: async (id: number): Promise<User> => {

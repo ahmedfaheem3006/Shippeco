@@ -100,7 +100,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('invoice row operations behave like legacy', async ({ page }) => {
-  await page.goto('/#/invoices')
+  await page.goto('/invoices')
 
   const row = page.locator('tr', { hasText: '#123' })
   await expect(row).toBeVisible()

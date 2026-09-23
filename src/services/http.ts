@@ -1,3 +1,5 @@
+import { useAuthStore } from '../hooks/useAuthStore'
+
 export type HttpErrorInfo = {
   status: number
   url: string
@@ -22,7 +24,10 @@ export type RequestOptions = {
 }
 
 export async function requestJson<T>(url: string, options: RequestOptions = {}): Promise<T> {
-  const token = localStorage.getItem('token')
+  // Single source of truth for the auth token (matches utils/apiClient.ts) —
+  // this used to read localStorage/token, a key the app never actually wrote,
+  // so these requests were silently sent unauthenticated.
+  const token = useAuthStore.getState().token
   const headers: Record<string, string> = {
     Accept: 'application/json',
     ...(options.body ? { 'Content-Type': 'application/json' } : undefined),

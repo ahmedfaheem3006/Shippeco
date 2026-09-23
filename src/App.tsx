@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout/AppLayout'
 import { AuditLogPage } from './pages/AuditLogPage'
 import { CalculatorPage } from './pages/CalculatorPage'
@@ -107,7 +107,7 @@ function App() {
           </div>
         )}
       </Toaster>
-      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/pay/:id" element={<PublicPayPage />} />
@@ -139,7 +139,7 @@ function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   </SocketProvider>
   )
 }
