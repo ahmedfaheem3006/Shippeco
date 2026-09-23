@@ -17,15 +17,29 @@ import {
 /* ═══ Role & Status Configs ═══ */
 const ROLE_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
   admin:      { label: 'مدير النظام',   icon: Crown,    color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/30 dark:text-amber-400' },
+  manager:    { label: 'مدير فرعي',     icon: Shield,   color: 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800/30 dark:text-purple-400' },
   accountant: { label: 'محاسب',         icon: Briefcase, color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800/30 dark:text-blue-400' },
   employee:   { label: 'موظف مبيعات',   icon: User,     color: 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/30 dark:text-green-400' },
   viewer:     { label: 'مشاهد فقط',     icon: Eye,      color: 'text-slate-600 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-slate-400' },
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+/* Single source of truth for an account's displayed state — never combine
+   two of these on the same card (e.g. an approved-but-disabled account
+   must show ONLY "معطّل", not "مفعّل" + "معطّل" side by side). */
+type AccountDisplayState = 'pending' | 'rejected' | 'disabled' | 'active';
+
+function accountDisplayState(status: string, isActive: boolean): AccountDisplayState {
+  if (status === 'pending') return 'pending';
+  if (status === 'rejected') return 'rejected';
+  if (!isActive) return 'disabled';
+  return 'active';
+}
+
+const STATUS_CONFIG: Record<AccountDisplayState, { label: string; color: string; icon: any }> = {
   pending:  { label: 'بانتظار الموافقة', color: 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-700/30', icon: Shield },
-  approved: { label: 'مفعّل',           color: 'text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-700/30', icon: CheckCircle2 },
   rejected: { label: 'مرفوض',           color: 'text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-700/30', icon: Ban },
+  disabled: { label: 'معطّل',           color: 'text-orange-700 bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-700/30', icon: Power },
+  active:   { label: 'مفعّل',           color: 'text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-700/30', icon: CheckCircle2 },
 };
 
 function RoleBadge({ role }: { role: string }) {
@@ -38,8 +52,8 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const info = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
+function StatusBadge({ status, isActive }: { status: string; isActive: boolean }) {
+  const info = STATUS_CONFIG[accountDisplayState(status, isActive)];
   const Icon = info.icon;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${info.color}`}>
@@ -57,6 +71,22 @@ function RoleDropdown({ user, onChangeRole, disabled }: {
   const btnRef = React.useRef<HTMLButtonElement>(null);
   const currentUser = useAuthStore((s) => s.user);
 
+  // Close on scroll — every hook above/below must run on every render, so
+  // this stays before any early return (was previously placed after two
+  // conditional `return null`s, violating the Rules of Hooks whenever this
+  // component rendered for the current user or a non-approved account).
+  React.useEffect(() => {
+    if (!open) return;
+    const handleScroll = () => setOpen(false);
+    const handleResize = () => setOpen(false);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [open]);
+
   if (user.id === (currentUser as any)?.id) return null;
   if (user.status !== 'approved') return null;
 
@@ -70,19 +100,6 @@ function RoleDropdown({ user, onChangeRole, disabled }: {
     }
     setOpen(!open);
   };
-
-  // Close on scroll
-  React.useEffect(() => {
-    if (!open) return;
-    const handleScroll = () => setOpen(false);
-    const handleResize = () => setOpen(false);
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [open]);
 
   return (
     <div className="relative">
@@ -147,6 +164,8 @@ function UserCard({ user, st }: { user: UserRecord; st: ReturnType<typeof useSet
   const isRejected = user.status === 'rejected';
   const isPending = user.status === 'pending';
   const isActive = (user as any).is_active !== false;
+  const rowPending = user.id != null && st.isUserPending(user.id);
+  const rowDisabled = st.loading || rowPending;
 
   return (
     <div className={`flex flex-col gap-3 p-4 rounded-2xl border transition-all ${
@@ -172,12 +191,7 @@ function UserCard({ user, st }: { user: UserRecord; st: ReturnType<typeof useSet
                 {user.name} {isSelf && <span className="text-[10px] text-indigo-500">(أنت)</span>}
               </span>
               <RoleBadge role={user.role} />
-              <StatusBadge status={user.status || 'approved'} />
-              {!isActive && user.status === 'approved' && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/30">
-                  <Power size={10} /> معطّل
-                </span>
-              )}
+              <StatusBadge status={user.status || 'approved'} isActive={isActive} />
             </div>
             <div className="font-mono text-[11px] text-gray-500 dark:text-gray-400 truncate">{user.username}</div>
             {(user as any).last_login && (
@@ -192,30 +206,38 @@ function UserCard({ user, st }: { user: UserRecord; st: ReturnType<typeof useSet
           {/* Toggle Active */}
           {!isSelf && user.status === 'approved' && (
             <button type="button"
-              className={`p-2 rounded-lg transition-colors border ${
+              className={`p-2 rounded-lg transition-colors border disabled:opacity-50 ${
                 isActive
                   ? 'text-orange-500 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/30 hover:bg-orange-100'
                   : 'text-green-500 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/30 hover:bg-green-100'
               }`}
               onClick={() => user.id && st.handleToggleActive(user.id, isActive)}
-              disabled={st.loading || st.saving}
+              disabled={rowDisabled}
               title={isActive ? 'تعطيل الحساب' : 'تفعيل الحساب'}>
-              <Power size={16} />
+              {rowPending ? <Loader2 size={16} className="animate-spin" /> : <Power size={16} />}
             </button>
           )}
 
-          {/* Delete */}
+          {/* Permanent delete */}
           {!isSelf && (
             <button type="button"
-              className="p-2 text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg transition-colors border border-transparent hover:border-red-200 dark:hover:border-red-800/30"
+              className="p-2 text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg transition-colors border border-transparent hover:border-red-200 dark:hover:border-red-800/30 disabled:opacity-50"
               onClick={() => {
-                if (window.confirm(`تأكيد حذف "${user.name}"؟ لا يمكن التراجع.`)) {
+                const confirmed = window.confirm(
+                  [
+                    `حذف الحساب "${user.name}" (${user.username}) نهائياً؟`,
+                    '',
+                    '⚠️ هذا الإجراء لا يمكن التراجع عنه — لن تتم استعادة الحساب عبر "إعادة التفعيل"، ويجب تسجيله من جديد إن لزم.',
+                    'سجل الفواتير والعملاء والمدفوعات وسجل العمليات المرتبط بهذا المستخدم يبقى محفوظاً بالكامل.',
+                  ].join('\n')
+                );
+                if (confirmed) {
                   user.id && st.handleDelete(user.id);
                 }
               }}
-              disabled={st.loading || st.saving}
-              title="حذف الحساب">
-              <Trash2 size={16} />
+              disabled={rowDisabled}
+              title="حذف الحساب نهائياً">
+              {rowPending ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
             </button>
           )}
         </div>
@@ -226,26 +248,26 @@ function UserCard({ user, st }: { user: UserRecord; st: ReturnType<typeof useSet
         {isPending && (
           <>
             <button type="button"
-              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm"
-              onClick={() => user.id && st.handleApprove(user.id)} disabled={st.loading || st.saving}>
-              <CheckCircle2 size={14} /> قبول
+              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+              onClick={() => user.id && st.handleApprove(user.id)} disabled={rowDisabled}>
+              {rowPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} قبول
             </button>
             <button type="button"
-              className="flex items-center gap-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/30 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors"
-              onClick={() => user.id && st.handleReject(user.id)} disabled={st.loading || st.saving}>
+              className="flex items-center gap-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/30 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+              onClick={() => user.id && st.handleReject(user.id)} disabled={rowDisabled}>
               <X size={14} /> رفض
             </button>
           </>
         )}
         {isRejected && (
           <button type="button"
-            className="flex items-center gap-1 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800/30 hover:bg-green-100 rounded-lg text-xs font-bold transition-colors"
-            onClick={() => user.id && st.handleApprove(user.id)} disabled={st.loading || st.saving}>
-            <CheckCircle2 size={14} /> إعادة القبول
+            className="flex items-center gap-1 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800/30 hover:bg-green-100 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+            onClick={() => user.id && st.handleApprove(user.id)} disabled={rowDisabled}>
+            {rowPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} إعادة القبول
           </button>
         )}
         {!isPending && !isRejected && (
-          <RoleDropdown user={user} onChangeRole={st.handleChangeRole} disabled={st.loading || st.saving} />
+          <RoleDropdown user={user} onChangeRole={st.handleChangeRole} disabled={rowDisabled} />
         )}
       </div>
     </div>
@@ -474,13 +496,28 @@ export function SettingsPage() {
               <span className="text-xs font-bold text-gray-400 bg-gray-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg">{st.users.length} مستخدم</span>
             </div>
 
+            {st.usersError && (
+              <div className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-200 dark:border-red-800/30 flex items-center gap-2">
+                <AlertCircle size={16} /> تعذر تحديث قائمة المستخدمين — القائمة المعروضة قد لا تكون محدّثة ({st.usersError})
+              </div>
+            )}
+
             <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto pr-1">
-              {st.loading ? (
+              {st.users.length ? (
+                // Keep showing the last-known list during a background
+                // refresh/mutation instead of blanking it out — a spinner
+                // here would make every approve/reject/delete feel like it
+                // wiped the screen.
+                st.users.map((u) => <UserCard key={u.id || u.username} user={u} st={st} />)
+              ) : st.loading || !st.usersLoadedOnce ? (
                 <div className="flex items-center justify-center p-8 text-gray-400">
                   <Loader2 size={24} className="animate-spin" />
                 </div>
-              ) : st.users.length ? (
-                st.users.map((u) => <UserCard key={u.id || u.username} user={u} st={st} />)
+              ) : st.usersError ? (
+                <div className="flex flex-col items-center justify-center p-8 text-red-500 dark:text-red-400 border border-dashed border-red-200 dark:border-red-800/30 rounded-xl">
+                  <AlertCircle size={32} className="mb-2 opacity-50" />
+                  <span className="text-sm font-bold">تعذر تحميل قائمة المستخدمين</span>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center p-8 text-gray-500 dark:text-gray-400 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl">
                   <Users size={32} className="mb-2 opacity-30" />

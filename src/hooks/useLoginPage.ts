@@ -47,18 +47,23 @@ export function useLoginPage() {
       }
 
       const { user, token } = response
-      setUser({ 
-        id: user.id, 
-        username: user.email, 
-        name: user.full_name || user.name, 
-        role: user.role, 
-        status: user.status 
-      }, token)
-      
+
+      // Validate eligibility BEFORE persisting any session/token state —
+      // the backend already rejects non-approved logins before issuing a
+      // token, but we don't trust that alone: never let a partially-valid
+      // response leave the app looking logged in.
       if (user.status !== 'approved') {
-         setError('حسابك قيد المراجعة أو معطل، يرجى التواصل مع الإدارة')
-         return 
+        setError('حسابك قيد المراجعة أو معطل، يرجى التواصل مع الإدارة')
+        return
       }
+
+      setUser({
+        id: user.id,
+        username: user.email,
+        name: user.full_name || user.name,
+        role: user.role,
+        status: user.status
+      }, token)
 
       nav('/dashboard', { replace: true })
     } catch (e: any) {

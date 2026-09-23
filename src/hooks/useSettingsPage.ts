@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { settingsService } from '../services/settingsService';
 import { pingPaymobWorker } from '../services/paymobService';
 import { usersService, type User } from '../services/usersService';
@@ -35,6 +35,7 @@ export function useSettingsPage() {
   const setStoreSettings = useSettingsStore((s) => s.setSettings);
 
   const [loading, setLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -42,6 +43,37 @@ export function useSettingsPage() {
   const [settings, setSettingsRaw] = useState<PlatformSettings>(DEFAULT_SETTINGS);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [rawUsers, setRawUsers] = useState<User[]>([]);
+  const [usersLoadedOnce, setUsersLoadedOnce] = useState(false);
+
+  // Per-user in-flight actions — lets the UI disable/spin only the row being
+  // mutated instead of freezing the entire list, and blocks a second click
+  // on the same user while the first request is still pending.
+  //
+  // The membership check below has to be against a plain ref mutated
+  // synchronously and immediately, NOT a value derived from React state:
+  // two clicks fired in the same tick (fast double-click, or two calls
+  // before React has re-rendered) would otherwise both read the same
+  // not-yet-updated state snapshot and both slip through. `pendingVersion`
+  // exists only to make components re-render when membership changes.
+  const pendingRef = useRef<Set<number>>(new Set());
+  const [, setPendingVersion] = useState(0);
+
+  // Not memoized on purpose: it must always read the live ref, and the
+  // membership check itself is cheap enough that wrapping it in
+  // useCallback would only add a stale-closure risk for no benefit.
+  const isUserPending = (id: number) => pendingRef.current.has(id);
+
+  const withUserPending = useCallback(async (id: number, action: () => Promise<void>) => {
+    if (pendingRef.current.has(id)) return; // duplicate submission guard
+    pendingRef.current.add(id);
+    setPendingVersion((v) => v + 1);
+    try {
+      await action();
+    } finally {
+      pendingRef.current.delete(id);
+      setPendingVersion((v) => v + 1);
+    }
+  }, []);
 
   const [connPaymob, setConnPaymob] = useState<{ ok: boolean; text: string } | null>(null);
   const [connDaftra, setConnDaftra] = useState<{ ok: boolean; text: string } | null>(null);
@@ -108,6 +140,9 @@ export function useSettingsPage() {
       }
 
       // ── Process users ──
+      // Keep the last-known list on failure instead of wiping it to an
+      // empty array — an empty list must only ever mean "there really are
+      // no users", never "the request failed".
       if (usersResult.status === 'fulfilled') {
         const fetchedUsers: User[] = usersResult.value || [];
         setRawUsers(fetchedUsers);
@@ -124,9 +159,14 @@ export function useSettingsPage() {
           created_at: u.created_at,
         } as UserRecord & { is_active?: boolean; phone?: string; last_login?: string; created_at?: string }));
         setUsers(formattedUsers);
+        setUsersError(null);
       } else {
-        setUsers([]);
+        console.error('[Settings] Failed to load users:', usersResult.reason);
+        setUsersError(
+          usersResult.reason instanceof Error ? usersResult.reason.message : 'تعذر تحميل قائمة المستخدمين'
+        );
       }
+      setUsersLoadedOnce(true);
 
       // ── Process sync info (Only if not already set, to keep it stable) ──
       if (!syncInfo && syncResult.status === 'fulfilled' && syncResult.value) {
@@ -172,47 +212,51 @@ export function useSettingsPage() {
     }
   }, [setStoreSettings, settings]);
 
-  /* ── User actions ── */
-  const handleApprove = useCallback(async (id: number) => {
-    setSaving(true); setError(null); setStatus(null);
+  /* ── User actions ──
+     Each is guarded by withUserPending(id, ...): a per-row pending flag
+     (not the global `saving`) so mutating one user doesn't freeze the rest
+     of the list, and a second click on the same row while a request is
+     still in flight is simply ignored instead of firing a duplicate call. */
+  const handleApprove = useCallback((id: number) => withUserPending(id, async () => {
+    setError(null); setStatus(null);
     try {
       await usersService.approveUser(id);
       await refresh();
       setStatus('✅ تم قبول المستخدم بنجاح');
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل قبول المستخدم'); }
-    finally { setSaving(false); }
-  }, [refresh]);
+  }), [refresh, withUserPending]);
 
-  const handleReject = useCallback(async (id: number, reason = 'تعذر القبول') => {
-    setSaving(true); setError(null); setStatus(null);
+  const handleReject = useCallback((id: number, reason = 'تعذر القبول') => withUserPending(id, async () => {
+    setError(null); setStatus(null);
     try {
       await usersService.rejectUser(id, reason);
       await refresh();
       setStatus('تم رفض المستخدم');
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل رفض المستخدم'); }
-    finally { setSaving(false); }
-  }, [refresh]);
+  }), [refresh, withUserPending]);
 
-  const handleDelete = useCallback(async (id: number) => {
-    setSaving(true); setError(null); setStatus(null);
+  const handleDelete = useCallback((id: number) => withUserPending(id, async () => {
+    setError(null); setStatus(null);
     try {
       await usersService.deleteUser(id);
+      // Only drop the row from local state after the server confirms the
+      // deletion succeeded — refresh() re-fetches the authoritative list.
       await refresh();
-      setStatus('✅ تم حذف المستخدم');
+      setStatus('✅ تم حذف المستخدم نهائياً');
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل حذف المستخدم'); }
-    finally { setSaving(false); }
-  }, [refresh]);
+  }), [refresh, withUserPending]);
 
-  const handleChangeRole = useCallback(async (id: number, role: string) => {
-    setSaving(true); setError(null); setStatus(null);
+  const handleChangeRole = useCallback((id: number, role: string) => withUserPending(id, async () => {
+    setError(null); setStatus(null);
     try {
       await usersService.changeRole(id, role);
       await refresh();
       const roleNames: Record<string, string> = {
         admin: 'مدير النظام',
+        manager: 'مدير فرعي',
         accountant: 'محاسب',
         employee: 'موظف مبيعات',
         viewer: 'مشاهد فقط',
@@ -220,35 +264,34 @@ export function useSettingsPage() {
       setStatus(`✅ تم تغيير الدور إلى ${roleNames[role] || role}`);
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل تغيير الدور'); }
-    finally { setSaving(false); }
-  }, [refresh]);
+  }), [refresh, withUserPending]);
 
-  const handleToggleActive = useCallback(async (id: number, currentlyActive: boolean) => {
-    setSaving(true); setError(null); setStatus(null);
+  const handleToggleActive = useCallback((id: number, currentlyActive: boolean) => withUserPending(id, async () => {
+    setError(null); setStatus(null);
     try {
       if (currentlyActive) {
         await usersService.deactivateUser(id);
-        setStatus('تم تعطيل الحساب');
       } else {
         await usersService.activateUser(id);
-        setStatus('✅ تم تفعيل الحساب');
       }
+      // IMPORTANT: refresh() resets `status` to null at its start, so the
+      // success message must be set AFTER it resolves — setting it before
+      // (as this used to) meant it was cleared before ever being shown.
       await refresh();
+      setStatus(currentlyActive ? 'تم تعطيل الحساب' : '✅ تم تفعيل الحساب');
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل تحديث الحالة'); }
-    finally { setSaving(false); }
-  }, [refresh]);
+  }), [refresh, withUserPending]);
 
-  const handleUpdateUser = useCallback(async (id: number, data: { full_name?: string; email?: string; phone?: string }) => {
-    setSaving(true); setError(null); setStatus(null);
+  const handleUpdateUser = useCallback((id: number, data: { full_name?: string; email?: string; phone?: string }) => withUserPending(id, async () => {
+    setError(null); setStatus(null);
     try {
       await usersService.updateUser(id, data);
       await refresh();
       setStatus('✅ تم تحديث البيانات');
       setTimeout(() => setStatus(null), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل تحديث البيانات'); }
-    finally { setSaving(false); }
-  }, [refresh]);
+  }), [refresh, withUserPending]);
 
   /* ── Manual sync ── */
   const triggerManualSync = useCallback(async () => {
@@ -278,7 +321,7 @@ export function useSettingsPage() {
 
   /* ── Sort users ── */
   const sortedUsers = useMemo(() => {
-    const rank: Record<string, number> = { admin: 0, accountant: 1, employee: 2, viewer: 3 };
+    const rank: Record<string, number> = { admin: 0, manager: 1, accountant: 2, employee: 3, viewer: 4 };
     const statusRank: Record<string, number> = { pending: 0, approved: 1, rejected: 2 };
     return [...users].sort((a, b) => {
       const s = (statusRank[a.status || 'approved'] ?? 99) - (statusRank[b.status || 'approved'] ?? 99);
@@ -327,6 +370,7 @@ export function useSettingsPage() {
     settings, setSettings,
     refresh, savePlatformSettings,
     users: sortedUsers, rawUsers,
+    usersError, usersLoadedOnce, isUserPending,
     handleApprove, handleReject, handleDelete,
     handleChangeRole, handleToggleActive, handleUpdateUser,
     triggerManualSync, syncInfo,

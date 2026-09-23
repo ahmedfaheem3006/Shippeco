@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { env } from '../utils/env';
+import type { Socket } from 'socket.io-client';
+import { connectSocket, disconnectSocket } from '../services/socketClient';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { toast } from 'react-hot-toast';
 
@@ -17,13 +17,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const token = useAuthStore(s => s.token);
+  const logout = useAuthStore(s => s.logout);
 
   useEffect(() => {
-    // Initialize socket connection
-    const socketInstance = io(env.apiUrl.replace('/api', ''), {
-      auth: { token },
-      transports: ['websocket', 'polling']
-    });
+    const socketInstance = connectSocket(token);
 
     socketInstance.on('connect', () => {
       console.log('[Socket] Connected to server');
@@ -42,16 +39,35 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         position: 'top-center',
         icon: '💰'
       });
-      
+
       // We can use a global event bus or just rely on components listening for INVOICE_UPDATED
+    });
+
+    // Server pushes this when an admin disables/deletes this account, or the
+    // account otherwise loses access — end the session immediately instead
+    // of waiting for the next API call to bounce with a 401.
+    socketInstance.on('session:revoked', (data: { reason?: string; message?: string } = {}) => {
+      console.log('[Socket] Session revoked by server:', data);
+      if (data.message) {
+        toast.error(data.message, { duration: 8000 });
+      }
+      logout();
     });
 
     setSocket(socketInstance);
 
     return () => {
-      socketInstance.disconnect();
+      socketInstance.off('PAYMENT_SUCCESS');
+      socketInstance.off('session:revoked');
+      socketInstance.off('connect');
+      socketInstance.off('disconnect');
     };
-  }, [token]);
+  }, [token, logout]);
+
+  // Only ever tear the underlying connection down when the whole app
+  // unmounts — token changes above should reuse/reauthenticate it, not
+  // recreate it, since logout() is responsible for calling disconnectSocket().
+  useEffect(() => () => disconnectSocket(), []);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>

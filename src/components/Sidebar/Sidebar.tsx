@@ -126,7 +126,7 @@ export function Sidebar({ onNavigate }: Props) {
             </div>
           </div>
           <button
-            onClick={() => { logout(); go('/login'); }}
+            onClick={() => logout()}
             className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
             title="تسجيل الخروج"
           >
