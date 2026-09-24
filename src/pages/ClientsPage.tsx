@@ -8,6 +8,7 @@ import type { ClientRecord, ClientProfileInvoice } from "../services/dbService";
 import { openWhatsApp } from "../utils/whatsapp";
 import { createPaymentLink } from "../services/paymobService";
 import { downloadInvoicePDF } from "../utils/pdfGenerator";
+import { loadPdfExportLibs } from "../utils/loadPdfExportLibs";
 import { useSettingsStore } from "../hooks/useSettingsStore";
 import {
   Users,
@@ -290,6 +291,7 @@ async function generateUnpaidClientPDF(
 
   // --- Direct Download via html2canvas ---
   try {
+    await loadPdfExportLibs();
     const html2canvas = (window as any).html2canvas;
     const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF;
 
@@ -466,6 +468,7 @@ async function generateSelectedInvoicesPDF(
 </html>`;
 
   try {
+    await loadPdfExportLibs();
     const html2canvas = (window as any).html2canvas;
     const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF;
 
@@ -698,6 +701,7 @@ async function generateClientPDF(
 
   // --- Direct Download via html2canvas ---
   try {
+    await loadPdfExportLibs();
     const html2canvas = (window as any).html2canvas;
     const jspdf = (window as any).jspdf?.jsPDF || (window as any).jsPDF;
 
@@ -706,7 +710,7 @@ async function generateClientPDF(
       container.style.position = 'fixed';
       container.style.left = '-9999px';
       container.style.top = '0';
-      container.style.width = '794px'; 
+      container.style.width = '794px';
       container.innerHTML = html;
       document.body.appendChild(container);
 

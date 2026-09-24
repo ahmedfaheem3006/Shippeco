@@ -10,6 +10,7 @@ import {
   getTemplateStyle,
   normalizeInvoiceTemplate,
 } from './invoiceTemplate'
+import { loadPdfExportLibs } from './loadPdfExportLibs'
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -596,7 +597,7 @@ export async function shareInvoiceWhatsApp(inv: Invoice, tmpl: InvoiceTemplate) 
 // ═══ Helper: HTML to Canvas (for mobile PDF sharing) ═══
 async function htmlToCanvas(html: string): Promise<HTMLCanvasElement | null> {
   try {
-    // Try to use html2canvas if available
+    await loadPdfExportLibs()
     const html2canvas = (window as any).html2canvas
     if (!html2canvas) return null
 

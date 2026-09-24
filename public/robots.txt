@@ -1,0 +1,10 @@
+# Crawling is allowed everywhere. Pages that must not be indexed (login,
+# dashboard, invoices, clients, reports, settings, payment links, etc.) are
+# excluded via an HTTP `X-Robots-Tag: noindex` header + <meta
+# name="robots" content="noindex"> instead of Disallow here — that way
+# crawlers can still fetch them and see the noindex signal, rather than only
+# ever reporting them as "blocked by robots.txt". See public/.htaccess.
+User-agent: *
+Allow: /
+
+Sitemap: https://shippeco.com/sitemap.xml

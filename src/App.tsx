@@ -1,28 +1,44 @@
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout/AppLayout'
-import { AuditLogPage } from './pages/AuditLogPage'
-import { CalculatorPage } from './pages/CalculatorPage'
-import { ClientsPage } from './pages/ClientsPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { InvoiceTemplatePage } from './pages/InvoiceTemplatePage'
-import { InvoicesPage } from './pages/InvoicesPage'
-import { NewInvoicePage } from './pages/NewInvoicePage'
-import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { PaymobLinksPage } from './pages/PaymobLinksPage'
-import { ProfitReportPage } from './pages/ProfitReportPage'
-import { ReconcilePage } from './pages/ReconcilePage'
-import { ReportsPage } from './pages/ReportsPage'
-import { SettingsPage } from './pages/SettingsPage'
-import { WaTemplatesPage } from './pages/WaTemplatesPage'
-import { TasksPage } from './pages/TasksPage'
-import { CollectionModelPage } from './pages/CollectionModelPage'
-import { ExpensesPage } from './pages/ExpensesPage'
 import { useAuthStore } from './hooks/useAuthStore'
 import { SocketProvider } from './contexts/SocketContext'
 import { Toaster } from 'react-hot-toast'
-import { PublicPayPage } from './pages/PublicPayPage'
+import { PublicHomePage } from './pages/PublicHomePage'
+
+// Route-level code splitting: the public homepage ("/") — the one page a
+// crawler or a first-time visitor actually loads cold — has no business
+// paying for the entire authenticated app's JS (every page, every modal,
+// every service) just to paint. Everything below is fetched only once its
+// own route is actually visited. Named exports, so each needs its own
+// `.then()` mapped to `default` for React.lazy().
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage').then((m) => ({ default: m.AuditLogPage })))
+const CalculatorPage = lazy(() => import('./pages/CalculatorPage').then((m) => ({ default: m.CalculatorPage })))
+const ClientsPage = lazy(() => import('./pages/ClientsPage').then((m) => ({ default: m.ClientsPage })))
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
+const InvoiceTemplatePage = lazy(() => import('./pages/InvoiceTemplatePage').then((m) => ({ default: m.InvoiceTemplatePage })))
+const InvoicesPage = lazy(() => import('./pages/InvoicesPage').then((m) => ({ default: m.InvoicesPage })))
+const NewInvoicePage = lazy(() => import('./pages/NewInvoicePage').then((m) => ({ default: m.NewInvoicePage })))
+const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })))
+const PaymobLinksPage = lazy(() => import('./pages/PaymobLinksPage').then((m) => ({ default: m.PaymobLinksPage })))
+const ProfitReportPage = lazy(() => import('./pages/ProfitReportPage').then((m) => ({ default: m.ProfitReportPage })))
+const ReconcilePage = lazy(() => import('./pages/ReconcilePage').then((m) => ({ default: m.ReconcilePage })))
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const WaTemplatesPage = lazy(() => import('./pages/WaTemplatesPage').then((m) => ({ default: m.WaTemplatesPage })))
+const TasksPage = lazy(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })))
+const CollectionModelPage = lazy(() => import('./pages/CollectionModelPage').then((m) => ({ default: m.CollectionModelPage })))
+const ExpensesPage = lazy(() => import('./pages/ExpensesPage').then((m) => ({ default: m.ExpensesPage })))
+const PublicPayPage = lazy(() => import('./pages/PublicPayPage').then((m) => ({ default: m.PublicPayPage })))
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[40vh]">
+      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user)
@@ -108,7 +124,9 @@ function App() {
         )}
       </Toaster>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
+        <Route path="/" element={<PublicHomePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/pay/:id" element={<PublicPayPage />} />
 
@@ -119,7 +137,6 @@ function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/new-invoice" element={<NewInvoicePage />} />
@@ -136,9 +153,15 @@ function App() {
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/wa-templates" element={<WaTemplatesPage />} />
           <Route path="/tasks" element={<TasksPage />} />
-          <Route path="*" element={<NotFoundPage />} />
         </Route>
+
+        {/* Top-level catch-all: an unmatched path shows a real "not found"
+            page for everyone, instead of the previous behavior of bouncing
+            unauthenticated visitors to /login (a soft-404 that also hides
+            genuine 404s from search engines). */}
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   </SocketProvider>
   )

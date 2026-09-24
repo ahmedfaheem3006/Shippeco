@@ -10,6 +10,11 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/',
     plugins: [react()],
+    build: {
+      // Needed by scripts/prerender.mjs to resolve hashed asset URLs
+      // (e.g. the logo) when it bundles PublicHomePage.tsx separately.
+      manifest: true,
+    },
     server: {
       proxy: {
         '/db': {

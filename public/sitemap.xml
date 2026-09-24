@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Lists only the public, indexable pages. Deliberately excludes /login,
+  /dashboard and every other authenticated app route, /pay/:id payment
+  links, and anything client/invoice/report-specific — none of that is
+  meant to be indexed (see public/.htaccess and public/robots.txt).
+
+  There is currently exactly one public page. Add an <url> entry here (and
+  a matching route in Frontend/scripts/prerender.mjs) if/when more public,
+  content-distinct marketing pages are added — see the SEO report for why
+  no additional service/city pages were created yet (not enough real,
+  page-specific content to avoid duplicate/thin pages).
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://shippeco.com/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

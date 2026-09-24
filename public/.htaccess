@@ -1,26 +1,50 @@
-# Shippeco SPA (BrowserRouter) fallback for Hostinger (Apache/LiteSpeed).
+# Shippeco SPA (BrowserRouter) fallback + SEO rules for Hostinger (Apache/LiteSpeed).
 # Deployed as-is from Frontend/public/ into dist/ by Vite, then shipped to
 # domains/shippeco.com/public_html/ by the deploy-hostinger workflow.
 #
-# Goal: direct navigation/refresh on app routes (e.g. /dashboard, /invoices,
-# /pay/42) must serve index.html so the SPA can take over routing, while real
-# files (JS/CSS/images, favicon, uploads, etc.) are served normally and never
-# rewritten.
+# Two HTML shells ship in dist/, both produced by the build (vite build +
+# scripts/prerender.mjs):
+#   - index.html — prerendered public marketing homepage ("/"), real content
+#     in the HTML, indexable. Served directly since it IS the literal file
+#     Apache resolves for "/" — no rewrite involved.
+#   - app.html   — the plain SPA shell (empty #root) used by every other
+#     (authenticated) app route. Real files (JS/CSS/images/favicons/etc.)
+#     are always served as-is and never rewritten.
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # Tag non-indexable app paths with an env var BEFORE any [L] (last-rule)
+  # match below fires, so mod_headers can still read it further down —
+  # applies whether the request ends up served as app.html or (for /pay/:id
+  # payment callbacks etc.) any real file under that path.
+  RewriteCond %{REQUEST_URI} ^/(login|dashboard|invoices|new-invoice|reports|clients|collection-model|expenses|calculator|reconcile|invoice-template|paymob-links|settings|profit-report|audit-log|wa-templates|tasks|pay)(/|$) [NC]
+  RewriteRule ^ - [E=SHIPPECO_NOINDEX:1]
 
   # Never touch an existing file or directory (assets, favicon, /assets/*.js…)
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Everything else falls back to index.html for the SPA router to handle.
-  RewriteRule ^ index.html [L]
+  # Everything else falls back to the plain SPA shell for the router to
+  # handle client-side (login, dashboard, invoices, /pay/:id, 404s...).
+  RewriteRule ^ app.html [L]
 </IfModule>
 
 # Fallback for hosts without mod_rewrite: at least route true 404s to the SPA
 # shell instead of Hostinger's default error page, so a direct/refreshed
 # link to an app route still boots the app.
-ErrorDocument 404 /index.html
+ErrorDocument 404 /app.html
+
+# ── noindex for the authenticated app ──
+# The app shell (app.html) already carries <meta name="robots"
+# content="noindex, nofollow">, which is enough for a normal crawl. This
+# header is defense-in-depth for clients that only honor HTTP headers (some
+# non-HTML fetchers, link-preview bots, etc.). It intentionally does NOT
+# rely on robots.txt Disallow — Google must still be able to crawl these
+# paths to see the noindex signal, otherwise it can only report them as
+# "blocked by robots.txt" and may keep an old URL indexed forever.
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow" env=SHIPPECO_NOINDEX
+</IfModule>
