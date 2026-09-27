@@ -31,6 +31,7 @@ const TasksPage = lazy(() => import('./pages/TasksPage').then((m) => ({ default:
 const CollectionModelPage = lazy(() => import('./pages/CollectionModelPage').then((m) => ({ default: m.CollectionModelPage })))
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage').then((m) => ({ default: m.ExpensesPage })))
 const PublicPayPage = lazy(() => import('./pages/PublicPayPage').then((m) => ({ default: m.PublicPayPage })))
+const QuoteRequestsPage = lazy(() => import('./pages/QuoteRequestsPage').then((m) => ({ default: m.QuoteRequestsPage })))
 
 function RouteFallback() {
   return (
@@ -46,7 +47,19 @@ function RequireAuth({ children }: { children: ReactNode }) {
   if (!user) {
     return <Navigate to="/login" replace />
   }
-  
+
+  return <>{children}</>
+}
+
+// Same permission the Backend enforces on the quote-requests review
+// endpoints (requireRole('admin', 'manager') in quoteRequests.routes.ts).
+function RequireAdminOrManager({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user)
+
+  if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+    return <Navigate to="/dashboard" replace />
+  }
+
   return <>{children}</>
 }
 
@@ -153,6 +166,14 @@ function App() {
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/wa-templates" element={<WaTemplatesPage />} />
           <Route path="/tasks" element={<TasksPage />} />
+          <Route
+            path="/quote-requests"
+            element={
+              <RequireAdminOrManager>
+                <QuoteRequestsPage />
+              </RequireAdminOrManager>
+            }
+          />
         </Route>
 
         {/* Top-level catch-all: an unmatched path shows a real "not found"

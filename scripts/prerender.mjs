@@ -18,13 +18,31 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const SITE_ORIGIN = 'https://shippeco.com';
 const OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
+
+/** Minimal .env reader (KEY=value lines, '#' comments) — this script is a
+ *  plain Node process, not Vite, so it doesn't get Vite's own .env loading
+ *  or import.meta.env for free. Only used to fill the esbuild `define`
+ *  below so any prerendered component that reads import.meta.env.VITE_*
+ *  (directly, or transitively via src/utils/env.ts) sees the same values
+ *  the real client build would, instead of crashing on `undefined`. */
+async function loadDotEnv() {
+  const vars = {};
+  const raw = await fs.readFile(path.join(ROOT, '.env'), 'utf-8').catch(() => '');
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return vars;
+}
 
 const ROUTES = [
   {
@@ -79,7 +97,7 @@ function viteAssetUrlsPlugin(manifest) {
   };
 }
 
-async function renderRouteMarkup(route, manifest) {
+async function renderRouteMarkup(route, manifest, envVars) {
   const result = await esbuild.build({
     entryPoints: [route.entry],
     bundle: true,
@@ -87,12 +105,29 @@ async function renderRouteMarkup(route, manifest) {
     format: 'esm',
     platform: 'node',
     jsx: 'automatic',
+    // Never bundle React itself: components that use hooks (useState, etc.)
+    // must resolve to the EXACT SAME react module instance that
+    // react-dom/server uses below to actually run the render, or hooks
+    // break with "Invalid hook call" / null dispatcher errors. Left as
+    // real imports here, resolved by Node's own module resolution instead
+    // — see the tmpFile location comment just below for why that requires
+    // writing the bundle inside node_modules/.
+    external: ['react', 'react-dom', 'react-dom/*'],
     plugins: [viteAssetUrlsPlugin(manifest)],
     loader: { '.css': 'empty' },
+    define: {
+      'import.meta.env': JSON.stringify({ MODE: 'production', PROD: true, DEV: false, ...envVars }),
+    },
   });
 
   const code = result.outputFiles[0].text;
-  const tmpFile = path.join(os.tmpdir(), `shippeco-prerender-${Date.now()}-${Math.random().toString(16).slice(2)}.mjs`);
+  // Written under node_modules/ (not the OS temp dir) so that the `import
+  // 'react'` left in place by the `external` option above resolves, via
+  // Node's normal upward node_modules search, to this project's own
+  // installed React — the same instance prerender.mjs itself imports.
+  const tmpDir = path.join(ROOT, 'node_modules', '.shippeco-prerender-tmp');
+  await fs.mkdir(tmpDir, { recursive: true });
+  const tmpFile = path.join(tmpDir, `${Date.now()}-${Math.random().toString(16).slice(2)}.mjs`);
   await fs.writeFile(tmpFile, code, 'utf-8');
   try {
     const mod = await import(pathToFileURL(tmpFile).href);
@@ -153,9 +188,10 @@ async function main() {
   await fs.writeFile(path.join(DIST, 'app.html'), templateHtml, 'utf-8');
 
   const manifest = await loadViteManifest();
+  const envVars = await loadDotEnv();
 
   for (const route of ROUTES) {
-    const markup = await renderRouteMarkup(route, manifest);
+    const markup = await renderRouteMarkup(route, manifest, envVars);
     const html = buildHtmlForRoute(templateHtml, route, markup);
     await fs.mkdir(path.dirname(route.outFile), { recursive: true });
     await fs.writeFile(route.outFile, html, 'utf-8');

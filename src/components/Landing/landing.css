@@ -1,0 +1,24 @@
+/* Public homepage — light entrance treatment only. Pure CSS (no
+   IntersectionObserver/JS), so content is never hidden waiting on
+   JavaScript: worst case (JS disabled, crawler, reduced motion) it simply
+   renders in its final, fully visible state immediately. */
+@keyframes shp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.shp-animate-in {
+  animation: shp-fade-up 0.5s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shp-animate-in {
+    animation: none;
+  }
+}

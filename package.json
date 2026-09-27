@@ -17,6 +17,7 @@
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build && node scripts/prerender.mjs",
     "gen:favicons": "node scripts/generate-favicons.mjs",
+    "optimize:landing-images": "node scripts/optimize-landing-images.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:pricing": "vitest run --reporter=json --outputFile=reports/pricing-results.json src/utils/dhlLegacyPricing.test.ts src/utils/dhlLegacyPricing.matrix.test.ts src/utils/chargeableWeight.test.ts src/utils/pricing.integration.test.ts && node scripts/generate-pricing-report.mjs",
