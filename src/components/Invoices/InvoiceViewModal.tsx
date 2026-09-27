@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import type { Invoice, InvoiceItem } from '../../utils/models'
+import type { Invoice, InvoiceItem, InvoiceReceipt } from '../../utils/models'
 import { invoiceService } from '../../services/invoiceService'
 import { enrichSingleInvoice } from '../../services/dbService'
 import styles from './InvoiceViewModal.module.css'
@@ -14,7 +14,6 @@ import {
 import { checkPayment, createPaymentLink } from '../../services/paymobService'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
-import { env } from '../../utils/env'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
 import { downloadInvoicePDF, shareInvoiceWhatsApp } from '../../utils/pdfGenerator'
 import { Download, MessageCircle } from 'lucide-react'
@@ -85,6 +84,8 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const [loadingFull, setLoadingFull] = useState(false)
   const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
+  const [receipts, setReceipts] = useState<InvoiceReceipt[]>([])
+  const [receiptLightbox, setReceiptLightbox] = useState<string | null>(null)
   const [creatingLink, setCreatingLink] = useState(false)
   const [copied] = useState(false)
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -140,6 +141,16 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
       setLoadingFull(false)
     }
   }, [invoice?.id, invoice?.daftra_id])
+
+  useEffect(() => {
+    if (!open || !invoice?.id) {
+      setReceipts([])
+      return
+    }
+    invoiceService.getTransferReceipts(invoice.id).then(setReceipts).catch((err) => {
+      console.error('[InvoiceViewModal] Failed to load transfer receipts:', err)
+    })
+  }, [open, invoice?.id])
 
   useEffect(() => {
     if (open && invoice) {
@@ -599,25 +610,48 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             </div>
           )}
 
-          {/* ─── سند التحويل البنكي ─── */}
-          {(displayInv as any).transfer_receipt_url && (
+          {/* ─── سند التحويل البنكي (قد يكون أكثر من صورة) ─── */}
+          {receipts.length > 0 && (
             <div style={{ marginTop: 8 }} className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/20 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 border-b border-emerald-100 dark:border-emerald-800/20 flex items-center gap-2">
                 <CreditCard size={14} className="text-emerald-500" />
-                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">سند التحويل البنكي</span>
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                  سند التحويل البنكي {receipts.length > 1 ? `(${receipts.length} صور)` : ''}
+                </span>
               </div>
-              <div className="p-3">
-                <img
-                  src={
-                    (displayInv as any).transfer_receipt_url.startsWith('http') ||
-                    (displayInv as any).transfer_receipt_url.startsWith('data:')
-                      ? (displayInv as any).transfer_receipt_url
-                      : `${env.apiUrl}${(displayInv as any).transfer_receipt_url}`
-                  }
-                  alt="سند التحويل"
-                  className="w-full h-auto object-contain rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900"
-                />
+              <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {receipts.map((r) => {
+                  const isImage = r.data_url.startsWith('data:image') || /\.(png|jpe?g|gif|webp)$/i.test(r.data_url)
+                  return isImage ? (
+                    <img
+                      key={r.id}
+                      src={r.data_url}
+                      alt="سند التحويل"
+                      onClick={() => setReceiptLightbox(r.data_url)}
+                      className="w-full h-28 object-cover rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900 cursor-zoom-in"
+                    />
+                  ) : (
+                    <a
+                      key={r.id}
+                      href={r.data_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center w-full h-28 rounded-lg border border-emerald-200 dark:border-emerald-800/30 bg-white dark:bg-slate-900 text-xs font-bold text-emerald-700 dark:text-emerald-400"
+                    >
+                      ملف PDF
+                    </a>
+                  )
+                })}
               </div>
+            </div>
+          )}
+
+          {receiptLightbox && (
+            <div
+              className="fixed inset-0 z-[90] bg-black/80 flex items-center justify-center p-6"
+              onClick={() => setReceiptLightbox(null)}
+            >
+              <img src={receiptLightbox} alt="سند التحويل" className="max-w-full max-h-full rounded-xl object-contain" />
             </div>
           )}
 

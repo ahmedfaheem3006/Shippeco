@@ -1,5 +1,5 @@
 import { unifiedService } from './unifiedService';
-import type { Invoice } from '../utils/models';
+import type { Invoice, InvoiceReceipt } from '../utils/models';
 
 export const invoiceService = {
 
@@ -196,6 +196,34 @@ export const invoiceService = {
     const { api } = await import('../utils/apiClient');
     const result = await api.post(`/invoices/${id}/assign`, { employeeId });
     return result;
+  },
+
+  async getTransferReceipts(invoiceId: string | number): Promise<InvoiceReceipt[]> {
+    const result = await unifiedService.get<any>(`/invoices/${invoiceId}/transfer-receipts`);
+    const list = result?.success ? result.data : result;
+    return Array.isArray(list) ? list : [];
+  },
+
+  /** Uploads one or more receipt files, ADDED to whatever's already saved
+   *  for this invoice (never replaces the existing list). Throws on any
+   *  failure — callers must not treat a thrown error as a partial success. */
+  async uploadTransferReceipts(invoiceId: string | number, files: File[]): Promise<InvoiceReceipt[]> {
+    const { api } = await import('../utils/apiClient');
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    const result = await api.postFormData<any>(`/invoices/${invoiceId}/transfer-receipts`, formData);
+    if (result?.error) {
+      throw new Error(result.error.message || result.message || 'فشل رفع المرفقات');
+    }
+    const list = result?.success ? result.data : result;
+    return Array.isArray(list) ? list : [];
+  },
+
+  async deleteTransferReceipt(invoiceId: string | number, receiptId: number): Promise<void> {
+    const result = await unifiedService.delete<any>(`/invoices/${invoiceId}/transfer-receipts/${receiptId}`);
+    if (result?.error) {
+      throw new Error(result.error.message || result.message || 'فشل حذف المرفق');
+    }
   },
 };
 

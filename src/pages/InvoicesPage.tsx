@@ -462,7 +462,7 @@ export function InvoicesPage() {
   // ══════════════════════════════════════════
   // WIZARD SAVE — Update sends only clean DB fields
   // ══════════════════════════════════════════
-  const onWizardSave = (draft: InvoiceDraftInput, options: { asDraft: boolean }, receiptFile?: File | null) => {
+  const onWizardSave = (draft: InvoiceDraftInput, options: { asDraft: boolean }, pendingReceiptFiles?: File[]) => {
     if (mutating) return
     const id = editingInvoiceId ? String(editingInvoiceId) : `${Date.now()}`
 
@@ -484,16 +484,24 @@ export function InvoicesPage() {
           console.log(`[Invoices] ✅ Created new invoice`)
         }
 
-        // Upload receipt file if provided
-        if (receiptFile && savedInvoiceId) {
+        // Upload any newly-picked receipt images (added to whatever's
+        // already saved — never replaces it). A failure here must NOT be
+        // reported as a full success, and must NOT lose the user's picked
+        // files: the wizard stays open (its pendingReceiptFiles state is
+        // untouched) so clicking Save again retries the upload without
+        // re-entering the whole form. If this was a brand-new invoice,
+        // point future retries at the now-real id instead of creating a
+        // second invoice.
+        if (pendingReceiptFiles && pendingReceiptFiles.length > 0 && savedInvoiceId) {
           try {
-            const { api } = await import('../utils/apiClient')
-            const formData = new FormData()
-            formData.append('file', receiptFile)
-            await api.postFormData(`/invoices/${savedInvoiceId}/transfer-receipt`, formData)
-            console.log(`[Invoices] ✅ Receipt uploaded for #${savedInvoiceId}`)
+            await invoiceService.uploadTransferReceipts(savedInvoiceId, pendingReceiptFiles)
+            console.log(`[Invoices] ✅ ${pendingReceiptFiles.length} receipt(s) uploaded for #${savedInvoiceId}`)
           } catch (e) {
             console.error('[Invoices] ⚠️ Receipt upload failed:', e)
+            if (!editingInvoiceId) setEditingInvoiceId(savedInvoiceId)
+            await syncFromDb(false)
+            showToast('error', `تم حفظ الفاتورة #${savedInvoiceId} لكن فشل رفع صور سند التحويل — عدّل الفاتورة والصور لاتزال جاهزة، اضغط حفظ لإعادة المحاولة`)
+            return
           }
         }
 
@@ -903,6 +911,7 @@ export function InvoicesPage() {
         initialDraft={wizardInitialDraft}
         initialStep={wizardInitialDraft ? 2 : undefined}
         saving={mutating}
+        editingInvoiceId={editingInvoiceId ?? undefined}
       />
 
       <InvoiceViewModal

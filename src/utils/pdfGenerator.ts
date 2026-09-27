@@ -234,22 +234,40 @@ function generateCommonBody(inv: Invoice, _tmpl: InvoiceTemplate, items: any[], 
 }
 
 function generateReceiptHtml(inv: Invoice): string {
-  const b64 = (inv as any).transferReceiptBase64;
-  const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl;
-  const receiptImg = b64 || (receiptUrl 
-    ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${env.apiUrl}${receiptUrl}`)
-    : '');
-  
-  return receiptImg ? `
+  // Prefer the new multi-receipt array; fall back to the old single-field
+  // shape so any invoice object that still only carries a legacy field
+  // (e.g. cached client-side data from before this change) keeps working.
+  const receipts = (inv as any).transferReceipts as { data_url: string }[] | undefined
+  let images: string[] = []
+  if (Array.isArray(receipts) && receipts.length > 0) {
+    images = receipts.map((r) => r.data_url).filter(Boolean)
+  } else {
+    const b64 = (inv as any).transferReceiptBase64;
+    const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl;
+    const legacyImg = b64 || (receiptUrl
+      ? (receiptUrl.startsWith('http') || receiptUrl.startsWith('data:') ? receiptUrl : `${env.apiUrl}${receiptUrl}`)
+      : '');
+    if (legacyImg) images = [legacyImg]
+  }
+
+  if (images.length === 0) return ''
+
+  const heading = images.length > 1
+    ? `سند التحويل البنكي المرفق (${images.length} صور)`
+    : 'سند التحويل البنكي المرفق'
+
+  return `
     <div style="page-break-before: always; padding: 40px 28px; margin-top: 20px;">
       <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px; text-align: center;">
-        <span style="font-weight: 900; font-size: 20px; color: #1e293b;">سند التحويل البنكي المرفق</span>
+        <span style="font-weight: 900; font-size: 20px; color: #1e293b;">${heading}</span>
       </div>
-      <div style="text-align: center;">
-        <img src="${receiptImg}" style="max-width: 100%; max-height: 800px; object-fit: contain; border-radius: 12px; border: 2px solid #e2e8f0; padding: 4px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" alt="سند التحويل" />
-      </div>
+      ${images.map((src, i) => `
+        <div style="text-align: center; ${i > 0 ? 'margin-top: 24px; page-break-before: always; padding-top: 40px;' : ''}">
+          <img src="${src}" style="max-width: 100%; max-height: 800px; object-fit: contain; border-radius: 12px; border: 2px solid #e2e8f0; padding: 4px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" alt="سند التحويل" />
+        </div>
+      `).join('')}
     </div>
-  ` : ''
+  `
 }
 
 function generateFooter(_tmpl: InvoiceTemplate): string {
@@ -700,6 +718,24 @@ async function fetchImageAsBase64(url: string): Promise<string> {
 }
 
 export async function preloadInvoiceReceipt(inv: Invoice) {
+  // New multi-receipt path — data_url from the API is already a full
+  // base64 data: URL, no further fetching/conversion needed.
+  if (inv.id) {
+    try {
+      const { invoiceService } = await import('../services/invoiceService')
+      const receipts = await invoiceService.getTransferReceipts(inv.id)
+      if (receipts.length > 0) {
+        ;(inv as any).transferReceipts = receipts
+        return
+      }
+    } catch (e) {
+      console.warn('[pdfGenerator] Failed to fetch transfer receipts:', e)
+    }
+  }
+
+  // Legacy fallback — only reached for an invoice with no rows in the new
+  // table (e.g. one that predates migration 018 and wasn't backfilled for
+  // some reason), so a receipt from before this change still exports.
   const receiptUrl = (inv as any).transfer_receipt_url || (inv as any).transferReceiptUrl
   if (receiptUrl && !receiptUrl.startsWith('data:')) {
     const fullUrl = receiptUrl.startsWith('http') ? receiptUrl : `${env.apiUrl}${receiptUrl}`

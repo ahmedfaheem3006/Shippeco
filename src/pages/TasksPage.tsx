@@ -10,7 +10,7 @@ export const TasksPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  type FilterTab = 'all' | 'mine' | 'open' | 'closed';
+  type FilterTab = 'all' | 'received' | 'assigned' | 'open' | 'closed';
   const [statusFilter, setStatusFilter] = useState<FilterTab>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -18,9 +18,11 @@ export const TasksPage: React.FC = () => {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const params: { status?: string; scope?: string } = {};
-      if (statusFilter === 'mine') {
-        params.scope = 'mine';
+      const params: { status?: string; scope?: string; view?: string } = {};
+      if (statusFilter === 'received') {
+        params.view = 'received';
+      } else if (statusFilter === 'assigned') {
+        params.view = 'assigned';
       } else if (statusFilter === 'open') {
         params.status = 'open';
       } else if (statusFilter === 'closed') {
@@ -44,12 +46,19 @@ export const TasksPage: React.FC = () => {
     t.assigned_to_name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const isAdmin = user?.role === 'admin';
-  const isManager = user?.role === 'admin' || user?.role === 'manager';
+  // Same permission the Backend enforces on POST /tasks (see
+  // requireRole('admin', 'manager', 'accountant') in tasks.routes.ts) —
+  // whoever can assign tasks gets the assigner's view/tabs/button.
+  const canAssignTasks = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'accountant';
 
   const filterTabs: { id: FilterTab; label: string }[] = [
     { id: 'all', label: 'الكل' },
-    ...(isAdmin ? [{ id: 'mine' as const, label: 'مهامي' }] : []),
+    ...(canAssignTasks
+      ? [
+          { id: 'received' as const, label: 'مهامي المستلمة' },
+          { id: 'assigned' as const, label: 'مهام أسندتها' },
+        ]
+      : []),
     { id: 'open', label: 'مفتوحة' },
     { id: 'closed', label: 'مغلقة' },
   ];
@@ -63,11 +72,11 @@ export const TasksPage: React.FC = () => {
             <div className="p-2.5 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-500/20">
               <ClipboardList size={24} />
             </div>
-            {isManager ? 'المهام المسؤل عنها' : 'مهامي المستلمة'}
+            {canAssignTasks ? 'المهام المسؤل عنها' : 'مهامي المستلمة'}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm font-medium">إدارة ومتابعة المهام المسندة ونتائج التنفيذ</p>
         </div>
-        {isManager && (
+        {canAssignTasks && (
           <button 
             onClick={() => setShowCreateModal(true)}
             className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/25 active:scale-95"
@@ -243,7 +252,9 @@ export const TasksPage: React.FC = () => {
             <ClipboardList size={48} className="text-slate-300 dark:text-slate-600" />
           </div>
           <h3 className="text-xl font-bold text-slate-900 dark:text-white">لا توجد مهام حالياً</h3>
-          <p className="text-slate-500 mt-2">ابدأ بإسناد أول مهمة للموظفين لمتابعة سير العمل</p>
+          <p className="text-slate-500 mt-2">
+            {canAssignTasks ? 'ابدأ بإسناد أول مهمة للموظفين لمتابعة سير العمل' : 'لا توجد مهام مسندة إليك حالياً'}
+          </p>
         </div>
       )}
 

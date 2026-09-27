@@ -25,6 +25,20 @@ export type InvoiceItem = {
   price: number
 }
 
+/** One bank-transfer-receipt image attached to an invoice — see
+ *  Backend `invoice_transfer_receipts` table / GET|POST|DELETE
+ *  /invoices/:id/transfer-receipts. */
+export type InvoiceReceipt = {
+  id: number
+  invoice_id: number
+  data_url: string
+  mime_type?: string | null
+  size_bytes?: number | null
+  uploaded_by?: number | null
+  uploaded_by_name?: string | null
+  created_at: string
+}
+
 export type Invoice = {
   id: string
   client: string
@@ -39,9 +53,15 @@ export type Invoice = {
   payment?: string
   payment_method?: string
   shipping_type?: string
+  /** @deprecated single-receipt fields kept only so old cached/legacy data
+   *  never breaks a defensive read — new code should use transferReceipts. */
   transferReceiptBase64?: string
   transfer_receipt_url?: string
   transferReceiptUrl?: string
+  /** All bank-transfer receipt images for this invoice (fetched on demand
+   *  via invoiceService.getTransferReceipts — not included in list/summary
+   *  responses to avoid inlining many base64 images into list payloads). */
+  transferReceipts?: InvoiceReceipt[]
   price: number
   total?: number
   paid_amount?: number

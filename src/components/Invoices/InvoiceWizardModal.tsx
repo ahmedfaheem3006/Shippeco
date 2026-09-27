@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { InvoiceStatus } from '../../utils/models'
+import type { InvoiceStatus, InvoiceReceipt } from '../../utils/models'
 import type { InvoiceDraftInput, WizardMode, WizardStep } from '../../utils/invoiceWizard'
 import { computeBackStep, createNewInvoiceDraftInput } from '../../utils/invoiceWizard'
 import { COUNTRIES } from '../../legacy/dhlData'
 import { computeLegacyPrice, getZoneInfoLegacy, type LegacyService } from '../../utils/dhlLegacyPricing'
-import { 
-  X, Calculator, Edit3, Save, Zap, Home, 
-  DownloadCloud, UploadCloud, MapPin, 
-  Box, Truck, AlertCircle, ImagePlus, Trash2, Loader2
+import {
+  X, Calculator, Edit3, Save, Zap, Home,
+  DownloadCloud, UploadCloud, MapPin,
+  Box, Truck, AlertCircle, Trash2
 } from 'lucide-react'
 import { SearchableClientInput } from '../shared/SearchableClientInput'
-import { env } from '../../utils/env'
+import { ReceiptAttachmentsField } from './ReceiptAttachmentsField'
+import { invoiceService } from '../../services/invoiceService'
 
 type Prefill = {
   price?: string
@@ -22,12 +23,15 @@ type Prefill = {
 type Props = {
   open: boolean
   onClose: () => void
-  onSave: (draft: InvoiceDraftInput, options: { asDraft: boolean }, receiptFile?: File | null) => void
+  onSave: (draft: InvoiceDraftInput, options: { asDraft: boolean }, pendingReceiptFiles?: File[]) => void
   prefill?: Prefill
   title?: string
   initialDraft?: InvoiceDraftInput
   initialStep?: WizardStep
   saving?: boolean
+  /** Real invoice id, only set when editing an existing invoice — used to
+   *  fetch/delete its already-saved receipt images. */
+  editingInvoiceId?: string | number
 }
 
 function todayIso() {
@@ -73,7 +77,7 @@ function calcKindToLegacyService(kind: CalcKind): LegacyService {
   return 'import'
 }
 
-export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, initialDraft, initialStep, saving }: Props) {
+export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, initialDraft, initialStep, saving, editingInvoiceId }: Props) {
   const [mode, setMode] = useState<WizardMode>(() =>
     initialDraft ? 'direct' : prefill?.price || prefill?.details ? 'direct' : 'calc',
   )
@@ -103,10 +107,8 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
   const [calcResult, setCalcResult] = useState<CalcResult | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
   const priceRef = useRef<HTMLInputElement | null>(null)
-  const [receiptFile, setReceiptFile] = useState<File | null>(null)
-  const [receiptPreview, setReceiptPreview] = useState<string>(initialDraft ? (initialDraft as any).transferReceiptUrl || '' : '')
-  const [_uploadingReceipt, _setUploadingReceipt] = useState(false)
-  const receiptInputRef = useRef<HTMLInputElement | null>(null)
+  const [existingReceipts, setExistingReceipts] = useState<InvoiceReceipt[]>([])
+  const [pendingReceiptFiles, setPendingReceiptFiles] = useState<File[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -114,6 +116,23 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
       priceRef.current?.focus()
     }
   }, [mode, open, step])
+
+  // Load already-saved receipt images when editing an existing invoice.
+  // New invoices (no id yet) start with none — their images are only
+  // uploaded once the invoice itself has been saved (see onSave callers).
+  useEffect(() => {
+    if (!open || !editingInvoiceId) {
+      setExistingReceipts([])
+      return
+    }
+    let cancelled = false
+    invoiceService.getTransferReceipts(editingInvoiceId).then((list) => {
+      if (!cancelled) setExistingReceipts(list)
+    }).catch((err) => {
+      console.error('[InvoiceWizardModal] Failed to load existing receipts:', err)
+    })
+    return () => { cancelled = true }
+  }, [open, editingInvoiceId])
 
   useEffect(() => {
     if (open && step === 2) {
@@ -621,68 +640,14 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                       
 
                  {draft.payment === 'تحويل بنكي' && (
-                   <div className="flex flex-col gap-2 sm:col-span-2 mt-1">
-                     <label className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                       <ImagePlus size={14} /> إرفاق سند التحويل البنكي
-                     </label>
-                     {receiptPreview ? (
-                       <div className="relative group">
-                         <img
-                           src={
-                             receiptPreview.startsWith('blob:') ||
-                             receiptPreview.startsWith('http') ||
-                             receiptPreview.startsWith('data:')
-                               ? receiptPreview
-                               : `${env.apiUrl}${receiptPreview}`
-                           }
-                           alt="سند التحويل"
-                           className="w-full max-h-[240px] object-contain rounded-xl border-2 border-emerald-200 dark:border-emerald-800/40 bg-white dark:bg-slate-900"
-                         />
-                         <button
-                           type="button"
-                           className="absolute top-2 left-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600"
-                           onClick={() => {
-                             setReceiptFile(null)
-                             setReceiptPreview('')
-                             setDraft((p) => ({ ...p, transferReceiptUrl: '' }))
-                           }}
-                         >
-                           <Trash2 size={14} />
-                         </button>
-                         {_uploadingReceipt && (
-                           <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center">
-                             <Loader2 size={28} className="text-white animate-spin" />
-                           </div>
-                         )}
-                       </div>
-                     ) : (
-                       <button
-                         type="button"
-                         className="flex flex-col items-center justify-center gap-2 py-6 border-2 border-dashed border-emerald-300 dark:border-emerald-700 rounded-xl bg-emerald-50/50 dark:bg-emerald-900/10 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer"
-                         onClick={() => receiptInputRef.current?.click()}
-                       >
-                         <ImagePlus size={28} className="text-emerald-500 dark:text-emerald-400" />
-                         <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">اضغط لإرفاق صورة سند التحويل</span>
-                         <span className="text-[10px] text-gray-400 dark:text-gray-500">JPG, PNG, WEBP, PDF — حتى 10 ميجابايت</span>
-                       </button>
-                     )}
-                     <input
-                       ref={receiptInputRef}
-                       type="file"
-                       accept="image/*,.pdf"
-                       className="hidden"
-                       onChange={(e) => {
-                         const file = e.target.files?.[0]
-                         if (!file) return
-                         setReceiptFile(file)
-                         if (file.type.startsWith('image/')) {
-                           setReceiptPreview(URL.createObjectURL(file))
-                         } else {
-                           setReceiptPreview('')
-                         }
-                       }}
-                     />
-                   </div>
+                   <ReceiptAttachmentsField
+                     invoiceId={editingInvoiceId}
+                     existing={existingReceipts}
+                     onExistingChange={setExistingReceipts}
+                     pendingFiles={pendingReceiptFiles}
+                     onPendingFilesChange={setPendingReceiptFiles}
+                     disabled={Boolean(saving)}
+                   />
                  )}
 
                  <div className="flex flex-col gap-1.5 sm:col-span-2 mt-2">
@@ -738,7 +703,7 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
               <button
                 type="button"
                 className="px-6 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
-                onClick={() => onSave(draft, { asDraft: true }, receiptFile)}
+                onClick={() => onSave(draft, { asDraft: true }, pendingReceiptFiles)}
                 disabled={Boolean(saving) || !canSubmit}
               >
                 حفظ بمسودة (قيد الإعداد)
@@ -746,7 +711,7 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
               <button
                 type="button"
                 className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white hover:bg-indigo-600 hover:bg-indigo-700 text-white/90 shadow-lg shadow-indigo-500/20 text-white text-sm font-bold rounded-xl flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50"
-                onClick={() => onSave(draft, { asDraft: false }, receiptFile)}
+                onClick={() => onSave(draft, { asDraft: false }, pendingReceiptFiles)}
                 disabled={Boolean(saving) || !canSubmit}
               >
                 {saving ? <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></div> : <Save size={16} />}

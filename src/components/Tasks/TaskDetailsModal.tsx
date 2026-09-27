@@ -70,7 +70,14 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ taskId, onCl
   if (loading) return null;
   if (!task) return null;
 
-  const isManager = user?.role === 'admin' || user?.role === 'manager';
+  // Admin/manager can close/reopen any task. An accountant only gets the
+  // same ability for tasks THEY assigned (matches the Backend's ownership
+  // check in tasks.controller.ts#updateStatus) — not for tasks assigned to
+  // them by someone else, and not company-wide.
+  const isManager =
+    user?.role === 'admin' ||
+    user?.role === 'manager' ||
+    (user?.role === 'accountant' && task.assigned_by === user?.id);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
