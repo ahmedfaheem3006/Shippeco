@@ -5,7 +5,7 @@ const STEP_ICONS = [PackageSearch, Users, CheckCircle2]
 
 export function LandingHowItWorks() {
   return (
-    <section id="how-it-works" className="bg-slate-900 text-white">
+    <section id="how-it-works" className="scroll-mt-20 bg-slate-900 text-white">
       <div className="max-w-6xl mx-auto px-5 py-16 md:py-20">
         <h2 className="text-2xl sm:text-3xl font-extrabold text-center shp-animate-in">ثلاث خطوات لبدء طلبك</h2>
 

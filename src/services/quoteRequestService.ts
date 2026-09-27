@@ -25,7 +25,20 @@ export type QuoteRequestInput = {
   website?: string
 }
 
-export class QuoteRequestError extends Error {}
+export type QuoteRequestFieldError = { field: string; message: string }
+
+export class QuoteRequestError extends Error {
+  /** Per-field messages from the Backend's Zod validation (see
+   *  middleware/validate.ts's { error: { details: [{field, message}] } }
+   *  shape) — lets the form show each error next to its own field instead
+   *  of only a generic banner. Absent for network/server errors. */
+  fieldErrors?: QuoteRequestFieldError[]
+
+  constructor(message: string, fieldErrors?: QuoteRequestFieldError[]) {
+    super(message)
+    this.fieldErrors = fieldErrors
+  }
+}
 
 export async function submitQuoteRequest(input: QuoteRequestInput): Promise<{ id: number }> {
   const res = await fetch(`${API_BASE}/quote-requests`, {
@@ -35,7 +48,11 @@ export async function submitQuoteRequest(input: QuoteRequestInput): Promise<{ id
   })
   const json = await res.json().catch(() => null)
   if (!res.ok || !json?.success) {
-    throw new QuoteRequestError(json?.error?.message || 'تعذر إرسال الطلب، حاول مرة أخرى')
+    const fieldErrors = Array.isArray(json?.error?.details) ? json.error.details : undefined
+    const message = fieldErrors?.length
+      ? 'تحقق من الحقول المُشار إليها بالأسفل.'
+      : json?.error?.message || 'تعذر إرسال الطلب، حاول مرة أخرى'
+    throw new QuoteRequestError(message, fieldErrors)
   }
   return json.data
 }

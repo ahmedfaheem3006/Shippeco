@@ -30,12 +30,20 @@ export const NAV_LINKS = [
 ]
 
 export const HERO = {
-  eyebrow: 'شحن دولي بين مصر والسعودية',
-  title: 'شحنتك القادمة تبدأ من هنا',
+  // Not presented as a confirmed "international shipping between Egypt and
+  // Saudi Arabia" service — that's only a targeted audience, not a
+  // confirmed scope — so this stays generic.
+  eyebrow: 'شيب بيك لخدمات الشحن',
+  titleLine1: 'شحنتك القادمة',
+  titleLine2: 'تبدأ من هنا.',
   description:
-    'أخبرنا من أين تنطلق شحنتك وإلى أين تتجه، وأرسل تفاصيلها لطلب عرض سعر من فريق شيب بيك.',
+    'أرسل تفاصيل شحنتك ووجهتها، ودع فريق شيب بيك يساعدك في معرفة الخيارات المتاحة وطلب عرض سعر.',
   primaryCta: { label: 'اطلب عرض سعر', href: '#quote' },
+  secondaryCta: { label: 'كيف تبدأ؟', href: '#how-it-works' },
   whatsappCtaLabel: 'تواصل عبر واتساب',
+  // Only true because the quote-request flow never creates an account —
+  // see quoteRequestService.ts / the Backend's public POST /quote-requests.
+  noAccountNote: 'يمكنك إرسال الطلب دون إنشاء حساب',
 }
 
 export type ServiceItem = { icon: 'globe' | 'calculator' | 'file-check'; title: string; description: string }
@@ -138,11 +146,14 @@ export const FOOTER = {
 
 export const QUOTE_FORM = {
   title: 'أخبرنا عن شحنتك',
-  description: 'أرسل التفاصيل المتاحة، وسيتواصل معك الفريق بشأن طلبك.',
+  description: 'أدخل التفاصيل المتاحة، وسيتواصل معك الفريق لمراجعة طلبك.',
+  steps: ['ترسل بيانات الشحنة.', 'يراجع الفريق التفاصيل.', 'تتواصلون بشأن عرض السعر.'],
+  additionalDetailsLabel: 'إضافة تفاصيل أخرى — اختياري',
   submitLabel: 'إرسال طلب عرض السعر',
   privacyNote: 'سنستخدم بياناتك للتواصل بشأن طلب الشحن.',
   successMessage: 'تم إرسال طلبك بنجاح — سيتواصل معك فريقنا قريبًا.',
   genericErrorMessage: 'تعذر إرسال الطلب، الرجاء المحاولة مرة أخرى.',
+  fieldErrorsMessage: 'تحقق من الحقول المُشار إليها بالأسفل.',
 }
 
 /** Country options for the shipment origin/destination selects — Egypt and
