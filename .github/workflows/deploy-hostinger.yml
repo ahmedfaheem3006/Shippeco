@@ -36,6 +36,10 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_WORKER_URL: ${{ vars.VITE_WORKER_URL }}
+          # Public canonical/OG/sitemap origin. Unset => https://shippeco.com
+          # (current live domain). Set to https://shippec.com only during the
+          # domain migration — see docs/DOMAIN-MIGRATION.md.
+          VITE_PUBLIC_SITE_ORIGIN: ${{ vars.VITE_PUBLIC_SITE_ORIGIN }}
 
       - name: Verify production build
         run: |

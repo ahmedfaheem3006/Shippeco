@@ -14,7 +14,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4174;
 const NOINDEX_PREFIXES = [
   'login', 'dashboard', 'invoices', 'new-invoice', 'reports', 'clients',
   'collection-model', 'expenses', 'calculator', 'reconcile', 'invoice-template',
-  'paymob-links', 'settings', 'profit-report', 'audit-log', 'wa-templates', 'tasks', 'pay',
+  'paymob-links', 'settings', 'profit-report', 'audit-log', 'wa-templates', 'tasks', 'quote-requests', 'pay',
 ];
 
 const MIME = {

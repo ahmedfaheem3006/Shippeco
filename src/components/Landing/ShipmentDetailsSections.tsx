@@ -24,7 +24,7 @@ function AlternatingRow({
   imageOnRight: boolean
 }) {
   const imageBlock = (
-    <div className="flex-1 w-full shp-animate-in">
+    <div className="flex-1 w-full shp-reveal">
       <picture>
         <source media="(min-width: 768px)" srcSet={imageDesktop} type="image/webp" />
         <source srcSet={imageMobile} type="image/webp" />
@@ -40,7 +40,7 @@ function AlternatingRow({
     </div>
   )
   const textBlock = (
-    <div className="flex-1 text-center md:text-right shp-animate-in" style={{ animationDelay: '0.06s' }}>
+    <div className="flex-1 text-center md:text-right shp-reveal" style={{ transitionDelay: '0.08s' }}>
       <h3 className="text-xl sm:text-2xl font-extrabold text-gray-900">{title}</h3>
       <p className="mt-3 text-gray-600 leading-relaxed max-w-md mx-auto md:mx-0">{description}</p>
     </div>
@@ -65,7 +65,7 @@ export function LandingShipmentDetailsSections() {
         imageFallback={packingFallback}
         imageMobile={packingMobile}
         imageDesktop={packingDesktop}
-        imageAlt="تجهيز وتغليف شحنة تحمل شعار شيب بيك"
+        imageAlt="صورة توضيحية لتجهيز وتغليف شحنة"
         imageOnRight={false}
       />
       <AlternatingRow
@@ -74,7 +74,7 @@ export function LandingShipmentDetailsSections() {
         imageFallback={deliveryFallback}
         imageMobile={deliveryMobile}
         imageDesktop={deliveryDesktop}
-        imageAlt="تسليم طرد شيب بيك للعميل"
+        imageAlt="صورة توضيحية لتسليم طرد للعميل"
         imageOnRight
       />
     </section>

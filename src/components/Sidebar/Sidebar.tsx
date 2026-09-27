@@ -77,7 +77,7 @@ export function Sidebar({ onNavigate }: Props) {
         </button>
         {canReviewQuoteRequests && (
           <button className={navItemClass('/quote-requests')} onClick={() => go('/quote-requests')}>
-            <Send size={20} /> طلبات عرض السعر
+            <Send size={20} /> طلبات الشحن والتواصل
           </button>
         )}
         <button

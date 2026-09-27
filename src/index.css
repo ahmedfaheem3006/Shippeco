@@ -72,3 +72,33 @@ body {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+
+/* ── Short enter transitions for the internal system (modals, dropdowns,
+   wizard steps, page fade-in). The app already marks elements with
+   animate-in / fade-in / zoom-in-95 / slide-in-from-* classes, but no
+   plugin defined them, so they did nothing. This is a minimal definition:
+   one short entrance on mount (opacity + transform only, composable via
+   CSS variables, preserving any Tailwind translate used for centering). It
+   never animates on re-render, so table rows and inputs stay still. */
+@keyframes shp-enter {
+  from {
+    opacity: var(--shp-enter-opacity, 1);
+    transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0))
+      translate3d(var(--shp-enter-x, 0), var(--shp-enter-y, 0), 0)
+      scale(var(--shp-enter-scale, 1));
+  }
+}
+.animate-in { animation: shp-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.fade-in { --shp-enter-opacity: 0; }
+.zoom-in-95 { --shp-enter-scale: 0.95; }
+.slide-in-from-top-1 { --shp-enter-y: -0.25rem; }
+.slide-in-from-top-2 { --shp-enter-y: -0.5rem; }
+.slide-in-from-top-4 { --shp-enter-y: -1rem; }
+.slide-in-from-bottom-2 { --shp-enter-y: 0.5rem; }
+.slide-in-from-bottom-4 { --shp-enter-y: 1rem; }
+.slide-in-from-right-2 { --shp-enter-x: 0.5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in { animation: none; }
+}

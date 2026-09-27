@@ -22,8 +22,13 @@ import fs from 'node:fs/promises';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
-const SITE_ORIGIN = 'https://shippeco.com';
-const OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
+// The domain the public/static files (robots.txt, sitemap.xml) are written
+// with in public/ — rewritten below to SITE_ORIGIN at build time.
+const SOURCE_ORIGIN = 'https://shippeco.com';
+// Resolved in main() from VITE_PUBLIC_SITE_ORIGIN (same variable the app's
+// src/config/publicSite.ts reads), defaulting to the currently-live domain.
+let SITE_ORIGIN = SOURCE_ORIGIN;
+let OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
 
 /** Minimal .env reader (KEY=value lines, '#' comments) — this script is a
  *  plain Node process, not Vite, so it doesn't get Vite's own .env loading
@@ -41,7 +46,24 @@ async function loadDotEnv() {
     if (eq === -1) continue;
     vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
   }
+  // Real environment variables win over .env (same precedence as Vite) —
+  // this is how CI (GitHub Actions secrets/vars) passes them in.
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('VITE_') && value !== undefined) vars[key] = value;
+  }
   return vars;
+}
+
+/** robots.txt / sitemap.xml are static files in public/ written against
+ *  SOURCE_ORIGIN; rewrite them in dist/ to the configured SITE_ORIGIN so
+ *  switching domains is a single env-var change, not a hunt for strings. */
+async function rewriteStaticOrigin() {
+  if (SITE_ORIGIN === SOURCE_ORIGIN) return;
+  for (const file of ['robots.txt', 'sitemap.xml']) {
+    const p = path.join(DIST, file);
+    const raw = await fs.readFile(p, 'utf-8').catch(() => null);
+    if (raw) await fs.writeFile(p, raw.split(SOURCE_ORIGIN).join(SITE_ORIGIN), 'utf-8');
+  }
 }
 
 const ROUTES = [
@@ -50,9 +72,9 @@ const ROUTES = [
     outFile: path.join(DIST, 'index.html'),
     entry: path.join(ROOT, 'src/pages/PublicHomePage.tsx'),
     exportName: 'PublicHomePage',
-    title: 'شيب بيك — منصة إدارة الشحن والفواتير بين مصر والسعودية',
+    title: 'شيب بيك للخدمات اللوجستية | شحن محلي ودولي وتغليف وتخزين',
     description:
-      'شيب بيك: منصة لإدارة فواتير الشحن، حساب تكلفة شحن DHL، مطابقة الفواتير، وتحصيل المستحقات لأنشطة الشحن بين مصر والسعودية.',
+      'شيب بيك (SHIPPEC): حلول الشحن المحلي والدولي، والتغليف والتخزين والتوزيع والتخليص الجمركي للأفراد والشركات. ابدأ شحنتك أو اطلب تواصل فريقنا.',
     robots: 'index, follow',
   },
 ];
@@ -189,6 +211,9 @@ async function main() {
 
   const manifest = await loadViteManifest();
   const envVars = await loadDotEnv();
+  SITE_ORIGIN = (envVars.VITE_PUBLIC_SITE_ORIGIN || SOURCE_ORIGIN).replace(/\/+$/, '');
+  OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
+  await rewriteStaticOrigin();
 
   for (const route of ROUTES) {
     const markup = await renderRouteMarkup(route, manifest, envVars);

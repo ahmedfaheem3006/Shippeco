@@ -73,7 +73,7 @@ export function AppLayout() {
     if (path.includes('/wa')) return 'قوالب واتساب';
     if (path.includes('/paymob')) return 'روابط Paymob';
     if (path.includes('/template')) return 'قالب الفاتورة';
-    if (path.includes('/quote-requests')) return 'طلبات عرض السعر';
+    if (path.includes('/quote-requests')) return 'طلبات الشحن والتواصل';
     return 'الرئيسية';
   };
 

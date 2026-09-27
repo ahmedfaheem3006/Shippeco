@@ -1,24 +1,88 @@
-/* Public homepage — light entrance treatment only. Pure CSS (no
-   IntersectionObserver/JS), so content is never hidden waiting on
-   JavaScript: worst case (JS disabled, crawler, reduced motion) it simply
-   renders in its final, fully visible state immediately. */
+/* Public homepage motion — the CSS half of the shared motion system (the
+   interactive journey uses framer-motion; see components/Landing/motion.tsx).
+   Rule: content is NEVER hidden in the prerendered HTML waiting on JS.
+   Everything here either runs on its own (pure CSS), or only hides an
+   element after JS has marked it below the fold (see useScrollReveal). */
+
 @keyframes shp-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes shp-image-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes shp-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes shp-drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Hero: staggered one-shot entrance (delays set inline per element). */
 .shp-animate-in {
-  animation: shp-fade-up 0.5s ease-out both;
+  animation: shp-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.shp-animate-image {
+  animation-name: shp-image-in;
+  animation-duration: 0.7s;
+}
+
+/* Dropdown panels (country pickers). */
+.shp-pop-in {
+  animation: shp-pop 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+}
+
+/* Slow drift for purely decorative shapes. */
+.shp-float { animation: shp-drift 7s ease-in-out infinite; }
+.shp-float-slow { animation: shp-drift 11s ease-in-out infinite; }
+
+/* Sections below the fold reveal once as they scroll into view.
+   `.shp-pending` is only ever added by JS to elements that are below the
+   viewport at load — without JS (crawlers, prerender) nothing is hidden. */
+.shp-reveal {
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.shp-reveal.shp-pending {
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+/* FAQ answers and the mobile menu get a short, matching entrance. */
+.shp-faq[open] > .shp-faq-body,
+.shp-menu-in {
+  animation: shp-fade-up 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Small screens: keep entrances, drop continuous decorative motion. */
+@media (max-width: 640px) {
+  .shp-float,
+  .shp-float-slow {
+    animation: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shp-animate-in {
+  .shp-animate-in,
+  .shp-animate-image,
+  .shp-pop-in,
+  .shp-float,
+  .shp-float-slow,
+  .shp-faq[open] > .shp-faq-body,
+  .shp-menu-in {
     animation: none;
+  }
+  .shp-reveal {
+    transition: none;
+  }
+  .shp-reveal.shp-pending {
+    opacity: 1;
+    transform: none;
   }
 }

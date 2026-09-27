@@ -19,7 +19,7 @@
   # match below fires, so mod_headers can still read it further down —
   # applies whether the request ends up served as app.html or (for /pay/:id
   # payment callbacks etc.) any real file under that path.
-  RewriteCond %{REQUEST_URI} ^/(login|dashboard|invoices|new-invoice|reports|clients|collection-model|expenses|calculator|reconcile|invoice-template|paymob-links|settings|profit-report|audit-log|wa-templates|tasks|pay)(/|$) [NC]
+  RewriteCond %{REQUEST_URI} ^/(login|dashboard|invoices|new-invoice|reports|clients|collection-model|expenses|calculator|reconcile|invoice-template|paymob-links|settings|profit-report|audit-log|wa-templates|tasks|quote-requests|pay)(/|$) [NC]
   RewriteRule ^ - [E=SHIPPECO_NOINDEX:1]
 
   # Never touch an existing file or directory (assets, favicon, /assets/*.js…)

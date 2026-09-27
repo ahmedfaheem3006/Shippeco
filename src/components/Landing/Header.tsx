@@ -33,7 +33,7 @@ export function LandingHeader() {
           </a>
           <a
             href={HERO.primaryCta.href}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-sm font-bold transition-all"
           >
             {HERO.primaryCta.label}
           </a>
@@ -54,7 +54,7 @@ export function LandingHeader() {
       {mobileOpen && (
         <nav
           id="landing-mobile-nav"
-          className="md:hidden border-t border-gray-100 bg-white px-5 py-4 flex flex-col gap-1"
+          className="shp-menu-in md:hidden border-t border-gray-100 bg-white px-5 py-4 flex flex-col gap-1"
         >
           {NAV_LINKS.map((link) => (
             <a
