@@ -1,0 +1,74 @@
+name: FTP destination diagnostics
+
+# Read-only inspection of the Hostinger FTP account used by the deploy
+# workflow: where the FTP root is, which folder actually serves
+# https://shippec.com, and whether the stored secrets have the expected
+# shape. Never uploads, deletes or prints secret values. Results are
+# reported as annotations on the run.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ftp-diagnose.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp >/dev/null
+
+      - name: Check secret format (values are never printed)
+        env:
+          S: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          U: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          P: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+        run: |
+          yn() { if eval "$1"; then echo yes; else echo NO; fi; }
+          msg="server set=$(yn '[ -n "$S" ]'); server has scheme prefix=$(yn '[[ "$S" == *"://"* ]]'); server equals 2.57.89.35=$(yn '[ "$S" = "2.57.89.35" ]')"
+          msg="$msg | username set=$(yn '[ -n "$U" ]'); username equals u909097244=$(yn '[ "$U" = "u909097244" ]'); username starts with u909097244=$(yn '[[ "$U" == u909097244* ]]')"
+          msg="$msg | password set=$(yn '[ -n "$P" ]')"
+          echo "::notice title=Secrets check::$msg"
+
+      - name: Inspect FTP layout
+        env:
+          S: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          U: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          P: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+        run: |
+          set -u
+          host="${S#ftp://}"; host="${host%/}"
+          # Password goes through the environment (--env-password), never
+          # through a command string or argument.
+          lf() {
+            LFTP_PASSWORD="$P" lftp -u "$U" --env-password -p 21 \
+              -e "set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 1; set net:timeout 20; set net:reconnect-interval-base 2; $1; bye" \
+              "$host" 2>&1
+          }
+          note() { printf '::notice title=%s::%s\n' "$1" "$(printf '%s' "$2" | head -c 3500 | sed ':a;N;$!ba;s/\n/%0A/g')"; }
+
+          note "FTP pwd" "$(lf 'pwd')"
+          note "FTP root listing" "$(lf 'cls -1a' | head -60)"
+
+          # What does the live site reference right now?
+          live=$(curl -s --max-time 20 "https://shippec.com/?diag=${GITHUB_RUN_ID}" | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+          note "Live shippec.com" "homepage JS: ${live:-<none found>}"
+
+          for d in . public_html domains/shippec.com/public_html domains/shippeco.com/public_html domains/www.shippec.com/public_html; do
+            listing=$(lf "cls -1a '$d'" | head -40)
+            if printf '%s' "$listing" | grep -qiE 'no such|access failed|not found|550'; then
+              note "Candidate $d" "does not exist / not accessible"
+              continue
+            fi
+            idx=$(lf "cat '$d/index.html'" | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+            dates=$(lf "cls -l --date '$d/index.html' '$d/app.html' '$d/404.html' '$d/.htaccess'" | head -6)
+            states=$(printf '%s\n' "$listing" | grep -E 'ftp-deploy' || true)
+            match=NO; [ -n "$live" ] && [ "$idx" = "$live" ] && match=YES
+            note "Candidate $d" "index.html JS: ${idx:-<no index.html>} | SAME AS LIVE shippec.com: $match%0Adeploy state files: ${states:-none}%0Afile dates:%0A${dates}%0Aentries:%0A${listing}"
+          done
