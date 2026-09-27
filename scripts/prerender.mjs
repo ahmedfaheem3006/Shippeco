@@ -18,6 +18,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { readAppRoutes, buildNoindexRule, buildRewriteRules } from './app-routes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -76,6 +77,19 @@ const ROUTES = [
     description:
       'شيب بيك (SHIPPEC): حلول الشحن المحلي والدولي، والتغليف والتخزين والتوزيع والتخليص الجمركي للأفراد والشركات. ابدأ شحنتك أو اطلب تواصل فريقنا.',
     robots: 'index, follow',
+  },
+  {
+    // Served by the host's ErrorDocument with a real HTTP 404 for unknown
+    // URLs (see public/.htaccess). No canonical/OG tags: it must never
+    // claim to be the homepage, and it's not in the sitemap.
+    urlPath: null,
+    outFile: path.join(DIST, '404.html'),
+    entry: path.join(ROOT, 'src/pages/NotFoundPage.tsx'),
+    exportName: 'NotFoundPage',
+    title: 'الصفحة غير موجودة | SHIPPEC',
+    description: 'الرابط المطلوب غير موجود على موقع شيب بيك.',
+    robots: 'noindex, nofollow',
+    socialTags: false,
   },
 ];
 
@@ -176,6 +190,9 @@ function buildHtmlForRoute(templateHtml, route, markup) {
     `<meta name="robots" content="${route.robots}" />`
   );
 
+  html = html.replace('<div id="root"></div>', `<div id="root">${markup}</div>`);
+  if (route.socialTags === false) return html;
+
   const canonicalUrl = `${SITE_ORIGIN}${route.urlPath}`;
   const extraTags = [
     `<link rel="canonical" href="${canonicalUrl}" />`,
@@ -193,9 +210,27 @@ function buildHtmlForRoute(templateHtml, route, markup) {
   ].join('\n    ');
   html = html.replace('</head>', `    ${extraTags}\n  </head>`);
 
-  html = html.replace('<div id="root"></div>', `<div id="root">${markup}</div>`);
-
   return html;
+}
+
+/** Fills the two marked blocks of dist/.htaccess from src/App.tsx's routes
+ *  (see scripts/app-routes.mjs). Fails the build if a marker is missing,
+ *  rather than deploying rules that would 404 the whole app. */
+async function writeHostingRules() {
+  const htaccessPath = path.join(DIST, '.htaccess');
+  const src = await fs.readFile(htaccessPath, 'utf-8');
+  const routes = readAppRoutes(ROOT);
+  const markers = [
+    [/^[ \t]*# @@NOINDEX_RULE@@[ \t]*$/m, buildNoindexRule(routes)],
+    [/^[ \t]*# @@APP_ROUTE_RULES@@[ \t]*$/m, buildRewriteRules(routes)],
+  ];
+  let out = src;
+  for (const [re, replacement] of markers) {
+    if (!re.test(out)) throw new Error(`dist/.htaccess is missing marker ${re} — cannot generate hosting rules.`);
+    out = out.replace(re, replacement);
+  }
+  await fs.writeFile(htaccessPath, out, 'utf-8');
+  console.log(`✅ Hosting rules: ${routes.length} SPA routes -> app.html, everything else -> 404.html (HTTP 404)`);
 }
 
 function escapeHtml(str) {
@@ -214,13 +249,14 @@ async function main() {
   SITE_ORIGIN = (envVars.VITE_PUBLIC_SITE_ORIGIN || SOURCE_ORIGIN).replace(/\/+$/, '');
   OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
   await rewriteStaticOrigin();
+  await writeHostingRules();
 
   for (const route of ROUTES) {
     const markup = await renderRouteMarkup(route, manifest, envVars);
     const html = buildHtmlForRoute(templateHtml, route, markup);
     await fs.mkdir(path.dirname(route.outFile), { recursive: true });
     await fs.writeFile(route.outFile, html, 'utf-8');
-    console.log(`✅ Prerendered ${route.urlPath} -> ${path.relative(ROOT, route.outFile)}`);
+    console.log(`✅ Prerendered ${route.urlPath ?? '(404 page)'} -> ${path.relative(ROOT, route.outFile)}`);
   }
 }
 

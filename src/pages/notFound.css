@@ -1,0 +1,54 @@
+/* 404 page — one-shot entrance only (no looping motion). The default styles
+   ARE the final state: the keyframes only describe where things start, so
+   with reduced motion, no animation support, or before any JS runs, the
+   page is simply fully visible. */
+
+@keyframes nf-rise {
+  from { opacity: 0; transform: translateY(12px); }
+}
+
+@keyframes nf-box-drop {
+  0% { opacity: 0; transform: translateY(-18px) rotate(-6deg); }
+  60% { opacity: 1; transform: translateY(3px) rotate(2deg); }
+  100% { transform: translateY(0) rotate(0); }
+}
+
+@keyframes nf-draw {
+  from { stroke-dashoffset: 1; }
+}
+
+@keyframes nf-pin {
+  from { opacity: 0; transform: translateY(-10px) scale(0.7); }
+}
+
+.nf-rise {
+  animation: nf-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nf-box {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: nf-box-drop 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+
+/* The mask path uses pathLength="1", so 1 = the full route. */
+.nf-route-mask {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: nf-draw 1.1s cubic-bezier(0.65, 0, 0.35, 1) 0.35s both;
+}
+
+.nf-pin {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: nf-pin 0.45s cubic-bezier(0.22, 1, 0.36, 1) 1.3s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-rise,
+  .nf-box,
+  .nf-route-mask,
+  .nf-pin {
+    animation: none;
+  }
+}

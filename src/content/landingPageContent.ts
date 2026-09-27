@@ -219,6 +219,17 @@ export const FOOTER = {
   ],
 }
 
+export const NOT_FOUND = {
+  documentTitle: 'الصفحة غير موجودة | SHIPPEC',
+  eyebrow: '404 — الصفحة غير موجودة',
+  title: 'يبدو أن هذه الصفحة خارج المسار',
+  description: 'الرابط الذي فتحته غير موجود أو تم تغييره. يمكنك العودة إلى الرئيسية أو الرجوع إلى الصفحة السابقة.',
+  homeLabel: 'العودة للرئيسية',
+  backLabel: 'الرجوع للخلف',
+  helpPrefix: 'تحتاج مساعدة؟',
+  helpLabel: 'تواصل معنا',
+}
+
 export const VISIT_SECTION = {
   title: 'زورونا في الدمام',
   // Working hours from the previous site couldn't be confirmed as

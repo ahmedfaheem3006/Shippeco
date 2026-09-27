@@ -44,7 +44,13 @@ jobs:
       - name: Verify production build
         run: |
           test -f dist/index.html
+          test -f dist/app.html
+          test -f dist/404.html
           test -d dist/assets
+          # The SPA route rules must have been generated into .htaccess,
+          # otherwise every app route would answer 404.
+          grep -q "generated from src/App.tsx" dist/.htaccess
+          ! grep -q "@@APP_ROUTE_RULES@@" dist/.htaccess
           echo "Production build verified"
           find dist -maxdepth 2 -type f -print
 

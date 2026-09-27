@@ -1,50 +1,50 @@
-# Shippeco SPA (BrowserRouter) fallback + SEO rules for Hostinger (Apache/LiteSpeed).
-# Deployed as-is from Frontend/public/ into dist/ by Vite, then shipped to
-# domains/shippeco.com/public_html/ by the deploy-hostinger workflow.
+# SHIPPEC SPA + SEO rules for Hostinger (Apache/LiteSpeed).
+# Deployed from Frontend/public/ into dist/ by Vite; the two marked blocks
+# below are filled in at build time by scripts/prerender.mjs from the
+# <Route path="..."> list in src/App.tsx (scripts/app-routes.mjs), so new
+# routes are picked up automatically — never edit the generated lines in dist/.
 #
-# Two HTML shells ship in dist/, both produced by the build (vite build +
-# scripts/prerender.mjs):
-#   - index.html — prerendered public marketing homepage ("/"), real content
-#     in the HTML, indexable. Served directly since it IS the literal file
-#     Apache resolves for "/" — no rewrite involved.
-#   - app.html   — the plain SPA shell (empty #root) used by every other
-#     (authenticated) app route. Real files (JS/CSS/images/favicons/etc.)
-#     are always served as-is and never rewritten.
+# HTML files shipped in dist/ (all produced by `npm run build`):
+#   - index.html — prerendered public homepage ("/"), indexable. Served
+#     directly for "/" (DirectoryIndex) — no rewrite involved.
+#   - app.html   — the SPA shell used by every KNOWN app route (/login,
+#     /dashboard, /pay/:id, ...). Served with 200.
+#   - 404.html   — the prerendered "page not found" design (+ the app's JS,
+#     so it becomes the same React page once loaded). Served by
+#     ErrorDocument with a real HTTP 404 for anything that is neither a real
+#     file nor a known route — the URL in the address bar is not changed.
+#     This includes missing /assets/*.js|css|images: they get 404, never an
+#     HTML page with 200.
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
-  # Tag non-indexable app paths with an env var BEFORE any [L] (last-rule)
-  # match below fires, so mod_headers can still read it further down —
-  # applies whether the request ends up served as app.html or (for /pay/:id
-  # payment callbacks etc.) any real file under that path.
-  RewriteCond %{REQUEST_URI} ^/(login|dashboard|invoices|new-invoice|reports|clients|collection-model|expenses|calculator|reconcile|invoice-template|paymob-links|settings|profit-report|audit-log|wa-templates|tasks|quote-requests|pay)(/|$) [NC]
-  RewriteRule ^ - [E=SHIPPECO_NOINDEX:1]
+  # Tag app paths as non-indexable (read by mod_headers below). Must run
+  # before any [L] rule.
+  # @@NOINDEX_RULE@@
 
-  # Never touch an existing file or directory (assets, favicon, /assets/*.js…)
+  # Real files and directories are served as-is.
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Everything else falls back to the plain SPA shell for the router to
-  # handle client-side (login, dashboard, invoices, /pay/:id, 404s...).
-  RewriteRule ^ app.html [L]
+  # Known SPA routes -> app shell (200).
+  # @@APP_ROUTE_RULES@@
+
+  # No catch-all on purpose: any other path is simply not found, so the
+  # server answers 404 using the ErrorDocument below.
 </IfModule>
 
-# Fallback for hosts without mod_rewrite: at least route true 404s to the SPA
-# shell instead of Hostinger's default error page, so a direct/refreshed
-# link to an app route still boots the app.
-ErrorDocument 404 /app.html
+# Real 404 status + the designed page. (Without mod_rewrite this still boots
+# the SPA from 404.html, just with a 404 status.)
+ErrorDocument 404 /404.html
 
 # ── noindex for the authenticated app ──
-# The app shell (app.html) already carries <meta name="robots"
-# content="noindex, nofollow">, which is enough for a normal crawl. This
-# header is defense-in-depth for clients that only honor HTTP headers (some
-# non-HTML fetchers, link-preview bots, etc.). It intentionally does NOT
-# rely on robots.txt Disallow — Google must still be able to crawl these
-# paths to see the noindex signal, otherwise it can only report them as
-# "blocked by robots.txt" and may keep an old URL indexed forever.
+# app.html already carries <meta name="robots" content="noindex, nofollow">;
+# this header is defense-in-depth for clients that only honor HTTP headers.
+# It intentionally does NOT rely on robots.txt Disallow — crawlers must be
+# able to fetch these paths to see the noindex signal.
 <IfModule mod_headers.c>
   Header always set X-Robots-Tag "noindex, nofollow" env=SHIPPECO_NOINDEX
 </IfModule>
