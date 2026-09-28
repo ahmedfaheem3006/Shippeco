@@ -6,6 +6,8 @@ on:
       - main
     paths-ignore:
       - .github/workflows/ftp-diagnose.yml
+  # Manual runs build the head of the branch chosen in the "Run workflow"
+  # dialog (main by default) — never an older run's artifacts.
   workflow_dispatch:
 
 concurrency:
@@ -15,10 +17,20 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Web root of https://shippec.com, relative to the FTP account's home.
+  # Proven by .github/workflows/ftp-diagnose.yml: the FTP root only contains
+  # domains/, and domains/shippec.com/public_html/index.html is the file
+  # https://shippec.com serves. (hPanel's "public_html" is relative to the
+  # domain folder.) The old target domains/shippeco.com/public_html/ is the
+  # previous domain's folder and is no longer deployed to.
+  FTP_SITE_DIR: domains/shippec.com/public_html
+  SITE_URL: https://shippec.com
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -38,23 +50,59 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_WORKER_URL: ${{ vars.VITE_WORKER_URL }}
-          # Public canonical/OG/sitemap origin. Unset => https://shippeco.com
-          # (current live domain). Set to https://shippec.com only during the
-          # domain migration — see docs/DOMAIN-MIGRATION.md.
-          VITE_PUBLIC_SITE_ORIGIN: ${{ vars.VITE_PUBLIC_SITE_ORIGIN }}
+          # Public canonical/OG/sitemap origin. The Actions variable wins if
+          # set; otherwise the site we deploy to.
+          VITE_PUBLIC_SITE_ORIGIN: ${{ vars.VITE_PUBLIC_SITE_ORIGIN || 'https://shippec.com' }}
 
       - name: Verify production build
         run: |
           test -f dist/index.html
           test -f dist/app.html
           test -f dist/404.html
+          test -f dist/.htaccess
+          test -f dist/robots.txt
+          test -f dist/sitemap.xml
+          test -f dist/version.json
           test -d dist/assets
           # The SPA route rules must have been generated into .htaccess,
           # otherwise every app route would answer 404.
           grep -q "generated from src/App.tsx" dist/.htaccess
           ! grep -q "@@APP_ROUTE_RULES@@" dist/.htaccess
+          # Build stamp must be this exact commit.
+          grep -q "\"commit\": \"${GITHUB_SHA}\"" dist/version.json
+          # Public URLs must point at the site we deploy to.
+          grep -q "<link rel=\"canonical\" href=\"${SITE_URL}/\"" dist/index.html || { echo "::error::canonical is not ${SITE_URL}/ — set the VITE_PUBLIC_SITE_ORIGIN Actions variable to ${SITE_URL}"; exit 1; }
+          grep -q "Sitemap: ${SITE_URL}/sitemap.xml" dist/robots.txt
           echo "Production build verified"
+          cat dist/version.json
           find dist -maxdepth 2 -type f -print
+
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp >/dev/null
+
+      # Rollback point: a copy of what is live right now, kept as a run
+      # artifact. To roll back, download it and upload its contents to the
+      # same folder (or re-run this workflow for the previous good commit).
+      - name: Back up the current site before replacing it
+        env:
+          S: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          U: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          P: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+        run: |
+          mkdir -p site-backup
+          LFTP_PASSWORD="$P" lftp -u "$U" --env-password -p 21 \
+            -e "set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 2; set net:timeout 30; mirror --parallel=4 --size-range=0-25M '$FTP_SITE_DIR' site-backup; bye" \
+            "${S#ftp://}"
+          echo "Backed up $(find site-backup -type f | wc -l) files ($(du -sh site-backup | cut -f1))"
+          test -n "$(ls -A site-backup)" || { echo "::error::Backup is empty — refusing to deploy to an unverified folder"; exit 1; }
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-backup-before-${{ github.sha }}
+          path: site-backup
+          include-hidden-files: true
+          retention-days: 30
 
       - name: Deploy to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
@@ -65,6 +113,45 @@ jobs:
           protocol: ftp
           port: 21
           local-dir: ./dist/
-          server-dir: ./domains/shippeco.com/public_html/
-          state-name: .ftp-deploy-shippeco-state.json
-          log-level: verbose
+          server-dir: ./domains/shippec.com/public_html/
+          # Fixed state file for THIS destination. Only files listed in it
+          # (i.e. uploaded by this workflow) are ever deleted; with no state
+          # yet, the first run uploads everything and deletes nothing.
+          state-name: .ftp-deploy-shippec-state.json
+          log-level: standard
+
+      # FTP success != the site changed. Prove the live site now serves this
+      # exact build: build stamp, homepage asset fingerprints, routing/404.
+      - name: Verify the live site serves this build
+        run: |
+          set -u
+          expected_js=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1)
+          expected_css=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.css' dist/index.html | head -1)
+          fetch() { curl -sS --max-time 20 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$@"; }
+
+          ok=no
+          for i in $(seq 1 12); do
+            live=$(fetch "${SITE_URL}/version.json?run=${GITHUB_RUN_ID}-${i}" || true)
+            if printf '%s' "$live" | grep -q "\"commit\": \"${GITHUB_SHA}\""; then ok=yes; break; fi
+            echo "Attempt $i: live version.json is not ${GITHUB_SHA} yet — waiting 10s"
+            sleep 10
+          done
+          [ "$ok" = yes ] || { echo "::error::${SITE_URL}/version.json does not report ${GITHUB_SHA} after 2 minutes. Live: $(printf '%s' "$live" | head -c 300)"; exit 1; }
+
+          home=$(fetch "${SITE_URL}/?run=${GITHUB_RUN_ID}")
+          printf '%s' "$home" | grep -q "$expected_js" || { echo "::error::Live homepage does not reference $expected_js"; exit 1; }
+          printf '%s' "$home" | grep -q "$expected_css" || { echo "::error::Live homepage does not reference $expected_css"; exit 1; }
+          printf '%s' "$home" | grep -q "<link rel=\"canonical\" href=\"${SITE_URL}/\"" || { echo "::error::Live canonical is not ${SITE_URL}/"; exit 1; }
+
+          code_type() { curl -s -o /dev/null --max-time 20 -w '%{http_code} %{content_type}' "$1"; }
+          check() { # url expected_code expected_type_substring
+            got=$(code_type "$1"); echo "$1 -> $got"
+            case "$got" in "$2 "*"$3"*) ;; *) echo "::error::$1 returned '$got', expected $2 ($3)"; exit 1;; esac
+          }
+          check "${SITE_URL}${expected_js}" 200 javascript
+          check "${SITE_URL}${expected_css}" 200 css
+          check "${SITE_URL}/login" 200 text/html
+          check "${SITE_URL}/pay/1" 200 text/html
+          check "${SITE_URL}/deploy-check-missing-${GITHUB_RUN_ID}" 404 text/html
+          check "${SITE_URL}/assets/deploy-check-missing-${GITHUB_RUN_ID}.js" 404 ""
+          echo "::notice title=Live site verified::${SITE_URL} serves ${GITHUB_SHA} (${expected_js}); /login 200, unknown path 404"

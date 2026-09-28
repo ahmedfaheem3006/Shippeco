@@ -18,6 +18,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { execSync } from 'node:child_process';
 import { readAppRoutes, buildNoindexRule, buildRewriteRules } from './app-routes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -213,6 +214,27 @@ function buildHtmlForRoute(templateHtml, route, markup) {
   return html;
 }
 
+/** Public build stamp used to prove WHICH build a host is serving (the
+ *  deploy workflow compares it after uploading). Deliberately only the
+ *  commit, build time and CI run number — no env values or secrets. */
+async function writeVersionFile() {
+  let commit = process.env.GITHUB_SHA || null;
+  if (!commit) {
+    try {
+      commit = execSync('git rev-parse HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch {
+      commit = null;
+    }
+  }
+  const version = {
+    commit,
+    builtAt: new Date().toISOString(),
+    run: process.env.GITHUB_RUN_NUMBER ? Number(process.env.GITHUB_RUN_NUMBER) : null,
+  };
+  await fs.writeFile(path.join(DIST, 'version.json'), JSON.stringify(version, null, 2) + '\n', 'utf-8');
+  console.log(`✅ version.json: ${version.commit ?? 'unknown commit'} (run ${version.run ?? 'local'})`);
+}
+
 /** Fills the two marked blocks of dist/.htaccess from src/App.tsx's routes
  *  (see scripts/app-routes.mjs). Fails the build if a marker is missing,
  *  rather than deploying rules that would 404 the whole app. */
@@ -250,6 +272,7 @@ async function main() {
   OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
   await rewriteStaticOrigin();
   await writeHostingRules();
+  await writeVersionFile();
 
   for (const route of ROUTES) {
     const markup = await renderRouteMarkup(route, manifest, envVars);

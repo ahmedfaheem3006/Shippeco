@@ -1,5 +1,21 @@
 # نقل الموقع العام من shippeco.com إلى shippec.com
 
+## تحديث: وجهة النشر الفعلية (مُثبتة)
+
+- الموقع يُخدم الآن من `https://shippec.com`، وحساب FTP هو نفسه (`2.57.89.35` / `u909097244`).
+- جذر FTP هو مجلد الحساب (فيه `domains/` فقط)، ومجلد موقع shippec.com هو
+  **`domains/shippec.com/public_html/`** — «public_html» في hPanel نسبي لمجلد الدومين.
+  ثبت ذلك بـ `.github/workflows/ftp-diagnose.yml`: `index.html` في هذا المجلد هو نفسه الذي
+  يقدمه https://shippec.com.
+- النشر كان يذهب إلى `domains/shippeco.com/public_html/` (مجلد الدومين القديم)، فكان GitHub
+  Actions ينجح بينما shippec.com يعرض نسخة قديمة نُسخت وقت النقل. تم تصحيح `server-dir`
+  وملف التتبع أصبح `.ftp-deploy-shippec-state.json`.
+- كل نشر: يأخذ نسخة احتياطية من المجلد الحالي كـ artifact (30 يومًا)، ثم يتحقق بعد الرفع أن
+  `https://shippec.com/version.json` يطابق الـcommit المبني، وأن ملفات JS/CSS والـcanonical
+  و`/login` (200) ومسار غير موجود (404) صحيحة — وإلا يفشل التشغيل.
+- للرجوع: نزّل artifact باسم `site-backup-before-<sha>` من تشغيل النشر وارفع محتواه إلى نفس
+  المجلد، أو أعد تشغيل النشر على commit سابق سليم.
+
 > **الحالة:** لم يتم النقل. هذا المستند خطة تنفيذ قابلة للرجوع، والكود مجهّز لها
 > بحيث يتم التبديل بمتغير واحد. لم يكن هناك وصول إلى لوحة Hostinger أو DNS أثناء
 > التجهيز، لذلك كل الخطوات الخاصة بالاستضافة أدناه لم تُنفَّذ بعد.

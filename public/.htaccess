@@ -48,3 +48,17 @@ ErrorDocument 404 /404.html
 <IfModule mod_headers.c>
   Header always set X-Robots-Tag "noindex, nofollow" env=SHIPPECO_NOINDEX
 </IfModule>
+
+# ── Caching ──
+# HTML shells and the build stamp must be revalidated on every visit so a
+# new deploy shows up immediately (they reference the new hashed assets).
+# Vite's hashed assets never change content under the same name, so they
+# can be cached for a year.
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$|^version\.json$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "-[A-Za-z0-9_-]{8}\.(js|css|webp|png|jpe?g|svg|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
