@@ -1,9 +1,10 @@
 import { unifiedService } from './unifiedService';
+import { api } from '../utils/apiClient';
 
 export interface Task {
   id: number;
   title: string;
-  description: string;
+  description: string | null;
   assigned_to: number;
   assigned_by: number;
   status: 'open' | 'closed';
@@ -12,6 +13,8 @@ export interface Task {
   assigned_to_name?: string;
   assigned_by_name?: string;
   invoice_id?: number;
+  /** invoices.id of the linked invoice (invoice_id may hold a Daftra id). */
+  invoice_ref_id?: number | null;
   invoice_number?: string;
   invoice_awb?: string;
   invoice_total?: number;
@@ -28,33 +31,44 @@ export interface TaskMessage {
   user_name?: string;
 }
 
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  assigned_to: number;
+  invoice_id?: number | null;
+}
+
+const unwrap = <T,>(result: unknown): T =>
+  (result && typeof result === 'object' && (result as { success?: boolean }).success
+    ? (result as { data: T }).data
+    : result) as T;
+
+// Reads go straight to the API client, not through unifiedService.get: its
+// 30s response cache made the task window's live refresh show stale replies
+// and the list miss a just-created task. Writes still go through
+// unifiedService so its cache is invalidated for other pages.
 export const tasksService = {
-  async getTasks(params: { status?: string; scope?: string; view?: string } = {}): Promise<Task[]> {
+  async getTasks(params: { status?: string; scope?: string; view?: string } = {}, signal?: AbortSignal): Promise<Task[]> {
     const qp = new URLSearchParams();
     if (params.status) qp.set('status', params.status);
     if (params.scope) qp.set('scope', params.scope);
     if (params.view) qp.set('view', params.view);
-    const result = await unifiedService.get<any>(`/tasks?${qp.toString()}`);
-    return result.success ? result.data : result;
+    return unwrap<Task[]>(await api.get(`/tasks?${qp.toString()}`, { signal }));
   },
 
-  async getTask(id: number): Promise<Task> {
-    const result = await unifiedService.get<any>(`/tasks/${id}`);
-    return result.success ? result.data : result;
+  async getTask(id: number, signal?: AbortSignal): Promise<Task> {
+    return unwrap<Task>(await api.get(`/tasks/${id}`, { signal }));
   },
 
-  async createTask(data: { title: string; description?: string; assigned_to: number }): Promise<Task> {
-    const result = await unifiedService.post<any>('/tasks', data);
-    return result.success ? result.data : result;
+  async createTask(data: CreateTaskInput): Promise<Task> {
+    return unwrap<Task>(await unifiedService.post<unknown>('/tasks', data));
   },
 
   async updateStatus(id: number, status: 'open' | 'closed'): Promise<Task> {
-    const result = await unifiedService.patch<any>(`/tasks/${id}/status`, { status });
-    return result.success ? result.data : result;
+    return unwrap<Task>(await unifiedService.patch<unknown>(`/tasks/${id}/status`, { status }));
   },
 
   async addMessage(taskId: number, message: string): Promise<TaskMessage> {
-    const result = await unifiedService.post<any>(`/tasks/${taskId}/messages`, { message });
-    return result.success ? result.data : result;
-  }
+    return unwrap<TaskMessage>(await unifiedService.post<unknown>(`/tasks/${taskId}/messages`, { message }));
+  },
 };

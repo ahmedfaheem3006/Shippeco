@@ -3,6 +3,23 @@ import { env } from './env';
 
 const API_BASE_URL = env.apiUrl;
 
+/** Thrown for any non-2xx response. Still an Error with the server's message
+ *  (so existing `err.message` callers are unchanged), plus the HTTP status
+ *  and per-field validation details when the Backend sends them. */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly details: { field: string; message: string }[];
+
+  constructor(message: string, status: number, code?: string, details?: { field: string; message: string }[]) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = Array.isArray(details) ? details : [];
+  }
+}
+
 class ApiClient {
   private getHeaders() {
     const token = useAuthStore.getState().token;
@@ -12,8 +29,8 @@ class ApiClient {
     };
   }
 
-  async get<T = any>(endpoint: string): Promise<T> {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, { headers: this.getHeaders() });
+  async get<T = any>(endpoint: string, init?: { signal?: AbortSignal }): Promise<T> {
+    const res = await fetch(`${API_BASE_URL}${endpoint}`, { headers: this.getHeaders(), signal: init?.signal });
     return this.handleResponse(res);
   }
 
@@ -74,7 +91,12 @@ class ApiClient {
     }
 
     if (!res.ok) {
-      throw new Error(json?.error?.message || json?.message || 'Internal server error');
+      throw new ApiError(
+        json?.error?.message || json?.message || 'Internal server error',
+        res.status,
+        json?.error?.code,
+        json?.error?.details,
+      );
     }
     
     // ════════════════════════════════════════════════════════

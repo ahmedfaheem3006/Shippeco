@@ -74,6 +74,7 @@ export function AppLayout() {
     if (path.includes('/paymob')) return 'روابط Paymob';
     if (path.includes('/template')) return 'قالب الفاتورة';
     if (path.includes('/quote-requests')) return 'طلبات الشحن والتواصل';
+    if (path.includes('/tasks')) return 'المهام';
     return 'الرئيسية';
   };
 

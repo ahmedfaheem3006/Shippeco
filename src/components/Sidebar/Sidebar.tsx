@@ -73,7 +73,7 @@ export function Sidebar({ onNavigate }: Props) {
           <CreditCard size={20} /> المصروفات
         </button>
         <button className={navItemClass('/tasks')} onClick={() => go('/tasks')}>
-          <ClipboardList size={20} /> المهام المسؤل عنها
+          <ClipboardList size={20} /> المهام المسؤول عنها
         </button>
         {canReviewQuoteRequests && (
           <button className={navItemClass('/quote-requests')} onClick={() => go('/quote-requests')}>
