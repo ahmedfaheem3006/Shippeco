@@ -248,14 +248,14 @@ export function InvoicesPage() {
 
   // ── Handle incoming navigation state (e.g. from Notifications) ──
   useEffect(() => {
-    if (location.state?.invoiceId && location.state?.openTask && invoices.length > 0) {
+    if (location.state?.invoiceId && (location.state?.openTask || location.state?.openInvoice) && invoices.length > 0) {
       const invId = String(location.state.invoiceId);
       const inv = invoices.find(i => String(i.id) === invId);
       if (inv) {
         // Open edit
         handleEdit(invId);
-        // Open task modal
-        handleOpenTaskModal(inv);
+        // Open task modal (notification links only; a task's "open invoice" link just opens the invoice)
+        if (location.state?.openTask) handleOpenTaskModal(inv);
         // Clear state so it doesn't re-open on refresh
         navTo(location.pathname, { replace: true, state: {} });
       }

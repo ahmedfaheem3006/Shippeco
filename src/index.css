@@ -89,7 +89,13 @@ body {
       scale(var(--shp-enter-scale, 1));
   }
 }
-.animate-in { animation: shp-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* fill-mode is `backwards`, not `both`: a filled (forwards) transform
+   animation leaves the element with a non-`none` transform forever, which
+   makes it the containing block for every `position: fixed` descendant — a
+   page wrapper with this class then dragged its modals off-screen (centered
+   on the whole page height instead of the viewport). `backwards` still
+   applies the start frame immediately and drops the effect once finished. */
+.animate-in { animation: shp-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .fade-in { --shp-enter-opacity: 0; }
 .zoom-in-95 { --shp-enter-scale: 0.95; }
 .slide-in-from-top-1 { --shp-enter-y: -0.25rem; }
@@ -101,4 +107,31 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-in { animation: none; }
+}
+
+/* ── Modal dialog (src/components/shared/Dialog.tsx) ──
+   Only opacity + a small translate/scale on the panel; the overlay layer
+   itself never gets a transform, so popovers positioned `fixed` inside it
+   stay relative to the viewport. */
+@keyframes shp-overlay-in { from { opacity: 0; } }
+@keyframes shp-overlay-out { to { opacity: 0; } }
+@keyframes shp-panel-in { from { opacity: 0; transform: translate3d(0, 16px, 0) scale(0.985); } }
+@keyframes shp-panel-out { to { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.985); } }
+.shp-dialog-overlay { animation: shp-overlay-in 200ms ease-out backwards; }
+.shp-dialog-overlay[data-state='closed'] { animation: shp-overlay-out 180ms ease-in forwards; }
+.shp-dialog-panel { animation: shp-panel-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.shp-dialog-panel[data-state='closed'] { animation: shp-panel-out 180ms ease-in forwards; }
+.shp-dialog-layer[data-state='closed'] { pointer-events: none; }
+.shp-dialog-panel {
+  max-height: calc(100% - 0.75rem - env(safe-area-inset-top, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.shp-dialog-panel--tall { height: calc(100% - 0.75rem - env(safe-area-inset-top, 0px)); }
+@media (min-width: 640px) {
+  .shp-dialog-panel { max-height: calc(100% - 2rem); padding-bottom: 0; }
+  .shp-dialog-panel--tall { height: min(88%, 820px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shp-dialog-overlay, .shp-dialog-panel,
+  .shp-dialog-overlay[data-state='closed'], .shp-dialog-panel[data-state='closed'] { animation: none; }
 }
