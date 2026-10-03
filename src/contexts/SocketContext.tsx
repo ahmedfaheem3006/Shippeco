@@ -7,60 +7,71 @@ import { toast } from 'react-hot-toast';
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
+  /**
+   * Bumps every time the connection comes BACK after a drop. Events emitted
+   * while we were offline are lost, so listeners re-fetch authoritative state
+   * from the API when this changes (see useRealtimeRefresh).
+   */
+  resyncVersion: number;
 }
 
-const SocketContext = createContext<SocketContextType>({ socket: null, connected: false });
+const SocketContext = createContext<SocketContextType>({ socket: null, connected: false, resyncVersion: 0 });
 
 export const useSocket = () => useContext(SocketContext);
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [resyncVersion, setResyncVersion] = useState(0);
   const token = useAuthStore(s => s.token);
   const logout = useAuthStore(s => s.logout);
 
   useEffect(() => {
     const socketInstance = connectSocket(token);
+    let connectedOnce = socketInstance.connected;
 
-    socketInstance.on('connect', () => {
+    const onConnect = () => {
       console.log('[Socket] Connected to server');
       setConnected(true);
-    });
-
-    socketInstance.on('disconnect', () => {
+      if (connectedOnce) setResyncVersion((v) => v + 1);
+      connectedOnce = true;
+    };
+    const onDisconnect = () => {
       console.log('[Socket] Disconnected from server');
       setConnected(false);
-    });
-
-    socketInstance.on('PAYMENT_SUCCESS', (data: any) => {
-      console.log('[Socket] Global Payment Success received:', data);
+    };
+    const onPayment = (data: { transaction_id?: string; amount?: number } = {}) => {
+      // One toast per gateway transaction, however many times it is pushed.
       toast.success(`✅ تم تحصيل دفعة بنجاح! مبلغ: ${data.amount} ر.س`, {
+        id: data.transaction_id ? `payment-${data.transaction_id}` : undefined,
         duration: 8000,
         position: 'top-center',
         icon: '💰'
       });
-
-      // We can use a global event bus or just rely on components listening for INVOICE_UPDATED
-    });
-
+    };
     // Server pushes this when an admin disables/deletes this account, or the
     // account otherwise loses access — end the session immediately instead
     // of waiting for the next API call to bounce with a 401.
-    socketInstance.on('session:revoked', (data: { reason?: string; message?: string } = {}) => {
+    const onRevoked = (data: { reason?: string; message?: string } = {}) => {
       console.log('[Socket] Session revoked by server:', data);
       if (data.message) {
         toast.error(data.message, { duration: 8000 });
       }
       logout();
-    });
+    };
 
+    socketInstance.on('connect', onConnect);
+    socketInstance.on('disconnect', onDisconnect);
+    socketInstance.on('PAYMENT_SUCCESS', onPayment);
+    socketInstance.on('session:revoked', onRevoked);
+    setConnected(socketInstance.connected);
     setSocket(socketInstance);
 
     return () => {
-      socketInstance.off('PAYMENT_SUCCESS');
-      socketInstance.off('session:revoked');
-      socketInstance.off('connect');
-      socketInstance.off('disconnect');
+      socketInstance.off('connect', onConnect);
+      socketInstance.off('disconnect', onDisconnect);
+      socketInstance.off('PAYMENT_SUCCESS', onPayment);
+      socketInstance.off('session:revoked', onRevoked);
     };
   }, [token, logout]);
 
@@ -70,7 +81,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => () => disconnectSocket(), []);
 
   return (
-    <SocketContext.Provider value={{ socket, connected }}>
+    <SocketContext.Provider value={{ socket, connected, resyncVersion }}>
       {children}
     </SocketContext.Provider>
   );

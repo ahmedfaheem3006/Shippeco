@@ -74,10 +74,14 @@ export function useDashboardPage() {
   const sparkAreaPath = useMemo(() => (sparkPath ? buildSparkAreaPath(sparkPath, 46, 3) : ''), [sparkPath])
 
   // ═══ REFRESH ═══
-  const refresh = useCallback(async () => {
-    setLoading(true)
+  // silent: realtime refresh after a payment — no spinner/skeleton (the
+  // cards update in place) and no Daftra sync kick-off.
+  const refresh = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) {
+      setLoading(true)
+      setDataSource('unknown')
+    }
     setError(null)
-    setDataSource('unknown')
     try {
       const [dashData, recentResult] = await Promise.all([
         invoiceService.getDashboardData(period).catch((err) => {
@@ -100,7 +104,7 @@ export function useDashboardPage() {
 
       console.log('[Dashboard] Period:', period, 'Total:', dashData?.summary?.total?.count || 0, 'invoices')
 
-      void (async () => { try { await invoiceService.syncRecent() } catch { } })()
+      if (!opts.silent) void (async () => { try { await invoiceService.syncRecent() } catch { } })()
     } catch (e) {
       console.error('[Dashboard] Failed:', e)
       setError(e instanceof Error ? e.message : 'فشل تحميل البيانات')

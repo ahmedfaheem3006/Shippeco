@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh'
 import { useNavigate } from 'react-router-dom'
 import { useDashboardPage } from '../hooks/useDashboardPage'
 import {
@@ -328,6 +329,9 @@ export function DashboardPage() {
   const { refresh } = dash
 
   useEffect(() => { void refresh() }, [refresh])
+  // Payments recorded by the backend (webhook / reconciliation) update the
+  // totals live; after a reconnect, re-fetch what may have been missed.
+  useRealtimeRefresh(PAYMENT_EVENTS, () => { void refresh({ silent: true }) })
 
   const onCreateInvoice = () => {
     nav('/new-invoice')

@@ -1,9 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { notificationsService } from '../services/notificationsService';
 import type { Notification } from '../services/notificationsService';
+import { useRealtimeRefresh } from './useRealtimeRefresh';
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const notificationsRef = useRef<Notification[]>([]);
+  useLayoutEffect(() => {
+    notificationsRef.current = notifications;
+  });
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const failCountRef = useRef(0);
@@ -61,19 +66,23 @@ export function useNotifications() {
     return () => clearInterval(timer);
   }, [fetchNotifications]);
 
-  const markAsRead = useCallback(async (id: number) => {
-    try {
-      await notificationsService.markAsRead(id);
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-    } catch (e) {
+  /**
+   * Optimistic and non-blocking: the UI (dot + counter) updates immediately
+   * and callers never await the network — opening the item must not depend
+   * on this request. If it fails, the real state is re-fetched.
+   */
+  const markAsRead = useCallback((id: number) => {
+    const wasUnread = notificationsRef.current.some((n) => n.id === id && !n.is_read);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id && !n.is_read ? { ...n, is_read: true, read_at: new Date().toISOString() } : n))
+    );
+    if (wasUnread) setUnreadCount((prev) => Math.max(0, prev - 1));
+    notificationsService.markAsRead(id).catch((e) => {
       console.error('[Notifications] markAsRead failed:', e);
-    }
-  }, []);
+      failCountRef.current = 0;
+      void fetchNotifications();
+    });
+  }, [fetchNotifications]);
 
   const markAllAsRead = useCallback(async () => {
     try {
@@ -91,6 +100,12 @@ export function useNotifications() {
     failCountRef.current = 0;
     return fetchNotifications();
   }, [fetchNotifications]);
+
+  // New notifications are pushed by the server; after a reconnect, re-fetch
+  // to catch anything emitted while offline. Polling stays as a fallback.
+  useRealtimeRefresh(['notification:new'], () => {
+    void refresh();
+  });
 
   return {
     notifications,

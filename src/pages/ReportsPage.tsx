@@ -1,6 +1,7 @@
 // Frontend/src/pages/ReportsPage.tsx
 import { useEffect } from 'react';
 import { useReportsPage } from '../hooks/useReportsPage';
+import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import {
   BarChart2, FileSpreadsheet, Download, RefreshCw,
   ChevronRight, ChevronLeft, Search, CheckCircle2,
@@ -93,6 +94,9 @@ export function ReportsPage() {
   useEffect(() => {
     void rep.refresh();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Payments recorded by the backend change collected/unpaid totals.
+  useRealtimeRefresh(PAYMENT_EVENTS, () => { void rep.refreshSilently(); });
 
   return (
     <div className="space-y-3 sm:space-y-5 animate-in fade-in duration-300 pb-24 sm:pb-20 lg:pb-0">

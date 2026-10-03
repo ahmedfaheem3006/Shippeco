@@ -71,8 +71,15 @@ export const invoiceService = {
     return allInvoices;
   },
 
-  async getInvoice(id: string): Promise<Invoice> {
-    const result = await unifiedService.get<any>(`/invoices/${id}`);
+  /**
+   * strict: match the primary key only (no invoice_number/daftra_id fallback)
+   *         — used when opening an invoice by a stored id (notifications).
+   * fresh:  bypass the 30s response cache (payment just recorded).
+   */
+  async getInvoice(id: string, opts: { strict?: boolean; fresh?: boolean } = {}): Promise<Invoice> {
+    const endpoint = `/invoices/${encodeURIComponent(id)}${opts.strict ? '?strict=1' : ''}`;
+    if (opts.fresh) unifiedService.invalidateCache(endpoint);
+    const result = await unifiedService.get<any>(endpoint);
     const raw = result?.data !== undefined && result?.success ? result.data : result;
     return mapRailwayToCloudflare(raw);
   },

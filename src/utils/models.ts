@@ -233,6 +233,38 @@ export type PaymobLink = {
   created_at: string
 }
 
+export type PaymobLinkDetails = PaymobLink & {
+  paid_amount?: number | string
+  currency?: string
+  review_reason?: string | null
+  invoice_ids?: number[] | string | null
+  invoices: {
+    id: number
+    invoice_number: string | null
+    client_name: string | null
+    total: number | string
+    paid_amount: number | string
+    remaining: number | string
+    payment_status: number
+  }[]
+  missing_invoice_ids: number[]
+  attempts: { id: number; paymob_order_id: string; status: string; check_attempts: number; last_checked_at: string | null; created_at: string }[]
+  transactions: {
+    paymob_transaction_id: string
+    paymob_order_id: string | null
+    status: string
+    amount_cents: number | string | null
+    currency: string | null
+    applied: boolean
+    applied_amount_cents: number | string
+    unapplied_amount_cents: number | string
+    needs_review: boolean
+    review_reason: string | null
+    source: string
+    first_seen_at: string
+  }[]
+}
+
 export type PaymobStats = {
   total: number
   paid_count: number

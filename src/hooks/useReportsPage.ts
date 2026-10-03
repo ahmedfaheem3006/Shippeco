@@ -295,8 +295,10 @@ export function useReportsPage() {
       search?: string;
       page?: number;
       period?: ReportsPeriod;
+      /** realtime refresh: keep the current tables on screen (no skeleton swap) */
+      silent?: boolean;
     }) => {
-      setLoading(true);
+      if (!overrides?.silent) setLoading(true);
       setError(null);
 
       const r = overrides?.range || range;
@@ -462,10 +464,14 @@ export function useReportsPage() {
     [tableRows, range.label]
   );
 
+  /** Re-fetch the current view in place after a recorded payment. */
+  const refreshSilently = useCallback(() => fetchData({ silent: true }), [fetchData]);
+
   return {
     loading,
     error,
     refresh,
+    refreshSilently,
     query,
     setQuery,
     period,

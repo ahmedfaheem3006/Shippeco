@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { toast as hotToast } from 'react-hot-toast'
 import { useAppLayout } from '../components/AppLayout/useAppLayout'
 import { InvoiceAddItemModal } from '../components/Invoices/InvoiceAddItemModal'
 import { InvoiceViewModal } from '../components/Invoices/InvoiceViewModal'
@@ -24,7 +25,8 @@ import {
 } from 'lucide-react'
 import { useSettingsStore } from '../hooks/useSettingsStore'
 import { downloadInvoicePDF } from '../utils/pdfGenerator'
-import { useSocket } from '../contexts/SocketContext'
+import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh'
+import { describeOpenError } from '../utils/notificationTarget'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
 type QuickStatus = 'all' | 'unpaid' | 'partial' | 'paid' | 'returned'
@@ -68,6 +70,11 @@ export function InvoicesPage() {
   const [wizardInitialDraft, setWizardInitialDraft] = useState<InvoiceDraftInput | undefined>(undefined)
   const [wizardTitle, setWizardTitle] = useState<string | undefined>(undefined)
   const [viewInvoiceId, setViewInvoiceId] = useState<string | null>(null)
+  // Invoice opened by id (notification deep link / task link) that may not be
+  // on the current page of results or match the current filter.
+  const [openedInvoice, setOpenedInvoice] = useState<Invoice | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLinkInvoiceId = searchParams.get('invoice')
   const [addItemInvoiceId, setAddItemInvoiceId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -159,25 +166,12 @@ export function InvoicesPage() {
     }
   }
 
-  // ── Socket.io Listener for Real-time Payment ──
-  const { socket } = useSocket()
-  useEffect(() => {
-    if (!socket) return
-    
-    const handlePayment = (data: any) => {
-      console.log('[Socket] Payment update received:', data)
-      // Refresh the list immediately
-      syncFromDb()
-    }
-
-    socket.on('PAYMENT_SUCCESS', handlePayment)
-    socket.on('INVOICE_UPDATED', handlePayment)
-
-    return () => {
-      socket.off('PAYMENT_SUCCESS', handlePayment)
-      socket.off('INVOICE_UPDATED', handlePayment)
-    }
-  }, [socket, syncFromDb])
+  // ── Real-time payment updates ── (one refresh per burst of events; the
+  // list is swapped in place, so the page does not jump or lose its scroll;
+  // an open edit wizard keeps its unsaved input)
+  useRealtimeRefresh(PAYMENT_EVENTS, () => {
+    void syncFromDb(false)
+  })
 
   const handleSendTask = async () => {
     if (!taskRecipientId || !taskNotes.trim() || !taskInvoice) return
@@ -246,21 +240,66 @@ export function InvoicesPage() {
     return () => window.clearTimeout(t)
   }, [openNewWizard])
 
-  // ── Handle incoming navigation state (e.g. from Notifications) ──
+  // ── Deep link: /invoices?invoice=<id> (notifications) ──
+  // Fetched by its primary key, so it opens even when it is not on the
+  // current page or filter. The API enforces access; a deleted or forbidden
+  // invoice shows an Arabic message instead of an empty dialog.
   useEffect(() => {
-    if (location.state?.invoiceId && (location.state?.openTask || location.state?.openInvoice) && invoices.length > 0) {
-      const invId = String(location.state.invoiceId);
-      const inv = invoices.find(i => String(i.id) === invId);
-      if (inv) {
-        // Open edit
-        handleEdit(invId);
-        // Open task modal (notification links only; a task's "open invoice" link just opens the invoice)
-        if (location.state?.openTask) handleOpenTaskModal(inv);
-        // Clear state so it doesn't re-open on refresh
-        navTo(location.pathname, { replace: true, state: {} });
+    if (!deepLinkInvoiceId) return
+    const clearParam = () => setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('invoice')
+      return next
+    }, { replace: true })
+    if (!/^\d+$/.test(deepLinkInvoiceId)) { clearParam(); return }
+    let cancelled = false
+    void (async () => {
+      try {
+        const inv = await invoiceService.getInvoice(deepLinkInvoiceId, { strict: true, fresh: true })
+        if (cancelled) return
+        setOpenedInvoice(inv)
+        setViewInvoiceId(String(inv.id))
+      } catch (err: any) {
+        if (cancelled) return
+        hotToast.error(describeOpenError('invoice', err?.status), { id: `invoice-open-${deepLinkInvoiceId}` })
+        clearParam()
       }
+    })()
+    return () => { cancelled = true }
+  }, [deepLinkInvoiceId, setSearchParams])
+
+  const closeInvoiceView = useCallback(() => {
+    setViewInvoiceId(null)
+    if (searchParams.has('invoice')) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('invoice')
+        return next
+      }, { replace: true })
     }
-  }, [location.state, invoices, navTo, location.pathname]);
+  }, [searchParams, setSearchParams])
+
+  // ── Handle incoming navigation state (task window "open invoice" link) ──
+  useEffect(() => {
+    if (!location.state?.invoiceId || !(location.state?.openTask || location.state?.openInvoice)) return
+    const invId = String(location.state.invoiceId);
+    const openTask = Boolean(location.state?.openTask);
+    // Clear state so it doesn't re-open on refresh
+    navTo(location.pathname + location.search, { replace: true, state: {} });
+    // Open edit (fetches the invoice by id itself, wherever it is in the list)
+    handleEdit(invId);
+    if (openTask) {
+      const listed = invoices.find(i => String(i.id) === invId);
+      if (listed) handleOpenTaskModal(listed);
+      else invoiceService.getInvoice(invId, { strict: true }).then(handleOpenTaskModal).catch(() => undefined);
+    }
+  }, [location.state, invoices, navTo, location.pathname, location.search]);
+
+  const findInvoice = (id: string | null) =>
+    id === null
+      ? null
+      : storeInvoices.find((i) => String(i.id) === String(id))
+        ?? (openedInvoice && String(openedInvoice.id) === String(id) ? openedInvoice : null)
 
   const displayValue = (value: unknown) => {
     const s = String(value ?? '').trim()
@@ -371,7 +410,7 @@ export function InvoicesPage() {
   const handleAddItem = (id: string) => setAddItemInvoiceId(id)
 
   const handleCollect = (id: string) => {
-    const inv = storeInvoices.find((i) => String(i.id) === id)
+    const inv = findInvoice(id)
     if (!inv || !inv.phone) return
 
     // Fetch or CREATE Paymob link for this invoice, then send WhatsApp
@@ -422,7 +461,7 @@ export function InvoicesPage() {
   }
 
   const handleDelete = (id: string) => {
-    const inv = storeInvoices.find((i) => String(i.id) === id)
+    const inv = findInvoice(id)
     const label = inv ? `#${inv.invoice_number || inv.daftra_id || inv.id}` : `#${id}`
     if (!window.confirm(`هل تريد حذف الفاتورة ${label} نهائياً؟`)) return
     setDeletingId(id)
@@ -916,18 +955,18 @@ export function InvoicesPage() {
 
       <InvoiceViewModal
         open={Boolean(viewInvoiceId)}
-        invoice={viewInvoiceId ? storeInvoices.find((i) => String(i.id) === String(viewInvoiceId)) ?? null : null}
-        onClose={() => setViewInvoiceId(null)}
-        onAddItem={() => { if (viewInvoiceId) { setAddItemInvoiceId(viewInvoiceId); setViewInvoiceId(null) } }}
-        onEdit={() => { if (viewInvoiceId) { handleEdit(viewInvoiceId); setViewInvoiceId(null) } }}
-        onCollect={() => { if (viewInvoiceId) { handleCollect(viewInvoiceId); setViewInvoiceId(null) } }}
-        onDelete={() => { if (viewInvoiceId) { handleDelete(viewInvoiceId); setViewInvoiceId(null) } }}
+        invoice={findInvoice(viewInvoiceId)}
+        onClose={closeInvoiceView}
+        onAddItem={() => { if (viewInvoiceId) { setAddItemInvoiceId(viewInvoiceId); closeInvoiceView() } }}
+        onEdit={() => { if (viewInvoiceId) { handleEdit(viewInvoiceId); closeInvoiceView() } }}
+        onCollect={() => { if (viewInvoiceId) { handleCollect(viewInvoiceId); closeInvoiceView() } }}
+        onDelete={() => { if (viewInvoiceId) { handleDelete(viewInvoiceId); closeInvoiceView() } }}
         onRefresh={() => syncFromDb(false)}
       />
 
       <InvoiceAddItemModal
         open={Boolean(addItemInvoiceId)}
-        invoice={addItemInvoiceId ? storeInvoices.find((i) => String(i.id) === String(addItemInvoiceId)) ?? null : null}
+        invoice={findInvoice(addItemInvoiceId)}
         onClose={() => setAddItemInvoiceId(null)}
         saving={mutating}
         onSave={(next: Invoice) => {

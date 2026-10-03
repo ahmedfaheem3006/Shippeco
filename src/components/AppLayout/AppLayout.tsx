@@ -5,29 +5,33 @@ import { useTheme } from '../../hooks/useTheme';
 import {
   Menu, Moon, Sun, Bell, LayoutDashboard, FileText,
   Users, BarChart3, MoreHorizontal, CheckCheck,
-  CreditCard, ClipboardCheck, ClipboardList, Check,
+  CreditCard, ClipboardCheck, ClipboardList, Check, AlertTriangle, AlarmClock,
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import shippecLogo from '../../assets/shippec.jpeg';
 import { useNotifications } from '../../hooks/useNotifications';
+import { resolveNotificationTarget } from '../../utils/notificationTarget';
 
-/* ═══ Notification type → icon & route mapping ═══ */
+/* ═══ Notification type → icon (destination: utils/notificationTarget) ═══ */
 const NOTIF_CONFIG: Record<string, {
   icon: any;
   color: string;
-  route: string;
 }> = {
-  new_user:        { icon: Users,          color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',   route: '/settings' },
-  user_approved:   { icon: Check,          color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',   route: '/dashboard' },
-  user_rejected:   { icon: Users,          color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',           route: '/dashboard' },
-  invoice_created: { icon: FileText,       color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',       route: '/invoices' },
-  invoice_paid:    { icon: CreditCard,     color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',   route: '/invoices' },
-  payment_link:    { icon: CreditCard,     color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400', route: '/paymob-links' },
-  sync_complete:   { icon: ClipboardCheck, color: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',       route: '/settings' },
-  report_ready:    { icon: BarChart3,      color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400', route: '/reports' },
-  reconcile:       { icon: ClipboardList,  color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400', route: '/reconcile' },
-  task:            { icon: ClipboardList,  color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400', route: '/invoices' },
-  default:         { icon: Bell,           color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400', route: '/dashboard' },
+  new_user:            { icon: Users,          color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  user_approved:       { icon: Check,          color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
+  user_rejected:       { icon: Users,          color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  invoice_created:     { icon: FileText,       color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' },
+  invoice_paid:        { icon: CreditCard,     color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
+  payment_received:    { icon: CreditCard,     color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
+  payment_review:      { icon: AlertTriangle,  color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  payment_link:        { icon: CreditCard,     color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
+  collection_reminder: { icon: AlarmClock,     color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  sync_complete:       { icon: ClipboardCheck, color: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400' },
+  report_ready:        { icon: BarChart3,      color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  reconcile:           { icon: ClipboardList,  color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
+  task:                { icon: ClipboardList,  color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  default:             { icon: Bell,           color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
 };
 
 function getNotifConfig(type: string) {
@@ -80,33 +84,16 @@ export function AppLayout() {
 
   const pageTitle = getPageTitle(location.pathname);
 
-  /* ── Handle notification click ── */
+  /* ── Handle notification click ──
+     Close first, navigate straight away (works from any page), and mark as
+     read in the background — a failed "read" request never blocks opening. */
   const handleNotifClick = (n: typeof notifications[0]) => {
-    // Mark as read if not already
-    if (!n.is_read) {
-      markAsRead(n.id);
-    }
-
-    // Navigate to the relevant page
-    const config = getNotifConfig(n.type);
-    let targetRoute = config.route;
-
-    // If notification has specific data, use it for more precise navigation
-    if (n.data) {
-      if (n.data.invoice_id && (n.type === 'invoice_created' || n.type === 'invoice_paid')) {
-        targetRoute = `/invoices`;
-      }
-      if (n.data.route) {
-        targetRoute = n.data.route;
-      }
-    }
-
+    const target = resolveNotificationTarget(n);
     setNotifOpen(false);
-    
-    if (n.type === 'task' && n.data?.invoiceId) {
-      navigate('/invoices', { state: { invoiceId: String(n.data.invoiceId), openTask: true } });
-    } else {
-      navigate(targetRoute);
+    if (!n.is_read) markAsRead(n.id);
+    navigate(target.path);
+    if (target.kind === 'page' && target.unresolvedMessage) {
+      toast(target.unresolvedMessage, { icon: 'ℹ️', id: `notif-unresolved-${n.id}`, duration: 6000 });
     }
   };
 
@@ -180,6 +167,9 @@ export function AppLayout() {
             {/* ═══ Notifications Bell ═══ */}
             <div className="relative">
               <button
+                type="button"
+                data-testid="notifications-bell"
+                aria-expanded={notifOpen}
                 onClick={() => setNotifOpen(!notifOpen)}
                 className="relative p-2 rounded-full text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:text-gray-400 dark:hover:text-indigo-400 dark:hover:bg-slate-700 transition-all"
                 title="الإشعارات"
@@ -210,7 +200,9 @@ export function AppLayout() {
                       </div>
                       {unreadCount > 0 && (
                         <button
-                          onClick={() => markAllAsRead()}
+                          type="button"
+                          data-testid="notifications-read-all"
+                          onClick={(e) => { e.stopPropagation(); void markAllAsRead(); }}
                           className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
                         >
                           <CheckCheck size={14} />
@@ -227,10 +219,13 @@ export function AppLayout() {
                           const Icon = config.icon;
 
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={n.id}
+                              data-testid="notification-item"
+                              data-notification-id={n.id}
                               onClick={() => handleNotifClick(n)}
-                              className={`relative flex items-start gap-3 p-4 cursor-pointer transition-all duration-200 border-b border-gray-50 dark:border-slate-700/50 last:border-0 group ${
+                              className={`relative w-full text-right flex items-start gap-3 p-4 cursor-pointer transition-all duration-200 border-b border-gray-50 dark:border-slate-700/50 last:border-0 group ${
                                 !n.is_read
                                   ? 'bg-indigo-50/40 dark:bg-indigo-900/10 hover:bg-indigo-50/70 dark:hover:bg-indigo-900/20'
                                   : 'hover:bg-gray-50 dark:hover:bg-slate-700/30'
@@ -281,7 +276,7 @@ export function AppLayout() {
                                   <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 group-hover:scale-110 transition-transform" title="غير مقروء" />
                                 )}
                               </div>
-                            </div>
+                            </button>
                           );
                         })
                       ) : (

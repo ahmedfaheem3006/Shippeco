@@ -1,6 +1,6 @@
 import { env } from '../utils/env';
 import { api } from '../utils/apiClient';
-import type { PaymobLink, PaymobStats } from '../utils/models';
+import type { PaymobLink, PaymobLinkDetails, PaymobStats } from '../utils/models';
 
 /* ═══════════════════════════════════════
    Types
@@ -189,6 +189,8 @@ export async function checkPayment(
    Backend-based calls (DB operations)
    ═══════════════════════════════════════ */
 
+export type ReconcileSummary = { webhooksRetried: number; attemptsChecked: number; applied: number; errors: number; skipped?: boolean };
+
 export const paymobBackend = {
   getLinks: async (params?: { limit?: number; offset?: number; status?: string }): Promise<{ links: PaymobLink[]; total: number }> => {
     try {
@@ -225,6 +227,18 @@ export const paymobBackend = {
 
   deleteLink: async (id: number): Promise<void> => {
     await api.delete(`/paymob/links/${id}`);
+  },
+
+  /** One link with its invoices, checkout attempts and gateway transactions. Throws ApiError (404/403). */
+  getLinkDetails: async (id: number | string): Promise<PaymobLinkDetails> => {
+    const result = await api.get<{ data?: PaymobLinkDetails } & Partial<PaymobLinkDetails>>(`/paymob/links/${encodeURIComponent(String(id))}`);
+    return (result?.data ?? result) as PaymobLinkDetails;
+  },
+
+  /** Ask the server to retry stored callbacks and re-check open payments now. */
+  reconcileNow: async (): Promise<ReconcileSummary> => {
+    const result = await api.post<{ data?: ReconcileSummary } & Partial<ReconcileSummary>>('/paymob/reconcile', {});
+    return (result?.data ?? result) as ReconcileSummary;
   },
 
   ping: async (): Promise<{ status: string }> => {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPaymentLink, checkPayment, pingPaymobWorker, paymobBackend } from '../services/paymobService';
+import { useSearchParams } from 'react-router-dom';
+import { createPaymentLink, pingPaymobWorker, paymobBackend } from '../services/paymobService';
 import type { Invoice, PaymobLink, PaymobStats } from '../utils/models';
 import { openWhatsApp } from '../utils/whatsapp';
 import { buildPaymobWaMessage, safeAmountNumber } from '../utils/paymobLinks';
@@ -8,9 +9,10 @@ import {
   CreditCard, Link, Send, Copy, Search, RefreshCw,
   Trash2, X, Smartphone, User, FileText, CheckCircle2,
   AlertCircle, Check, CircleDollarSign, ExternalLink,
-  Clock, Loader2, Mail,
+  Clock, Loader2, Mail, Eye,
 } from 'lucide-react';
-import { useSocket } from '../contexts/SocketContext';
+import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
+import { PaymentLinkDetailsDialog } from '../components/Paymob/PaymentLinkDetailsDialog';
 
 /* ═══ Helpers ═══ */
 async function copyText(value: string) {
@@ -142,73 +144,58 @@ export function PaymobLinksPage() {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [localToast, setLocalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // ── Link details (also the target of payment notifications: ?link=<id>) ──
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkParam = searchParams.get('link');
+  const detailsLinkId = linkParam && /^\d+$/.test(linkParam) ? Number(linkParam) : null;
+  // Open while ?link= is set; closing plays the exit transition first, then
+  // drops the param (replace — Back still leaves the page normally).
+  const [closingLinkId, setClosingLinkId] = useState<number | null>(null);
+  const detailsOpen = detailsLinkId !== null && closingLinkId !== detailsLinkId;
+  const openDetails = (id: number) => {
+    setClosingLinkId(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('link', String(id));
+      return next;
+    });
+  };
+  const closeDetails = () => setClosingLinkId(detailsLinkId);
+  const clearLinkParam = () => {
+    setClosingLinkId(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('link');
+      return next;
+    }, { replace: true });
+  };
+
+  // Server-side reconciliation: retries stored Paymob callbacks and re-checks
+  // open payments with Paymob — the same idempotent path as the webhook.
   const handleGlobalSync = async () => {
     try {
       setBusy(true);
-      const res = await api.post('/paymob/sync-paid', {});
-      const d: any = res.data || res;
-      alert(`تم التحديث: ${d.updated}, تم التخطي: ${d.skipped}, فشل: ${d.failed}`);
+      const d = await paymobBackend.reconcileNow();
+      if (d?.skipped) {
+        setLocalToast({ type: 'success', message: 'المزامنة تعمل بالفعل في الخلفية' });
+      } else {
+        setLocalToast({ type: 'success', message: `تمت المزامنة: فُحصت ${d.attemptsChecked} عملية، سُجّلت ${d.applied} دفعة${d.errors ? ` — ${d.errors} أخطاء` : ''}` });
+      }
       void loadLinks();
       void loadStats();
     } catch (err: any) {
-      alert('فشل المزامنة: ' + err.message);
+      setLocalToast({ type: 'error', message: 'فشل المزامنة: ' + (err?.message || '') });
     } finally {
       setBusy(false);
     }
   };
 
-  // ── Socket.io Listener for Real-time Payment ──
-  const { socket } = useSocket()
-  useEffect(() => {
-    if (!socket) return
-    
-    const handlePayment = (data: any) => {
-      console.log('[Socket] Payment update received:', data)
-      // Refresh the links list and stats immediately
-      void loadLinks();
-      void loadStats();
-    }
-
-    socket.on('PAYMENT_SUCCESS', handlePayment)
-    socket.on('INVOICE_UPDATED', handlePayment)
-
-    return () => {
-      socket.off('PAYMENT_SUCCESS', handlePayment)
-      socket.off('INVOICE_UPDATED', handlePayment)
-    }
-  }, [socket]);
-
-  // ── Automatic Polling for Pending Links ──
-  useEffect(() => {
-    if (useLocalHistory) return;
-
-    const pollInterval = setInterval(async () => {
-      const pendingLinks = links.filter(l => l.status === 'pending' && l.paymob_order_id);
-      if (pendingLinks.length === 0) return;
-
-      console.log(`[Polling] Checking ${pendingLinks.length} pending links...`);
-      for (const link of pendingLinks) {
-        try {
-          const check = await checkPayment(String(link.paymob_order_id));
-          if (check.paid) {
-            console.log(`[Polling] Link ${link.id} confirmed paid!`);
-            // Update the invoice status too
-            await api.post(`/invoices/${link.invoice_id}/mark-paid`, {
-              amount: check.paid_amount || link.amount,
-              payment_method: 'paymob',
-              notes: `Auto-confirmed via background polling (Order: ${link.paymob_order_id})`
-            });
-            void loadLinks();
-            void loadStats();
-          }
-        } catch (e) {
-          // Silent
-        }
-      }
-    }, 10000); // Every 10 seconds
-
-    return () => clearInterval(pollInterval);
-  }, [links, useLocalHistory]);
+  // ── Real-time payment updates (recorded by the backend — no browser
+  // polling, no client-side "mark paid") ──
+  useRealtimeRefresh(PAYMENT_EVENTS, () => {
+    void loadLinks();
+    void loadStats();
+  });
 
   const loadLinks = useCallback(async (status?: string) => {
     setLinksLoading(true);
@@ -446,7 +433,9 @@ export function PaymobLinksPage() {
       saveLocalHistory(local);
       await loadLinks();
       await loadStats();
-    } catch {}
+    } catch (err: any) {
+      setLocalToast({ type: 'error', message: err?.message || 'تعذّر حذف الرابط' });
+    }
   };
 
   /* ═══ RENDER ═══ */
@@ -754,6 +743,12 @@ export function PaymobLinksPage() {
                       </div>
                     </div>
                     <div className="flex flex-row gap-1.5 flex-shrink-0">
+                      {!useLocalHistory && link.id ? (
+                        <button type="button" onClick={() => openDetails(link.id)} title="التفاصيل" data-testid="payment-link-details-btn"
+                          className="p-1.5 bg-white dark:bg-slate-800 text-indigo-600 hover:text-indigo-800 rounded-md border border-gray-200 dark:border-slate-700 transition-colors">
+                          <Eye size={14} />
+                        </button>
+                      ) : null}
                       <button type="button" onClick={() => handleCopy(link.payment_url)} title="نسخ"
                         className="p-1.5 bg-white dark:bg-slate-800 text-gray-500 hover:text-gray-900 rounded-md border border-gray-200 dark:border-slate-700 transition-colors">
                         {copiedUrl === link.payment_url ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
@@ -788,6 +783,12 @@ export function PaymobLinksPage() {
           </div>
         </div>
       </div>
+      <PaymentLinkDetailsDialog
+        open={detailsOpen}
+        linkId={detailsLinkId}
+        onClose={closeDetails}
+        onExited={clearLinkParam}
+      />
     </div>
   );
 }

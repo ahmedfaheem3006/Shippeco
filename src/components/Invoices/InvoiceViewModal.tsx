@@ -11,7 +11,9 @@ import {
   Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check,
   ExternalLink, Link
 } from 'lucide-react'
-import { checkPayment, createPaymentLink } from '../../services/paymobService'
+import { createPaymentLink } from '../../services/paymobService'
+import { createPortal } from 'react-dom'
+import { PAYMENT_EVENTS, batchTouchesInvoice, useRealtimeRefresh } from '../../hooks/useRealtimeRefresh'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
@@ -80,7 +82,7 @@ function StatusBadge({ status }: { status: Invoice['status'] }) {
   return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30"><Circle size={14} /> بانتظار الدفع</span>
 }
 
-export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, onCollect, onDelete, onRefresh }: Props) {
+export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, onCollect, onDelete }: Props) {
   const [loadingFull, setLoadingFull] = useState(false)
   const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
@@ -99,11 +101,11 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   const displayInv = fullInvoice ?? invoice
 
   // عند فتح المودال → جلب البيانات الكاملة من DB
-  const loadFull = useCallback(async () => {
+  const loadFull = useCallback(async (opts: { fresh?: boolean } = {}) => {
     if (!invoice?.id) return
     setLoadingFull(true)
     try {
-      const data = await invoiceService.getInvoice(String(invoice.id))
+      const data = await invoiceService.getInvoice(String(invoice.id), { fresh: opts.fresh })
 
       // Parse items
       let items: InvoiceItem[] = []
@@ -160,39 +162,13 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
     }
   }, [open, invoice?.id, loadFull])
 
-  // ── Automatic Polling for Payment Status ──
-  useEffect(() => {
-    if (!open || !displayInv || displayInv.status === 'paid' || creatingLink) return;
-
-    // Only poll if we are in 'unpaid' or 'partial' state
-    const pollInterval = setInterval(async () => {
-      try {
-        const res = await api.get<any>(`/paymob/links?status=pending&limit=10`);
-        const links = res?.data?.links || res?.links || [];
-        const link = links.find((l: any) => Number(l.invoice_id) === Number(displayInv.id));
-        
-        if (link && link.paymob_order_id) {
-          console.log('[Polling] Checking status for order:', link.paymob_order_id);
-          const check = await checkPayment(link.paymob_order_id);
-          if (check.paid) {
-            await api.post(`/invoices/${displayInv.id}/mark-paid`, {
-              amount: check.paid_amount || displayInv.total,
-              payment_method: 'paymob',
-              notes: `Auto-confirmed via background polling (Order: ${link.paymob_order_id})`
-            });
-            setLocalToast({ type: 'success', message: '✅ تم تأكيد الدفع تلقائياً!' });
-            void loadFull();
-            if (onRefresh) onRefresh();
-            clearInterval(pollInterval);
-          }
-        }
-      } catch (e) {
-        // Silent fail for polling
-      }
-    }, 6000); // Every 6 seconds
-
-    return () => clearInterval(pollInterval);
-  }, [open, displayInv, creatingLink, onRefresh, loadFull]);
+  // ── Live payment status ──
+  // The backend records Paymob payments itself (webhook + reconciliation)
+  // and pushes an event; just reload this invoice when it is concerned.
+  // (Replaces browser polling that also force-marked invoices paid.)
+  useRealtimeRefresh(PAYMENT_EVENTS, (batch) => {
+    if (open && batchTouchesInvoice(batch, invoice?.id)) void loadFull({ fresh: true })
+  })
 
   // إعادة الإثراء يدوياً
   const handleManualEnrich = async () => {
@@ -348,8 +324,11 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
 
   if (!open || !displayInv) return null
 
-  return (
-    <div className={styles.overlay} role="dialog" aria-modal="true">
+  // Portaled to <body> like the shared Dialog: an animated page wrapper
+  // cannot capture `position: fixed`, so the window always opens on screen
+  // without moving the list behind it.
+  return createPortal(
+    <div className={`${styles.overlay} font-cairo`} role="dialog" aria-modal="true" dir="rtl" data-testid="invoice-view-modal">
       <div className={styles.modal}>
 
         {/* Local Toast */}
@@ -805,5 +784,5 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
         </div>
       </div>
     </div>
-  )
+  , document.body)
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus, ClipboardList, Clock, CheckCircle2, Search, User, ChevronLeft, RotateCcw, AlertCircle, PencilLine, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import { tasksService, type Task } from '../services/tasks.service';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { CreateTaskModal } from '../components/Tasks/CreateTaskModal';
@@ -213,6 +214,34 @@ export const TasksPage: React.FC = () => {
     if (direct) return direct;
     const alt = opener == null ? null : nearestSurvivingId(navOrder, opener, (id) => !!cardButton(id));
     return cardButton(alt) ?? listHeadingRef.current;
+  };
+
+  // ── Deep link: /tasks?task=<id> (task notifications) ──
+  // The window loads the task by id itself (GET /tasks/:id enforces access
+  // and shows an Arabic error for a deleted/forbidden task), so it opens even
+  // when the task is not in the current tab or search.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const taskParam = searchParams.get('task');
+  const [handledTaskParam, setHandledTaskParam] = useState<string | null>(null);
+  if (taskParam !== handledTaskParam) {
+    // Adjust state while rendering when the URL changes (React's pattern for
+    // deriving state from props) — no effect, no extra render pass.
+    setHandledTaskParam(taskParam);
+    const id = taskParam && /^\d+$/.test(taskParam) ? Number(taskParam) : NaN;
+    if (Number.isSafeInteger(id) && id > 0) {
+      setNavOrder([id]);
+      setPinnedSummary(undefined);
+      setActiveTaskId(id);
+      setDetailsOpen(true);
+    }
+  }
+  const clearTaskParam = () => {
+    if (!searchParams.has('task')) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('task');
+      return next;
+    }, { replace: true });
   };
 
   const onTaskChanged = (patch: Partial<Task> & { id: number }) => {
@@ -535,7 +564,7 @@ export const TasksPage: React.FC = () => {
         nextId={next}
         onNavigate={navigateTo}
         onClose={() => setDetailsOpen(false)}
-        onExited={() => setActiveTaskId(null)}
+        onExited={() => { setActiveTaskId(null); clearTaskParam(); }}
         onTaskChanged={onTaskChanged}
         drafts={drafts}
         returnFocus={returnFocus}
