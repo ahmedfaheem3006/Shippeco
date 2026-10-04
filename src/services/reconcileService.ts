@@ -1,5 +1,12 @@
 import { useAuthStore } from '../hooks/useAuthStore';
 import { env } from '../utils/env';
+import { api, ApiError } from '../utils/apiClient';
+import type { SheetShipment } from '../utils/reconcileSheet';
+
+export type DuplicateRef = { id: number; file_name: string; upload_date: string };
+export type ManualEdit = { client?: string | null; weight?: number | null; daftraTotal?: number | null };
+
+const unwrap = (r: any) => (r && typeof r === 'object' && 'success' in r && 'data' in r ? r.data : r);
 
 const API = env.apiUrl;
 
@@ -13,21 +20,26 @@ function getHeaders(json = true) {
 
 export const reconcileApiService = {
 
-  /** Submit DHL invoice PDF/Excel for AI-powered reconciliation */
-  async submitDhlInvoice(file: File): Promise<{ job_id: string }> {
+  /**
+   * Submit a DHL invoice (PDF/Excel). Answers { job_id } — or { duplicate_of }
+   * when exactly the same file was reconciled before (send force=true to
+   * re-analyse it into that same record).
+   */
+  async submitDhlInvoice(file: File, force = false): Promise<{ job_id?: string; duplicate_of?: DuplicateRef }> {
     const formData = new FormData();
     formData.append('file', file);
+    if (force) formData.append('force', '1');
+    return unwrap(await api.postFormData('/reconcile/dhl-invoice', formData));
+  },
 
-    const token = useAuthStore.getState().token;
-    const res = await fetch(`${API}/reconcile/dhl-invoice`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
+  /** Excel/CSV tab: rows read in the browser, matched by the server. */
+  async matchSheet(payload: { filename: string; file_hash: string | null; force?: boolean; shipments: SheetShipment[] }): Promise<any> {
+    return unwrap(await api.post('/reconcile/match', payload));
+  },
 
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error?.message || json?.detail || 'Upload failed');
-    return json?.data ?? json;
+  /** A stored report (history record). */
+  async getResult(id: number): Promise<any> {
+    return unwrap(await api.get(`/reconcile/results/${id}`));
   },
 
   /** Poll job status */
@@ -49,15 +61,17 @@ export const reconcileApiService = {
     return json?.data ?? json;
   },
 
-  /** Export reconciliation report to Excel */
-  async exportExcel(reportData: any): Promise<Blob> {
+  /** Excel export of a stored report, limited to the on-screen filter. */
+  async exportExcel(historyId: number, filter: string): Promise<Blob> {
     const res = await fetch(`${API}/reconcile/dhl-invoice/export`, {
       method: 'POST',
       headers: getHeaders(true),
-      body: JSON.stringify(reportData),
+      body: JSON.stringify({ history_id: historyId, filter }),
     });
-
-    if (!res.ok) throw new Error('Export failed');
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new ApiError(json?.error?.message || 'Export failed', res.status, json?.error?.code, json?.error?.details);
+    }
     return res.blob();
   },
 
@@ -103,15 +117,12 @@ export const reconcileApiService = {
     return json?.data ?? json;
   },
 
-  /** Update History Record Details */
-  async updateHistory(id: number, details: any): Promise<any> {
-    const res = await fetch(`${API}/reconcile/history/${id}/update`, {
-      method: 'POST',
-      headers: getHeaders(true),
-      body: JSON.stringify({ details }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error?.message || 'Failed to update history');
-    return json?.data ?? json;
+  /**
+   * Save (edits) or clear (null) a manual correction for one shipment of a
+   * stored report. The server recalculates and returns the whole report;
+   * 409 when the report changed since `expectedUpdatedAt`.
+   */
+  async updateHistory(id: number, awb: string, edits: ManualEdit | null, expectedUpdatedAt: string): Promise<any> {
+    return unwrap(await api.post(`/reconcile/history/${id}/update`, { awb, edits, expected_updated_at: expectedUpdatedAt }));
   },
 };

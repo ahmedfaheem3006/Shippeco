@@ -2,15 +2,10 @@ import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { invoiceService } from '../services/invoiceService'
 import { reconcileApiService } from '../services/reconcileService'
 import { parseCsv } from '../utils/csv'
-import {
-  buildReconcileReport,
-  filterReconcileRows,
-  formatCurrency,
-  isoDate,
-  type DhlShipmentRow,
-  type ReconcileFilter,
-  type ReconcileReport,
-} from '../utils/reconcile'
+import { formatCurrency } from '../utils/reconcile'
+import { extractSheetShipments, fileSha256, type SkippedRow } from '../utils/reconcileSheet'
+import { describeApiError, isConflict } from '../utils/apiErrors'
+import type { DuplicateRef } from '../services/reconcileService'
 import {
   UploadCloud, FileSpreadsheet, RefreshCw, CheckCircle2,
   AlertTriangle, AlertCircle, Search, Loader2, X,
@@ -61,6 +56,7 @@ function statusBadge(status: string) {
   const map: Record<string, { bg: string; text: string; border: string; icon: any; label: string }> = {
     matched: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400', border: 'border-green-200 dark:border-green-800/30', icon: CheckCircle2, label: 'متطابق' },
     discrepancy: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-600 dark:text-yellow-500', border: 'border-yellow-200 dark:border-yellow-800/20', icon: AlertTriangle, label: 'فروقات' },
+    needs_review: { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400', border: 'border-orange-200 dark:border-orange-800/30', icon: AlertTriangle, label: 'يحتاج مراجعة' },
     not_found_in_platform: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400', border: 'border-red-200 dark:border-red-800/30', icon: AlertCircle, label: 'غير موجود بالمنصة' },
     not_found_in_daftra: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400', border: 'border-red-200 dark:border-red-800/30', icon: AlertCircle, label: 'غير موجود بدفترة' },
     daftra_error: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400', border: 'border-red-200 dark:border-red-800/30', icon: AlertCircle, label: 'خطأ دفترة' },
@@ -78,6 +74,7 @@ function paymentBadge(ps: string | null | undefined) {
   if (!ps) return <span className="text-gray-400 font-bold">—</span>
   if (ps === 'مدفوع') return <span className="text-green-600 dark:text-green-400 font-bold text-xs flex items-center gap-1"><CheckCircle2 size={12} /> مدفوع</span>
   if (ps === 'غير مدفوع') return <span className="text-red-600 dark:text-red-400 font-bold text-xs flex items-center gap-1"><AlertCircle size={12} /> غير مدفوع</span>
+  if (ps === 'مرتجعة') return <span className="text-purple-600 dark:text-purple-400 font-bold text-xs">مرتجعة</span>
   if (ps === 'مدفوع جزئياً') return <span className="text-yellow-600 dark:text-yellow-500 font-bold text-xs flex items-center gap-1"><AlertTriangle size={12} /> جزئي</span>
   return <span className="text-gray-400 text-xs font-bold">{ps}</span>
 }
@@ -85,63 +82,42 @@ function paymentBadge(ps: string | null | undefined) {
 /* ═══════════════════════════════════════════════════════
    CSV helpers
    ═══════════════════════════════════════════════════════ */
-function parseFloatSafe(v: unknown) {
-  const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/,/g, '').trim())
-  return Number.isFinite(n) ? n : 0
+const REVIEW_TEXT: Record<string, string> = {
+  shipper_reference: 'مطابقة عبر مرجع الشاحن مع رقم فاتورة داخلي — تحتاج تأكيدًا',
+  daftra_only: 'الفاتورة موجودة في دفترة فقط وغير مسجلة في المنصة',
+  multiple_clients: 'البوليصة مرتبطة بفواتير لأكثر من عميل',
+}
+const MATCH_TEXT: Record<string, string> = {
+  awb: 'رقم البوليصة في الفاتورة', details: 'رقم البوليصة في وصف الفاتورة', shipper_reference: 'مرجع الشاحن', daftra: 'دفترة',
 }
 
-function extractShipments(rows: Record<string, unknown>[]) {
-  if (!rows.length) throw new Error('الملف فارغ أو لا يحتوي على بيانات')
-  const AWB_KEYS = ['Waybill No', 'Waybill', 'AWB', 'AWB No', 'AWB Number', 'Airway Bill', 'Shipment No', 'رقم البوليصة', 'رقم الشحنة', 'رقم بوليصة الشحن', 'Shipment Number', 'Hawb', 'HAWB']
-  const TOTAL_KEYS = ['Total Charge', 'Total', 'Grand Total', 'Net Charge', 'Amount', 'Charge', 'الإجمالي', 'إجمالي الرسوم', 'Total Amount', 'Invoice Amount', 'Billed Amount']
-  const WEIGHT_KEYS = ['Weight', 'Actual Weight', 'Chargeable Weight', 'Billed Weight', 'الوزن', 'وزن الشحنة', 'Weight (KG)', 'Weight KG']
-  const DATE_KEYS = ['Shipment Date', 'Date', 'Invoice Date', 'Ship Date', 'تاريخ الشحن', 'التاريخ']
-  const DEST_KEYS = ['Destination', 'Destination Country', 'Dest', 'To', 'وجهة', 'الوجهة', 'Destination Code']
-  const ORIGIN_KEYS = ['Origin', 'From', 'Origin Country', 'منشأ', 'المنشأ']
-  const SERVICE_KEYS = ['Service', 'Service Type', 'Product', 'نوع الخدمة', 'Product Name']
-  const FUEL_KEYS = ['Fuel Surcharge', 'Fuel', 'رسوم الوقود']
-  const VAT_KEYS = ['VAT', 'Tax', 'Value Added Tax', 'ضريبة', 'ضريبة القيمة المضافة']
-
-  const findKey = (row: Record<string, unknown>, candidates: string[]) => {
-    const keys = Object.keys(row)
-    for (const c of candidates) { const f = keys.find(k => k.trim().toLowerCase() === c.toLowerCase()); if (f) return f }
-    for (const c of candidates) { const f = keys.find(k => { const kk = k.trim().toLowerCase(), cc = c.toLowerCase(); return kk.includes(cc) || cc.includes(kk) }); if (f) return f }
-    return null
-  }
-
-  const s = rows[0]
-  const kAwb = findKey(s, AWB_KEYS), kTotal = findKey(s, TOTAL_KEYS), kWeight = findKey(s, WEIGHT_KEYS)
-  const kDate = findKey(s, DATE_KEYS), kDest = findKey(s, DEST_KEYS), kOrigin = findKey(s, ORIGIN_KEYS)
-  const kService = findKey(s, SERVICE_KEYS), kFuel = findKey(s, FUEL_KEYS), kVat = findKey(s, VAT_KEYS)
-  if (!kAwb) throw new Error('تعذّر إيجاد عمود رقم الشحنة/البوليصة في الملف')
-
-  return rows.map(row => {
-    const awb = String(row[kAwb] ?? '').trim().replace(/\s+/g, '')
-    if (!awb || awb === '0') return null
-    return {
-      awb, total_charge: kTotal ? parseFloatSafe(row[kTotal]) : 0,
-      weight_kg: kWeight ? parseFloatSafe(row[kWeight]) : 0,
-      shipment_date: kDate ? isoDate(row[kDate]) : '—',
-      destination: kDest ? String(row[kDest] ?? '').trim() : '—',
-      origin: kOrigin ? String(row[kOrigin] ?? '').trim() : '—',
-      service_type: kService ? String(row[kService] ?? '').trim() : '—',
-      fuel_surcharge: kFuel ? parseFloatSafe(row[kFuel]) : 0,
-      vat_amount: kVat ? parseFloatSafe(row[kVat]) : 0,
-    }
-  }).filter((x): x is DhlShipmentRow => Boolean(x))
-}
-
-async function readRowsFromFile(file: File) {
+/** Rows as cell values (amounts/dates) and as displayed text (identifiers keep leading zeros). */
+async function readRowsFromFile(file: File): Promise<{ raw: Record<string, unknown>[]; text: Record<string, unknown>[] }> {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-  if (ext === 'csv') return parseCsv(await file.text()) as unknown as Record<string, unknown>[]
+  if (ext === 'csv') {
+    const rows = parseCsv(await file.text()) as unknown as Record<string, unknown>[]
+    return { raw: rows, text: rows }
+  }
   if (ext === 'xlsx' || ext === 'xls') {
     const XLSX = await import('xlsx')
-    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
+    let wb
+    try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true }) } catch { throw new Error('الملف تالف أو ليس ملف Excel صالحًا') }
     let sn = wb.SheetNames[0]
     for (const n of wb.SheetNames) if (/dhl|ship|invoice|شحن|فاتور/i.test(n)) { sn = n; break }
-    return XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: '' }) as Record<string, unknown>[]
+    const sheet = wb.Sheets[sn]
+    return {
+      raw: XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[],
+      text: XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false }) as Record<string, unknown>[],
+    }
   }
-  throw new Error('نوع الملف غير مدعوم')
+  throw new Error('نوع الملف غير مدعوم — المسموح: .xlsx ، .xls ، .csv')
+}
+
+function filterRows(report: any, filter: string): any[] {
+  const all: any[] = report?.results || []
+  if (filter === 'all') return all
+  if (filter === 'not_found') return all.filter((r) => r.status === 'not_found_in_daftra' || r.status === 'daftra_error' || r.status === 'not_found_in_platform')
+  return all.filter((r) => r.status === filter)
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -170,16 +146,21 @@ export function ReconcilePage() {
   const [error, setError] = useState<string | null>(null)
 
   // CSV state
-  const [csvReport, setCsvReport] = useState<ReconcileReport | null>(null)
+  const [csvReport, setCsvReport] = useState<any | null>(null)
   const [csvBusy, setCsvBusy] = useState(false)
-  const [csvFilter, setCsvFilter] = useState<ReconcileFilter>('all')
+  const [csvFilter, setCsvFilter] = useState('all')
+  const [csvSkipped, setCsvSkipped] = useState<SkippedRow[]>([])
+  // Same file uploaded before → offer the stored report or a re-analysis.
+  const [duplicate, setDuplicate] = useState<{ tab: TabMode; previous: DuplicateRef } | null>(null)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
   const [csvDetail, setCsvDetail] = useState<DetailState>({ open: false, awb: null })
 
   // DHL AI state
   const [dhlJob, setDhlJob] = useState<DhlJobState>({ jobId: null, status: 'idle', step: '', progress: 0, error: null, result: null, totalTime: null })
   const [dhlFilter, setDhlFilter] = useState('all')
   const [dhlDetail, setDhlDetail] = useState<DetailState>({ open: false, awb: null })
-  const [dhlManualEdits, setDhlManualEdits] = useState<Record<string, any>>({})
   
   // Backfill state
   const [backfillLoading, setBackfillLoading] = useState(false)
@@ -191,7 +172,7 @@ export function ReconcilePage() {
 
   // Edit modal
   const [editModal, setEditModal] = useState<{ open: boolean; awb: string | null }>({ open: false, awb: null })
-  const [editFields, setEditFields] = useState({ client: '', weight: '', daftraTotal: '', paymentStatus: '' })
+  const [editFields, setEditFields] = useState({ client: '', weight: '', daftraTotal: '' })
 
   // Task Modal State
   const [taskModalOpen, setTaskModalOpen] = useState(false)
@@ -235,7 +216,7 @@ export function ReconcilePage() {
       window.alert('لا يوجد معرف للفاتورة في قاعدة البيانات');
       return;
     }
-    const invId = platData.id || platData.invoice_id;
+    const invId = platData.invoice_id || platData.id;
     setTaskModalOpen(true)
     setTaskNotes('')
     setTaskRecipientId('')
@@ -326,17 +307,24 @@ export function ReconcilePage() {
   }
 
   /* ─── DHL AI: Submit & Poll ─── */
-  const submitDhlInvoice = useCallback(async () => {
+  const submitDhlInvoice = useCallback(async (force = false) => {
     if (!file) return
     setError(null)
+    setDuplicate(null)
     startTimeRef.current = Date.now()
     setDhlJob({ jobId: null, status: 'uploading', step: 'uploading', progress: 5, error: null, result: null, totalTime: null })
     try {
-      const { job_id } = await reconcileApiService.submitDhlInvoice(file)
-      setDhlJob(p => ({ ...p, jobId: job_id, status: 'processing', step: 'parsing', progress: 10 }))
-      pollDhlStatus(job_id)
+      const res = await reconcileApiService.submitDhlInvoice(file, force)
+      if (res.duplicate_of) {
+        setDuplicate({ tab: 'dhl-ai', previous: res.duplicate_of })
+        setDhlJob({ jobId: null, status: 'idle', step: '', progress: 0, error: null, result: null, totalTime: null })
+        return
+      }
+      const jobId = res.job_id!
+      setDhlJob(p => ({ ...p, jobId, status: 'processing', step: 'parsing', progress: 10 }))
+      pollDhlStatus(jobId)
     } catch (e: any) {
-      setDhlJob(p => ({ ...p, status: 'error', error: e.message || 'فشل رفع الملف' }))
+      setDhlJob(p => ({ ...p, status: 'error', error: describeApiError(e, 'فشل رفع الملف') }))
     }
   }, [file])
 
@@ -361,95 +349,97 @@ export function ReconcilePage() {
     }
   }, [])
 
-  /* ─── CSV: Analyze ─── */
-  const analyzeCsv = async () => {
-    if (!file) return
-    setCsvBusy(true); setError(null)
+  /* ─── CSV: Analyze (rows read here, matched on the server) ─── */
+  const analyzeCsv = async (force = false) => {
+    if (!file || csvBusy) return
+    setCsvBusy(true); setError(null); setDuplicate(null)
     try {
-      const [dbInvoices, fileRows] = await Promise.all([invoiceService.getInvoices({ limit: 10000 }), readRowsFromFile(file)])
-      const shipments = extractShipments(fileRows)
-      setCsvReport(buildReconcileReport({ filename: file.name, shipments, invoices: dbInvoices ?? [] }))
+      const { raw, text } = await readRowsFromFile(file)
+      const { shipments, skipped } = extractSheetShipments(raw, text)
+      setCsvSkipped(skipped)
+      if (!shipments.length) throw new Error('لا توجد صفوف صالحة في الملف')
+      const res = await reconcileApiService.matchSheet({ filename: file.name, file_hash: await fileSha256(file), force, shipments })
+      if (res?.duplicate_of) { setDuplicate({ tab: 'csv-platform', previous: res.duplicate_of }); return }
+      setCsvReport(res)
       setCsvFilter('all')
-    } catch (e: any) { setError(e.message); setCsvReport(null) }
+    } catch (e: any) { setError(describeApiError(e, 'تعذّر تحليل الملف')); setCsvReport(null) }
     finally { setCsvBusy(false) }
   }
 
-  /* ─── DHL: Export ─── */
-  const exportDhlExcel = async () => {
-    if (!dhlJob.result) return
+  /** Open a stored report (history / duplicate upload) in the current tab. */
+  const openStoredReport = async (id: number, targetTab: TabMode) => {
     try {
-      const blob = await reconcileApiService.exportExcel(dhlJob.result)
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `dhl_reconciliation_${new Date().toISOString().slice(0, 10)}.xlsx`
-      a.click()
-    } catch { setError('فشل تصدير التقرير') }
+      const rec = await reconcileApiService.getResult(id)
+      const details = typeof rec.details === 'string' ? JSON.parse(rec.details) : rec.details
+      if (!details?.results) { setError('لا توجد تفاصيل محفوظة لهذه المطابقة'); return }
+      const report = { ...details, history_id: rec.id, updated_at: rec.updated_at }
+      setDuplicate(null)
+      if (targetTab === 'csv-platform') { setTab('csv-platform'); setCsvReport(report); setCsvFilter('all') }
+      else { setTab('dhl-ai'); setDhlJob({ jobId: 'history-' + rec.id, status: 'done', step: 'complete', progress: 100, error: null, result: report, totalTime: 'سجل محفوظ' }); setDhlFilter('all') }
+    } catch (e) { setError(describeApiError(e, 'تعذّر فتح التقرير المحفوظ')) }
   }
 
-  /* ─── DHL: Edit modal ─── */
+  const activeReport = tab === 'dhl-ai' ? dhlJob.result : csvReport
+  const setActiveReport = (report: any) => {
+    if (tab === 'dhl-ai') setDhlJob(prev => ({ ...prev, result: report }))
+    else setCsvReport(report)
+  }
+
+  /* ─── Export (stored report, current filter) ─── */
+  const exportDhlExcel = async () => {
+    const rpt = activeReport
+    if (!rpt?.history_id || exporting) return
+    const filter = tab === 'dhl-ai' ? dhlFilter : csvFilter
+    setExporting(true)
+    try {
+      const blob = await reconcileApiService.exportExcel(rpt.history_id, filter)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `dhl_reconciliation_${rpt.history_id}_${filter}_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
+    } catch (e) { setError(describeApiError(e, 'فشل تصدير التقرير')) }
+    finally { setExporting(false) }
+  }
+
+  /* ─── Manual correction (report only — never changes the invoice) ─── */
   const openEditModal = (awb: string) => {
-    const r = dhlJob.result?.results?.find((x: any) => x.airwaybill_number === awb)
-    if (!r) return
-    const m = dhlManualEdits[awb]
+    const r = activeReport?.results?.find((x: any) => x.airwaybill_number === awb)
+    if (!r?.daftra_data) return
+    const original = r.original ?? { summary_total: r.daftra_data.summary_total, client_name: r.daftra_data.client_name, weight: r.daftra_weight_kg }
+    const m = r.manual_edit
     setEditFields({
-      client: m?.client || r.daftra_data?.client_name || '',
-      weight: String(m?.weight ?? r.daftra_weight_kg ?? ''),
-      daftraTotal: String(m?.daftraTotal ?? r.daftra_data?.summary_total ?? ''),
-      paymentStatus: m?.paymentStatus || r.daftra_data?.payment_status || '',
+      client: m?.client ?? original.client_name ?? '',
+      weight: String(m?.weight ?? original.weight ?? ''),
+      daftraTotal: String(m?.daftraTotal ?? original.summary_total ?? ''),
     })
+    setEditError(null)
     setEditModal({ open: true, awb })
   }
 
-  const saveEdit = async () => {
-    if (!editModal.awb) return
-    const newEdits = {
-      ...dhlManualEdits, [editModal.awb!]: {
-        client: editFields.client || null,
-        weight: editFields.weight ? parseFloat(editFields.weight) : null,
-        daftraTotal: editFields.daftraTotal ? parseFloat(editFields.daftraTotal) : null,
-        paymentStatus: editFields.paymentStatus || null,
-      }
-    };
-    setDhlManualEdits(newEdits);
-    setEditModal({ open: false, awb: null });
-
-    // If we are in history mode, persist to backend immediately
-    if (dhlJob.jobId?.startsWith('history-')) {
-      const historyId = parseInt(dhlJob.jobId.replace('history-', ''), 10);
-      try {
-        // Prepare the updated result object
-        const currentResult = dhlJob.result;
-        if (currentResult && currentResult.results) {
-          const updatedResults = (currentResult.results as any[]).map(r => {
-            if (r.airwaybill_number === editModal.awb) {
-              const manual = newEdits[editModal.awb!];
-              return {
-                ...r,
-                daftra_weight_kg: manual.weight ?? r.daftra_weight_kg,
-                daftra_data: {
-                  ...r.daftra_data,
-                  client_name: manual.client ?? r.daftra_data?.client_name,
-                  summary_total: manual.daftraTotal ?? r.daftra_data?.summary_total,
-                  payment_status: manual.paymentStatus ?? r.daftra_data?.payment_status,
-                }
-              };
-            }
-            return r;
-          });
-
-          const updatedReport = {
-            ...currentResult,
-            results: updatedResults
-          };
-
-          await reconcileApiService.updateHistory(historyId, updatedReport);
-          setDhlJob(prev => ({ ...prev, result: updatedReport }));
-        }
-      } catch (err) {
-        console.error('Failed to update history:', err);
-        alert('فشل حفظ التعديلات في قاعدة البيانات');
-      }
+  const saveEdit = async (clear = false) => {
+    const rpt = activeReport
+    if (!editModal.awb || !rpt?.history_id || editSaving) return
+    const num = (v: string) => (v.trim() === '' ? null : Number(v))
+    const edits = clear ? null : { client: editFields.client.trim() || null, weight: num(editFields.weight), daftraTotal: num(editFields.daftraTotal) }
+    if (edits && ([edits.weight, edits.daftraTotal].some((v) => v !== null && (!Number.isFinite(v) || v < 0)))) {
+      setEditError('أدخل أرقامًا صحيحة غير سالبة'); return
     }
+    setEditSaving(true); setEditError(null)
+    try {
+      const updated = await reconcileApiService.updateHistory(rpt.history_id, editModal.awb, edits, rpt.updated_at)
+      setActiveReport(updated)
+      setEditModal({ open: false, awb: null })
+    } catch (e) {
+      setEditError(describeApiError(e, 'لم يتم حفظ التعديل'))
+      if (isConflict(e)) {
+        try {
+          const rec = await reconcileApiService.getResult(rpt.history_id)
+          const details = typeof rec.details === 'string' ? JSON.parse(rec.details) : rec.details
+          setActiveReport({ ...details, history_id: rec.id, updated_at: rec.updated_at })
+        } catch { /* keep the message */ }
+      }
+    } finally { setEditSaving(false) }
   }
 
   /* ─── Reset ─── */
@@ -457,64 +447,16 @@ export function ReconcilePage() {
     if (pollRef.current) clearTimeout(pollRef.current)
     setFile(null); setError(null); setCsvReport(null); setCsvBusy(false)
     setDhlJob({ jobId: null, status: 'idle', step: '', progress: 0, error: null, result: null, totalTime: null })
-    setDhlFilter('all'); setDhlDetail({ open: false, awb: null }); setDhlManualEdits({})
+    setDhlFilter('all'); setDhlDetail({ open: false, awb: null }); setCsvSkipped([]); setDuplicate(null)
   }
 
   /* ─── Derived ─── */
-  const csvRows = useMemo(() => csvReport ? filterReconcileRows(csvReport, csvFilter) : [], [csvFilter, csvReport])
-  const dhlResults = useMemo(() => {
-    if (!dhlJob.result?.results) return []
-    const all = dhlJob.result.results as any[]
-    if (dhlFilter === 'all') return all
-    if (dhlFilter === 'not_found') return all.filter((r: any) => r.status === 'not_found_in_daftra' || r.status === 'daftra_error')
-    return all.filter((r: any) => r.status === dhlFilter)
-  }, [dhlJob.result, dhlFilter])
-
-  const dynamicDhlReport = useMemo(() => {
-    if (!dhlJob.result) return null;
-    const rpt = dhlJob.result;
-    const results = rpt.results as any[];
-    
-    let totalDaftra = 0;
-    let matched = 0;
-    let discrepancy = 0;
-    let notFound = 0;
-
-    results.forEach(r => {
-      const awb = r.airwaybill_number;
-      const manual = dhlManualEdits[awb];
-      const dhlCharge = r.dhl_data?.total_charge || 0;
-      const daftraTotal = manual?.daftraTotal !== undefined && manual?.daftraTotal !== null 
-        ? manual.daftraTotal 
-        : (r.daftra_data?.summary_total || 0);
-      
-      totalDaftra += daftraTotal;
-
-      // Recalculate status for counts if manual edit exists
-      if (manual && manual.daftraTotal !== null) {
-        const diff = Math.abs(daftraTotal - dhlCharge);
-        if (diff < 1.0) matched++;
-        else discrepancy++;
-      } else {
-        if (r.status === 'matched') matched++;
-        else if (r.status === 'discrepancy') discrepancy++;
-        else if (r.status === 'not_found_in_daftra' || r.status === 'daftra_error') notFound++;
-      }
-    });
-
-    return {
-      ...rpt,
-      total_daftra_amount: totalDaftra,
-      total_difference: totalDaftra - rpt.total_dhl_amount,
-      matched,
-      with_discrepancies: discrepancy,
-      not_found: notFound,
-    };
-  }, [dhlJob.result, dhlManualEdits]);
+  const csvRows = useMemo(() => filterRows(csvReport, csvFilter), [csvFilter, csvReport])
+  const dhlResults = useMemo(() => filterRows(dhlJob.result, dhlFilter), [dhlJob.result, dhlFilter])
 
   const csvSelectedDetail = useMemo(() => {
     if (!csvDetail.open || !csvDetail.awb || !csvReport) return null
-    return csvReport.results.find(r => r.airwaybill_number === csvDetail.awb) ?? null
+    return (csvReport.results as any[]).find((r: any) => r.airwaybill_number === csvDetail.awb) ?? null
   }, [csvDetail, csvReport])
 
   const dhlSelectedDetail = useMemo(() => {
@@ -578,7 +520,7 @@ export function ReconcilePage() {
       <div className="flex gap-3 justify-center" onClick={e => e.stopPropagation()}>
         <button
           className="flex-1 max-w-sm flex justify-center items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50"
-          onClick={tab === 'dhl-ai' ? submitDhlInvoice : analyzeCsv}
+          onClick={() => (tab === 'dhl-ai' ? submitDhlInvoice() : analyzeCsv())}
           disabled={!file || csvBusy || dhlJob.status === 'uploading'}
         >
           {(csvBusy || dhlJob.status === 'uploading') ? <Loader2 className="animate-spin" size={20} /> : tab === 'dhl-ai' ? <Zap size={20} /> : <Search size={20} />}
@@ -591,8 +533,23 @@ export function ReconcilePage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-red-600 p-4 rounded-xl text-sm font-bold flex items-start gap-3">
+        <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-red-600 p-4 rounded-xl text-sm font-bold flex items-start gap-3">
           <AlertCircle className="shrink-0 mt-0.5" size={18} /> <p>{error}</p>
+        </div>
+      )}
+
+      {duplicate && duplicate.tab === tab && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 p-4 rounded-xl text-sm flex flex-col gap-3" data-testid="reconcile-duplicate">
+          <p className="font-bold text-amber-800 dark:text-amber-200">
+            هذا الملف نفسه رُفع سابقًا ({duplicate.previous.file_name} — {new Date(duplicate.previous.upload_date).toLocaleString('en-GB')}). لم يُنشأ سجل جديد.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold" onClick={() => openStoredReport(duplicate.previous.id, tab)}>فتح التقرير السابق</button>
+            <button type="button" className="px-4 py-2 bg-white dark:bg-slate-800 border border-amber-300 text-amber-800 dark:text-amber-200 rounded-xl text-xs font-bold"
+              onClick={() => { if (window.confirm('إعادة التحليل ستستبدل نتائج التقرير السابق وتعديلاته اليدوية بنتيجة جديدة لنفس السجل. متابعة؟')) { if (tab === 'dhl-ai') void submitDhlInvoice(true); else void analyzeCsv(true) } }}>
+              إعادة التحليل وتحديث نفس السجل
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -632,20 +589,19 @@ export function ReconcilePage() {
      Results Table (shared layout, different data)
      ═══════════════════════════════════════════════════════ */
   const ResultsView = ({ mode }: { mode: 'dhl' | 'csv' }) => {
-    const rpt = mode === 'dhl' ? dynamicDhlReport : csvReport
+    const rpt = mode === 'dhl' ? dhlJob.result : csvReport
     if (!rpt) return null
 
     const activeFilter = mode === 'dhl' ? dhlFilter : csvFilter
-    const setActiveFilter = mode === 'dhl' ? setDhlFilter : (f: string) => setCsvFilter(f as ReconcileFilter)
+    const setActiveFilter = mode === 'dhl' ? setDhlFilter : setCsvFilter
     const tableRows = mode === 'dhl' ? dhlResults : csvRows
     const isDhl = mode === 'dhl'
-
-    const dhlAmountLabel = isDhl ? 'إجمالي DHL 🟡' : 'إجمالي DHL 🟡'
-    const platAmountLabel = isDhl ? 'إجمالي دفترة 🔵' : 'إجمالي المنصة 🔵'
-    const platAmount = isDhl ? rpt.total_daftra_amount : rpt.total_platform_amount
+    const platAmount = Number(rpt.total_daftra_amount ?? 0)
+    const extraction = rpt.extraction
+    const canEdit = Boolean(rpt.history_id)
 
     return (
-      <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-4 duration-500 motion-reduce:animate-none">
         {/* Speed + export */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -656,25 +612,50 @@ export function ReconcilePage() {
               </span>
             )}
           </div>
-          {isDhl && (
-            <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700"
-              onClick={exportDhlExcel}><Download size={16} /> تصدير Excel</button>
+          {rpt.history_id && (
+            <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50"
+              onClick={exportDhlExcel} disabled={exporting}>
+              {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} تصدير Excel ({activeFilter === 'all' ? 'كل الشحنات' : 'الفلتر الحالي'})
+            </button>
           )}
         </div>
 
+        {error && (
+          <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-red-600 p-4 rounded-xl text-sm font-bold flex items-start gap-3">
+            <AlertCircle className="shrink-0 mt-0.5" size={18} /> <p className="flex-1">{error}</p>
+            <button type="button" onClick={() => setError(null)} aria-label="إغلاق"><X size={16} /></button>
+          </div>
+        )}
+        {extraction && extraction.complete === false && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-amber-800 dark:text-amber-200 p-4 rounded-xl text-sm font-bold flex items-start gap-3">
+            <AlertTriangle className="shrink-0 mt-0.5" size={18} />
+            <p>
+              الاستخراج غير مكتمل: الفاتورة تذكر {extraction.invoice_shipments ?? '؟'} شحنة بإجمالي {extraction.invoice_total != null ? formatCurrency(extraction.invoice_total) : '؟'}،
+              وتم استخراج {extraction.extracted_shipments} شحنة بإجمالي {formatCurrency(extraction.extracted_total)}. راجع الملف قبل الاعتماد على النتائج.
+            </p>
+          </div>
+        )}
+        {!isDhl && csvSkipped.length > 0 && (
+          <details className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-amber-800 dark:text-amber-200 p-4 rounded-xl text-sm">
+            <summary className="font-bold cursor-pointer">تم تجاهل {csvSkipped.length} صف غير صالح من الملف — اضغط للتفاصيل</summary>
+            <ul className="mt-2 space-y-1 text-xs">{csvSkipped.slice(0, 50).map((x) => <li key={x.row}>السطر {x.row}: {x.reason}</li>)}</ul>
+          </details>
+        )}
+
         {/* KPI */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard value={rpt.total_shipments} label="إجمالي الشحنات" colorClass="text-gray-900 dark:text-white" />
           <StatCard value={rpt.matched} label="متطابقة" colorClass="text-green-600 dark:text-green-400" />
           <StatCard value={rpt.with_discrepancies} label="فروقات" colorClass="text-yellow-600 dark:text-yellow-500" />
-          <StatCard value={rpt.not_found} label={isDhl ? 'غير موجودة بدفترة' : 'غير موجودة بالمنصة'} colorClass="text-red-600 dark:text-red-400" />
+          <StatCard value={rpt.needs_review ?? 0} label="تحتاج مراجعة" colorClass="text-orange-600 dark:text-orange-400" />
+          <StatCard value={rpt.not_found} label="غير موجودة بالمنصة" colorClass="text-red-600 dark:text-red-400" />
         </div>
 
         {/* Financial */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FinCard value={formatCurrency(rpt.total_dhl_amount)} label={dhlAmountLabel} colorClass="text-yellow-600 dark:text-yellow-500" />
-          <FinCard value={formatCurrency(platAmount)} label={platAmountLabel} colorClass="text-indigo-600 dark:text-indigo-400" />
-          <FinCard value={formatCurrency(Math.abs(rpt.total_difference))} label="الفرق 📊"
+          <FinCard value={formatCurrency(rpt.total_dhl_amount)} label="إجمالي DHL (كل الشحنات) 🟡" colorClass="text-yellow-600 dark:text-yellow-500" />
+          <FinCard value={formatCurrency(platAmount)} label="إجمالي المنصة (المطابق فقط) 🔵" colorClass="text-indigo-600 dark:text-indigo-400" />
+          <FinCard value={formatCurrency(Math.abs(rpt.total_difference))} label="الفرق (DHL − المنصة) 📊"
             colorClass={rpt.total_difference > 0.01 ? 'text-red-600' : rpt.total_difference < -0.01 ? 'text-green-600' : 'text-yellow-600'} highlight />
           <FinCard 
             value={rpt.total_dhl_amount > 0 ? ((platAmount - rpt.total_dhl_amount) / rpt.total_dhl_amount * 100).toFixed(1) + '%' : '0%'} 
@@ -685,7 +666,7 @@ export function ReconcilePage() {
 
         {/* Filter */}
         <div className="flex flex-wrap gap-2 bg-white dark:bg-slate-800 p-3 rounded-2xl border border-gray-200 dark:border-slate-700">
-          {[['all', 'الكل'], ['matched', 'متطابق'], ['discrepancy', 'فروقات'], ['not_found', 'غير موجود']].map(([k, label]) => (
+          {[['all', 'الكل'], ['matched', 'متطابق'], ['discrepancy', 'فروقات'], ['needs_review', 'يحتاج مراجعة'], ['not_found', 'غير موجود']].map(([k, label]) => (
             <button key={k} className={`px-4 py-2 text-sm font-bold rounded-xl border transition-all ${
               activeFilter === k ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-900'
             }`} onClick={() => setActiveFilter(k)}>{label}</button>
@@ -707,7 +688,7 @@ export function ReconcilePage() {
                   <th className="p-3">الوزن الفعلي</th>
                   <th className="p-3">وزن الفوترة</th>
                   <th className="p-3 text-yellow-600">سعر DHL</th>
-                  <th className="p-3 text-indigo-600">{isDhl ? 'سعر دفترة' : 'سعر المنصة'}</th>
+                  <th className="p-3 text-indigo-600">سعر المنصة</th>
                   <th className="p-3">الفرق</th>
                   <th className="p-3">الهامش</th>
                   <th className="p-3">الدفع</th>
@@ -716,27 +697,23 @@ export function ReconcilePage() {
               </thead>
               <tbody className="divide-y divide-gray-200/50 dark:divide-slate-700/50">
                 {tableRows.length ? tableRows.map((r: any) => {
-                  const awb = isDhl ? r.airwaybill_number : r.airwaybill_number
-                  const manual = isDhl ? dhlManualEdits[awb] : null
-                  const dhlData = isDhl ? r.dhl_data : r.dhl_data
-                  const platData = isDhl ? r.daftra_data : r.platform_data
-                  const platTotal = isDhl
-                    ? (manual?.daftraTotal ?? r.daftra_data?.summary_total)
-                    : platData?.summary_total
-                  
+                  const awb = r.airwaybill_number
+                  const manual = r.manual_edit
+                  const dhlData = r.dhl_data
+                  const platData = r.daftra_data
+                  const platTotal = platData?.summary_total ?? null
                   const dhlCharge = dhlData?.total_charge || 0
-                  const diff = platTotal != null ? platTotal - dhlCharge : (r.total_financial_difference ?? 0)
-                  const diffClass = diff > 0.01 ? 'text-green-600' : diff < -0.01 ? 'text-red-600' : 'text-gray-400'
-                  const diffText = Math.abs(diff) > 0.01 ? `${diff > 0 ? '+' : ''}${formatCurrency(diff)}` : '—'
-                  
-                  const pm = dhlCharge > 0 && platTotal != null ? ((platTotal - dhlCharge) / dhlCharge * 100) : r.profit_margin_pct
-                  const clientName = isDhl ? (manual?.client || r.daftra_data?.client_name || '—') : (platData?.client_name || '—')
-                  const payStatus = isDhl ? (manual?.paymentStatus || r.daftra_data?.payment_status) : platData?.payment_status
+                  const diff = platTotal != null ? r.total_financial_difference : null
+                  const diffClass = diff == null ? 'text-gray-400' : diff > 0.004 ? 'text-green-600' : diff < -0.004 ? 'text-red-600' : 'text-gray-400'
+                  const diffText = diff == null || Math.abs(diff) < 0.005 ? '—' : `${diff > 0 ? '+' : ''}${formatCurrency(diff)}`
+                  const pm = r.profit_margin_pct
+                  const clientName = platData?.client_name || '—'
+                  const payStatus = platData?.payment_status
 
                   return (
                     <tr key={awb} className="hover:bg-gray-50/50 dark:hover:bg-slate-700/30 transition-colors">
                       <td className="p-3 font-mono text-sm font-bold text-gray-900 dark:text-white">{awb}</td>
-                      <td className="p-3">{statusBadge(r.status)}</td>
+                      <td className="p-3" title={r.review_reason ? REVIEW_TEXT[r.review_reason] || r.review_reason : undefined}>{statusBadge(r.status)}{manual && <span className="mr-1 text-[10px] font-bold text-indigo-500">✎ يدوي</span>}</td>
                       <td className="p-3 text-xs text-gray-500 font-semibold">{dhlData?.shipment_date || dhlData?.shipment_date || '—'}</td>
                       <td className="p-3"><span className="bg-gray-50 dark:bg-slate-900 px-2 py-1 rounded text-xs font-bold border border-gray-200 dark:border-slate-700">{dhlData?.origin_airport || '—'}</span></td>
                       <td className="p-3"><span className="bg-gray-50 dark:bg-slate-900 px-2 py-1 rounded text-xs font-bold border border-gray-200 dark:border-slate-700">{dhlData?.destination_code || '—'}</span></td>
@@ -750,9 +727,9 @@ export function ReconcilePage() {
                       <td className="p-3">{paymentBadge(payStatus)}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-1">
-                          {isDhl && (
+                          {canEdit && platData && (
                             <button className={`p-1.5 rounded-lg border text-xs transition-all ${manual ? 'border-green-300 text-green-600 bg-green-50' : 'border-gray-200 dark:border-slate-700 text-gray-400 hover:text-indigo-600'}`}
-                              onClick={() => openEditModal(awb)} title="تعديل يدوي"><Edit3 size={14} /></button>
+                              onClick={() => openEditModal(awb)} title="تصحيح يدوي في التقرير"><Edit3 size={14} /></button>
                           )}
                           {platData && (
                             <>
@@ -872,6 +849,7 @@ export function ReconcilePage() {
       {tab === 'csv-platform' && (
         <>
           {!csvReport && <UploadZone />}
+          {csvBusy && !csvReport && <div className="flex justify-center"><Loader2 className="animate-spin text-indigo-600" size={28} /></div>}
           {csvReport && <ResultsView mode="csv" />}
         </>
       )}
@@ -913,15 +891,16 @@ export function ReconcilePage() {
                 {/* Platform/Daftra Data */}
                 <div className="bg-gray-50 dark:bg-slate-700/50 border border-indigo-100 dark:border-indigo-800/20 rounded-xl p-5">
                   <h3 className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 mb-4 border-b border-gray-200/50 dark:border-slate-600 pb-2">
-                    <FileSpreadsheet size={18} /> {isDhlTab ? 'بيانات دفترة' : 'بيانات المنصة'}
+                    <FileSpreadsheet size={18} /> بيانات المنصة
                   </h3>
                   {(() => {
-                    const pd = isDhlTab ? selectedRow.daftra_data : selectedRow.platform_data
+                    const pd = selectedRow.daftra_data
                     if (!pd) return <div className="text-gray-400 font-bold text-center py-8">غير مسجل</div>
                     return (
                       <div className="flex flex-col gap-3">
                         {[
                           ['رقم الفاتورة', pd.invoice_no || '—'],
+                          ['طريقة المطابقة', MATCH_TEXT[selectedRow.match_type] || '—'],
                           ['العميل', pd.client_name || '—'],
                           ['التاريخ', pd.date || '—'],
                           ['الإجمالي', `${formatCurrency(pd.summary_total)} ر.س`],
@@ -940,6 +919,16 @@ export function ReconcilePage() {
                 </div>
               </div>
 
+              {selectedRow.review_reason && (
+                <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/30 text-orange-800 dark:text-orange-200 rounded-xl p-4 text-sm font-bold">
+                  يحتاج مراجعة: {REVIEW_TEXT[selectedRow.review_reason] || selectedRow.review_reason}. لم تُعتمد هذه المطابقة تلقائيًا ولم تُحتسب في إجمالي المنصة.
+                </div>
+              )}
+              {selectedRow.manual_edit && (
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/30 text-indigo-800 dark:text-indigo-200 rounded-xl p-4 text-sm font-bold">
+                  تم تصحيح قيم هذا الصف يدويًا في التقرير. القيم الأصلية: الإجمالي {formatCurrency(selectedRow.original?.summary_total)} — الوزن {selectedRow.original?.weight ?? '—'} كجم.
+                </div>
+              )}
               {/* Discrepancies */}
               {selectedRow.discrepancies?.length > 0 && (
                 <div className="border border-red-200 dark:border-red-800/30 rounded-xl overflow-hidden">
@@ -950,7 +939,7 @@ export function ReconcilePage() {
                   <table className="w-full text-right bg-white dark:bg-slate-800">
                     <thead>
                       <tr className="bg-gray-50 dark:bg-slate-900 text-gray-500 text-xs font-bold uppercase border-b border-gray-200 dark:border-slate-700">
-                        <th className="p-3">البند</th><th className="p-3">قيمة DHL</th><th className="p-3">{isDhlTab ? 'قيمة دفترة' : 'قيمة المنصة'}</th><th className="p-3">الفرق</th>
+                        <th className="p-3">البند</th><th className="p-3">قيمة DHL</th><th className="p-3">قيمة المنصة</th><th className="p-3">الفرق</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -958,7 +947,7 @@ export function ReconcilePage() {
                         <tr key={i} className="border-b border-gray-200/50 dark:border-slate-700/50">
                           <td className="p-3 font-bold text-sm">{d.field_name_ar}</td>
                           <td className="p-3 text-sm text-yellow-600">{d.dhl_value}</td>
-                          <td className="p-3 text-sm text-indigo-600">{isDhlTab ? d.daftra_value : d.platform_value}</td>
+                          <td className="p-3 text-sm text-indigo-600">{d.daftra_value ?? d.platform_value}</td>
                           <td className={`p-3 text-sm font-black ${d.difference > 0 ? 'text-red-600' : 'text-green-600'}`}>
                             {d.difference > 0 ? '+' : ''}{typeof d.difference === 'number' ? formatCurrency(d.difference) : d.difference}
                           </td>
@@ -986,6 +975,7 @@ export function ReconcilePage() {
                   <Edit3 size={20} className="text-indigo-600" /> تعديل يدوي
                 </h3>
                 <p className="text-xs font-mono text-indigo-600 mt-1">AWB: {editModal.awb}</p>
+                <p className="text-[11px] text-gray-500 mt-1">تصحيح في تقرير المطابقة فقط — لا يغيّر الفاتورة ولا حالة سدادها.</p>
               </div>
               <button className="w-8 h-8 rounded-lg bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 flex items-center justify-center text-gray-400 hover:text-red-500"
                 onClick={() => setEditModal({ open: false, awb: null })}>
@@ -1022,7 +1012,7 @@ export function ReconcilePage() {
 
               {/* Daftra Total */}
               <div>
-                <label className="block text-sm font-bold text-gray-500 mb-1.5">إجمالي دفترة (ريال)</label>
+                <label className="block text-sm font-bold text-gray-500 mb-1.5">إجمالي المنصة (ريال)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -1034,28 +1024,13 @@ export function ReconcilePage() {
                 />
               </div>
 
-              {/* Payment Status */}
-              <div>
-                <label className="block text-sm font-bold text-gray-500 mb-1.5">حالة الدفع</label>
-                <select
-                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                  value={editFields.paymentStatus}
-                  onChange={e => setEditFields(p => ({ ...p, paymentStatus: e.target.value }))}
-                >
-                  <option value="">— اختر —</option>
-                  <option value="مدفوع">مدفوع</option>
-                  <option value="غير مدفوع">غير مدفوع</option>
-                  <option value="مدفوع جزئياً">مدفوع جزئياً</option>
-                </select>
-              </div>
-
               {/* Live calc */}
               {(() => {
-                const r = dhlJob.result?.results?.find((x: any) => x.airwaybill_number === editModal.awb)
+                const r = activeReport?.results?.find((x: any) => x.airwaybill_number === editModal.awb)
                 if (!r) return null
                 const dhlTotal = r.dhl_data?.total_charge || 0
                 const dafVal = editFields.daftraTotal ? parseFloat(editFields.daftraTotal) : null
-                const diff = dafVal != null ? dhlTotal - dafVal : null
+                const diff = dafVal != null && Number.isFinite(dafVal) ? Math.round((dafVal - dhlTotal) * 100) / 100 : null
                 return (
                   <div className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2">
                     <div className="flex justify-between text-sm">
@@ -1063,12 +1038,12 @@ export function ReconcilePage() {
                       <span className="font-bold text-yellow-600">{formatCurrency(dhlTotal)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 font-bold">إجمالي دفترة (يدوي)</span>
+                      <span className="text-gray-500 font-bold">إجمالي المنصة (يدوي)</span>
                       <span className="font-bold text-indigo-600">{dafVal != null ? formatCurrency(dafVal) : '—'}</span>
                     </div>
                     <div className="border-t border-gray-200 dark:border-slate-700 pt-2 mt-1 flex justify-between text-base">
-                      <span className="font-bold text-gray-900 dark:text-white">الفرق</span>
-                      <span className={`font-black ${diff != null ? (diff > 0.01 ? 'text-red-600' : diff < -0.01 ? 'text-green-600' : 'text-gray-400') : 'text-gray-400'}`}>
+                      <span className="font-bold text-gray-900 dark:text-white">الفرق (المنصة − DHL)</span>
+                      <span className={`font-black ${diff != null ? (diff > 0 ? 'text-green-600' : diff < 0 ? 'text-red-600' : 'text-gray-400') : 'text-gray-400'}`}>
                         {diff != null ? `${diff > 0 ? '+' : ''}${formatCurrency(diff)}` : '—'}
                       </span>
                     </div>
@@ -1076,14 +1051,20 @@ export function ReconcilePage() {
                 )
               })()}
 
+              {editError && <div role="alert" className="bg-red-50 dark:bg-red-900/20 text-red-600 p-3 rounded-xl text-sm font-bold">{editError}</div>}
               {/* Actions */}
-              <div className="flex gap-3 mt-2">
+              <div className="flex flex-wrap gap-3 mt-2">
                 <button
-                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-500/20"
-                  onClick={saveEdit}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-60 flex items-center justify-center gap-2"
+                  onClick={() => saveEdit(false)} disabled={editSaving}
                 >
-                  ✓ حفظ التعديل
+                  {editSaving && <Loader2 size={16} className="animate-spin" />} ✓ حفظ التصحيح
                 </button>
+                {activeReport?.results?.find((x: any) => x.airwaybill_number === editModal.awb)?.manual_edit && (
+                  <button className="px-4 py-3 border border-red-200 text-red-600 rounded-xl font-bold text-sm disabled:opacity-60" onClick={() => saveEdit(true)} disabled={editSaving}>
+                    إلغاء التصحيح
+                  </button>
+                )}
                 <button
                   className="px-6 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-500 hover:text-gray-900 rounded-xl font-bold text-sm transition-all"
                   onClick={() => setEditModal({ open: false, awb: null })}
@@ -1234,97 +1215,6 @@ export function ReconcilePage() {
         </div>
       )}
 
-      {/* ─── Edit Modal (Manual Override) ─── */}
-      {editModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setEditModal({ open: false, awb: null })} />
-          <div className="relative bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="p-5 border-b border-gray-100 dark:border-slate-700/50 flex justify-between items-center bg-gray-50/50 dark:bg-slate-900/50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                  <Edit3 size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">تعديل يدوي</h3>
-                  <p className="text-[11px] text-gray-500 font-medium font-mono mt-0.5">{editModal.awb}</p>
-                </div>
-              </div>
-              <button onClick={() => setEditModal({ open: false, awb: null })} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl transition-all">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500">اسم العميل</label>
-                <input value={editFields.client} onChange={e => setEditFields(p => ({ ...p, client: e.target.value }))}
-                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500">الوزن (كجم)</label>
-                <input type="number" value={editFields.weight} onChange={e => setEditFields(p => ({ ...p, weight: e.target.value }))}
-                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold font-mono" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500">سعر دفترة (ر.س)</label>
-                <input type="number" value={editFields.daftraTotal} onChange={e => setEditFields(p => ({ ...p, daftraTotal: e.target.value }))}
-                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold font-mono" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500">حالة الدفع</label>
-                <select value={editFields.paymentStatus} onChange={e => setEditFields(p => ({ ...p, paymentStatus: e.target.value }))}
-                  className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-bold">
-                  <option value="">-- غير محدد --</option>
-                  <option value="0">غير مدفوع</option>
-                  <option value="1">جزئي</option>
-                  <option value="2">مدفوع</option>
-                </select>
-              </div>
-
-              {/* Live Preview */}
-              {editFields.daftraTotal && editModal.awb && (() => {
-                const r = dhlJob.result?.results?.find((x: any) => x.airwaybill_number === editModal.awb)
-                const dhlCharge = r?.dhl_data?.total_charge || 0
-                const newDaftra = parseFloat(editFields.daftraTotal) || 0
-                const newDiff = newDaftra - dhlCharge
-                const newMargin = dhlCharge > 0 ? ((newDaftra - dhlCharge) / dhlCharge * 100) : 0
-                return (
-                  <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/30 rounded-xl p-3 space-y-1">
-                    <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">معاينة مباشرة</p>
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-gray-500">سعر DHL:</span>
-                      <span className="text-yellow-600 font-mono">{formatCurrency(dhlCharge)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-gray-500">سعر دفترة:</span>
-                      <span className="text-indigo-600 font-mono">{formatCurrency(newDaftra)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-gray-500">الفرق:</span>
-                      <span className={`font-mono ${newDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>{newDiff > 0 ? '+' : ''}{formatCurrency(newDiff)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-gray-500">الهامش:</span>
-                      <span className={`font-mono ${newMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{newMargin > 0 ? '+' : ''}{newMargin.toFixed(1)}%</span>
-                    </div>
-                  </div>
-                )
-              })()}
-
-              <div className="flex gap-3 pt-2">
-                <button onClick={saveEdit}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all">
-                  حفظ التعديلات
-                </button>
-                <button onClick={() => setEditModal({ open: false, awb: null })}
-                  className="px-6 py-3 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-slate-600 transition-all">
-                  إلغاء
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ─── History Modal (Previous Invoices) ─── */}
       {historyModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1359,14 +1249,14 @@ export function ReconcilePage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="font-bold text-sm text-gray-900 dark:text-white">{h.file_name}</span>
-                          <span className="text-[10px] bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-400 font-mono">{new Date(h.upload_date).toLocaleString('ar-EG')}</span>
+                          <span className="text-[10px] bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-400 font-mono">{new Date(h.upload_date).toLocaleString('en-GB')}</span>
                         </div>
                         <div className="flex flex-wrap gap-4 text-xs font-bold text-gray-600 dark:text-gray-300">
                           <div className="flex items-center gap-1.5"><span className="text-indigo-500">DHL:</span> <span className="font-mono">{Number(h.total_dhl_amount).toFixed(2)} ر.س</span></div>
-                          <div className="flex items-center gap-1.5"><span className="text-blue-500">دفترة:</span> <span className="font-mono">{Number(h.total_platform_amount).toFixed(2)} ر.س</span></div>
+                          <div className="flex items-center gap-1.5"><span className="text-blue-500">المنصة:</span> <span className="font-mono">{Number(h.total_platform_amount).toFixed(2)} ر.س</span></div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-gray-500">الفرق:</span> 
-                            <span className={`font-mono ${Number(h.difference) < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                            <span className={`font-mono ${Number(h.difference) > 0 ? 'text-red-500' : 'text-green-500'}`}>
                               {Number(h.difference) > 0 ? '+' : ''}{Number(h.difference).toFixed(2)} ر.س
                             </span>
                           </div>
@@ -1374,22 +1264,7 @@ export function ReconcilePage() {
                       </div>
                       <div className="flex items-center gap-2 w-full md:w-auto">
                         <button 
-                          onClick={() => {
-                            if (h.details) {
-                              setDhlJob({
-                                jobId: 'history-' + h.id,
-                                status: 'done',
-                                step: 'complete',
-                                progress: 100,
-                                result: h.details,
-                                error: null,
-                                totalTime: 'سجل تاريخي'
-                              });
-                              setHistoryModalOpen(false);
-                            } else {
-                              alert('لا يوجد تفاصيل لهذه المطابقة');
-                            }
-                          }}
+                          onClick={() => { setHistoryModalOpen(false); void openStoredReport(h.id, 'dhl-ai') }}
                           className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl border border-blue-100 dark:border-blue-800/30 hover:bg-blue-100 transition-all font-bold text-[10px] whitespace-nowrap"
                         >
                           عرض الجدول

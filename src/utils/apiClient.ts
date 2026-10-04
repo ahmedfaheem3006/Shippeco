@@ -71,10 +71,11 @@ class ApiClient {
     return this.handleResponse(res);
   }
 
-  async delete<T = any>(endpoint: string): Promise<T> {
+  async delete<T = any>(endpoint: string, body?: unknown): Promise<T> {
     const res = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'DELETE',
       headers: this.getHeaders(),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     return this.handleResponse(res);
   }
