@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import type { Invoice, InvoiceItem, InvoiceReceipt } from '../../utils/models'
 import { invoiceService } from '../../services/invoiceService'
-import { enrichSingleInvoice } from '../../services/dbService'
 import styles from './InvoiceViewModal.module.css'
 import {
   X, CheckCircle2, Circle, AlertTriangle, RotateCcw,
   Phone, Package, Truck, DollarSign, FileText, Send,
   Edit3, Trash2, Plus, Calendar, Hash, CreditCard,
   ArrowUpRight, ArrowDownRight, User, MapPin, Box, Scale,
-  Loader2, RefreshCw, CreditCard as PaymobIcon, Copy, Check,
+  Loader2, CreditCard as PaymobIcon, Copy, Check,
   ExternalLink, Link
 } from 'lucide-react'
 import { createPaymentLink } from '../../services/paymobService'
@@ -84,7 +83,6 @@ function StatusBadge({ status }: { status: Invoice['status'] }) {
 
 export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, onCollect, onDelete }: Props) {
   const [loadingFull, setLoadingFull] = useState(false)
-  const [enriching, setEnriching] = useState(false)
   const [fullInvoice, setFullInvoice] = useState<Invoice | null>(null)
   const [receipts, setReceipts] = useState<InvoiceReceipt[]>([])
   const [receiptLightbox, setReceiptLightbox] = useState<string | null>(null)
@@ -116,27 +114,6 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
       const fullData: Invoice = { ...invoice, ...data, items }
       setFullInvoice(fullData)
 
-      // لو البيانات ناقصة → enrich من دفترة
-      const needsEnrich = (data as any).needs_enrichment && data.daftra_id
-      if (needsEnrich) {
-        setEnriching(true)
-        try {
-          const enriched = await enrichSingleInvoice(data.daftra_id!)
-          if (enriched.ok && enriched.invoice) {
-            let enrichedItems: InvoiceItem[] = []
-            try {
-              enrichedItems = typeof enriched.invoice.items === 'string'
-                ? JSON.parse(enriched.invoice.items as string)
-                : (enriched.invoice.items || [])
-            } catch { enrichedItems = [] }
-            setFullInvoice({ ...fullData, ...enriched.invoice, items: enrichedItems })
-          }
-        } catch {
-          // فشل الإثراء
-        } finally {
-          setEnriching(false)
-        }
-      }
     } catch {
       setFullInvoice(null)
     } finally {
@@ -169,26 +146,6 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
   useRealtimeRefresh(PAYMENT_EVENTS, (batch) => {
     if (open && batchTouchesInvoice(batch, invoice?.id)) void loadFull({ fresh: true })
   })
-
-  // إعادة الإثراء يدوياً
-  const handleManualEnrich = async () => {
-    const daftraId = displayInv?.daftra_id
-    if (!daftraId || enriching) return
-    setEnriching(true)
-    try {
-      const enriched = await enrichSingleInvoice(daftraId)
-      if (enriched.ok && enriched.invoice) {
-        let items: InvoiceItem[] = []
-        try {
-          items = typeof enriched.invoice.items === 'string'
-            ? JSON.parse(enriched.invoice.items as string)
-            : (enriched.invoice.items || [])
-        } catch { items = [] }
-        setFullInvoice(prev => ({ ...(prev ?? invoice!), ...enriched.invoice, items }))
-      }
-    } catch { /* silent */ }
-    finally { setEnriching(false) }
-  }
 
   const openPaymobForm = async (action: 'open' | 'copy') => {
     if (!displayInv) return
@@ -363,10 +320,10 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
                 <span className="flex items-center gap-2">
                   فاتورة #{displayInv.invoice_number || displayInv.daftra_id || displayInv.id}
                   {displayInv.isDraft && <span className="text-[9px] bg-gray-200 dark:bg-slate-700 text-gray-500 px-2 py-0.5 rounded uppercase font-inter">مسودة</span>}
-                  {(loadingFull || enriching) && (
+                  {loadingFull && (
                     <span className="inline-flex items-center gap-1 text-[9px] bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-0.5 rounded">
                       <Loader2 size={10} className="animate-spin" />
-                      {loadingFull ? 'جاري التحميل...' : 'جلب التفاصيل...'}
+                      جاري التحميل...
                     </span>
                   )}
                 </span>
@@ -380,17 +337,6 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {displayInv.daftra_id && (
-              <button
-                type="button"
-                title="إعادة جلب التفاصيل من دفترة"
-                className="text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors p-2 rounded-xl"
-                onClick={handleManualEnrich}
-                disabled={enriching}
-              >
-                <RefreshCw size={16} className={enriching ? 'animate-spin' : ''} />
-              </button>
-            )}
             <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
               <X size={18} />
             </button>

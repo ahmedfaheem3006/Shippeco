@@ -7,10 +7,10 @@ import { openWhatsApp } from '../utils/whatsapp';
 import { useAuthStore } from '../hooks/useAuthStore';
 import {
   Settings, Smartphone, CreditCard, BookOpen,
-  Users, Save, Link, Link2, Info,
+  Users, Save, Link, Info,
   Trash2, Briefcase, Eye, User, Share2, FileText,
   AlertCircle, CheckCircle2, X, Shield, ChevronDown, Crown,
-  UserX, Ban, RefreshCw, Clock, Database, Power,
+  UserX, Ban, Clock, Database, Power,
   Loader2,
 } from 'lucide-react';
 
@@ -431,8 +431,8 @@ export function SettingsPage() {
             <div className="flex items-center gap-3 border-b border-gray-200 dark:border-slate-700 pb-3">
               <div className="p-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl"><BookOpen size={20} /></div>
               <div>
-                <h2 className="text-base font-bold text-gray-900 dark:text-white">منظومة دفترة + المزامنة</h2>
-                <div className="text-xs text-gray-500 dark:text-gray-400 font-bold">مزامنة الفواتير المحاسبية — كل 15 دقيقة تلقائياً</div>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white">منظومة دفترة</h2>
+                <div className="text-xs text-gray-500 dark:text-gray-400 font-bold">المزامنة متوقفة — لا يتم جلب أي بيانات من دفترة. الفواتير والعملاء تُدار من المنصة فقط.</div>
               </div>
             </div>
 
@@ -454,29 +454,6 @@ export function SettingsPage() {
               </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button type="button"
-                className="flex-1 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white py-3 rounded-xl font-bold transition-all disabled:opacity-50 text-sm flex justify-center items-center gap-2"
-                onClick={() => void st.testDaftra()} disabled={st.loading || st.saving}>
-                <Link2 size={16} /> فحص الاتصال
-              </button>
-              <button type="button"
-                className="flex-1 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 text-green-600 dark:text-green-400 py-3 rounded-xl font-bold transition-all disabled:opacity-50 text-sm flex justify-center items-center gap-2 hover:bg-green-100"
-                onClick={() => void st.triggerManualSync()} disabled={st.loading || st.saving}>
-                <RefreshCw size={16} /> مزامنة يدوية الآن
-              </button>
-            </div>
-
-            {st.connDaftra && (
-              <div className={`p-3 text-xs font-bold rounded-xl border flex items-center gap-2 ${
-                st.connDaftra.ok
-                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/30 text-green-600 dark:text-green-400'
-                  : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30 text-red-600 dark:text-red-400'
-              }`}>
-                {st.connDaftra.ok ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                {st.connDaftra.text}
-              </div>
-            )}
           </div>
         </div>
 

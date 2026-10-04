@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { createPaymentLink, pingPaymobWorker, paymobBackend } from '../services/paymobService';
+import { createPaymentLink, paymobBackend } from '../services/paymobService';
 import type { Invoice, PaymobLink, PaymobStats } from '../utils/models';
 import { openWhatsApp } from '../utils/whatsapp';
 import { buildPaymobWaMessage, safeAmountNumber } from '../utils/paymobLinks';
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { PaymentLinkDetailsDialog } from '../components/Paymob/PaymentLinkDetailsDialog';
+import { PaymobHealthPanel } from '../components/Paymob/PaymobHealthPanel';
 
 /* ═══ Helpers ═══ */
 async function copyText(value: string) {
@@ -248,9 +249,10 @@ export function PaymobLinksPage() {
   /* ── Init ── */
   useEffect(() => {
     void (async () => {
-      // Ping worker
+      // Ask our backend whether Paymob accepts its API key (the old
+      // Cloudflare Worker is no longer part of the payment path).
       try {
-        const ping = await pingPaymobWorker();
+        const ping = await paymobBackend.ping();
         const ok = String(ping?.status || '').toLowerCase() === 'ok';
         setWorkerStatus({ ok, text: ok ? 'متصل' : 'غير متصل' });
       } catch { setWorkerStatus({ ok: false, text: 'غير متصل' }); }
@@ -680,6 +682,8 @@ export function PaymobLinksPage() {
 
         {/* ═══ RIGHT: History ═══ */}
         <div className="w-full xl:w-5/12 bg-white dark:bg-slate-800 p-5 md:p-6 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm flex flex-col gap-4 max-h-[85vh] overflow-hidden">
+
+          <PaymobHealthPanel />
 
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gray-200 dark:border-slate-700 pb-3">
             <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">

@@ -162,12 +162,7 @@ export function ReconcilePage() {
   const [dhlFilter, setDhlFilter] = useState('all')
   const [dhlDetail, setDhlDetail] = useState<DetailState>({ open: false, awb: null })
   
-  // Backfill state
-  const [backfillLoading, setBackfillLoading] = useState(false)
-  const [backfillJob, setBackfillJob] = useState<any>(null)
-  
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const bfPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startTimeRef = useRef(0)
 
   // Edit modal
@@ -276,35 +271,8 @@ export function ReconcilePage() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current)
-      if (bfPollRef.current) clearTimeout(bfPollRef.current)
     }
   }, [])
-
-  /* ─── Backfill: Recovery Job ─── */
-  const startAwbRecovery = async () => {
-    setBackfillLoading(true)
-    try {
-      const { job_id } = await reconcileApiService.startBackfill()
-      pollBackfillStatus(job_id)
-    } catch (e: any) {
-      setError(e.message)
-      setBackfillLoading(false)
-    }
-  }
-
-  const pollBackfillStatus = async (jobId: string) => {
-    try {
-      const job = await reconcileApiService.getBackfillStatus(jobId)
-      setBackfillJob(job)
-      if (job.status === 'running') {
-        bfPollRef.current = setTimeout(() => pollBackfillStatus(jobId), 2000)
-      } else {
-        setBackfillLoading(false)
-      }
-    } catch {
-      bfPollRef.current = setTimeout(() => pollBackfillStatus(jobId), 5000)
-    }
-  }
 
   /* ─── DHL AI: Submit & Poll ─── */
   const submitDhlInvoice = useCallback(async (force = false) => {
@@ -785,26 +753,6 @@ export function ReconcilePage() {
         </div>
         
         <div className="flex items-center gap-2">
-          {backfillJob?.status === 'running' && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/30 rounded-xl text-xs font-bold text-indigo-600 animate-pulse">
-              <RefreshCw size={14} className="animate-spin" />
-              جاري استعادة البولايص... {backfillJob.progress}% ({backfillJob.filled} تم إيجادهم)
-            </div>
-          )}
-          
-          <button 
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl border transition-all ${
-              backfillLoading ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-              : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 border-indigo-100 dark:border-indigo-800/30 hover:bg-indigo-600 hover:text-white shadow-sm'
-            }`}
-            onClick={startAwbRecovery}
-            disabled={backfillLoading}
-            title="البحث عن أرقام البولايص المفقودة في دفترة وتخزينها في القاعدة"
-          >
-            {backfillLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            استعادة البولايص المفقودة
-          </button>
-
           <button 
             className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 border border-indigo-100 dark:border-indigo-800/30 hover:bg-indigo-600 hover:text-white rounded-xl shadow-sm transition-all"
             onClick={() => { setHistoryModalOpen(true); void loadHistory(); }}

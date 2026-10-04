@@ -191,6 +191,24 @@ export async function checkPayment(
 
 export type ReconcileSummary = { webhooksRetried: number; attemptsChecked: number; applied: number; errors: number; skipped?: boolean };
 
+/** GET /paymob/health — which settings exist (never their values) and whether payments are being picked up. */
+export type PaymobHealth = {
+  config: {
+    secret_key: boolean; public_key: boolean; api_key: boolean; hmac_secret: boolean;
+    notification_url: string | null; integration_ids: number[]; missing: string[];
+  };
+  api_auth: { ok: boolean; error?: string };
+  webhooks_7d: { status: string; hmac_valid: boolean | null; count: number }[];
+  last_webhook: { created_at: string; status: string; hmac_valid: boolean | null; error: string | null } | null;
+  reconciler: {
+    enabled: boolean; interval_seconds: number; running_here: boolean;
+    last_run_at: string | null; last_summary: ReconcileSummary | null; last_error: string | null;
+    open_attempts: number; due_now: number; last_checked_at: string | null;
+    recent_errors: { error: string; at: string; count: number }[];
+  };
+  needs_review: number;
+};
+
 export const paymobBackend = {
   getLinks: async (params?: { limit?: number; offset?: number; status?: string }): Promise<{ links: PaymobLink[]; total: number }> => {
     try {
@@ -241,6 +259,12 @@ export const paymobBackend = {
     return (result?.data ?? result) as ReconcileSummary;
   },
 
+  /** Admin/accountant only — throws ApiError (403) for other roles. */
+  health: async (): Promise<PaymobHealth> => {
+    const result = await api.get<{ data?: PaymobHealth } & Partial<PaymobHealth>>('/paymob/health');
+    return (result?.data ?? result) as PaymobHealth;
+  },
+
   ping: async (): Promise<{ status: string }> => {
     try {
       const result = await api.get<any>('/paymob/ping');
@@ -250,8 +274,10 @@ export const paymobBackend = {
     }
   },
 
-  getPublicLink: async (id: string | number): Promise<any> => {
-    const result = await api.get<any>(`/paymob/public-link/${id}`);
+  /** `returned`: the transaction/order Paymob put on the return URL — the server confirms it with Paymob. */
+  getPublicLink: async (id: string | number, returned?: { tx: string; order: string }): Promise<any> => {
+    const q = returned ? `?${new URLSearchParams({ tx: returned.tx, order: returned.order }).toString()}` : '';
+    const result = await api.get<any>(`/paymob/public-link/${id}${q}`);
     return result?.data || result;
   },
 

@@ -104,7 +104,6 @@ export function useDashboardPage() {
 
       console.log('[Dashboard] Period:', period, 'Total:', dashData?.summary?.total?.count || 0, 'invoices')
 
-      if (!opts.silent) void (async () => { try { await invoiceService.syncRecent() } catch { } })()
     } catch (e) {
       console.error('[Dashboard] Failed:', e)
       setError(e instanceof Error ? e.message : 'فشل تحميل البيانات')

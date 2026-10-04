@@ -1729,21 +1729,6 @@ export function ClientsPage() {
             <span>إضافة عميل جديد</span>
           </button>
           <button
-            className="flex items-center gap-2 px-3.5 py-2 text-sm font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50"
-            onClick={() => void cli.syncClients()}
-            disabled={cli.syncing}
-            type="button"
-          >
-            <RefreshCw
-              size={16}
-              className={cli.syncing ? "animate-spin" : ""}
-            />
-            <span className="hidden sm:inline">
-              {cli.syncing ? "جاري المزامنة..." : "مزامنة من دفترة"}
-            </span>
-            <span className="sm:hidden">{cli.syncing ? "..." : "مزامنة"}</span>
-          </button>
-          <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 disabled:opacity-50"
             onClick={() => void cli.exportClients("xlsx")}
             disabled={cli.loading || !cli.clients.length}
@@ -2012,7 +1997,7 @@ export function ClientsPage() {
                     <p className="font-bold text-sm text-gray-400">
                       {cli.search || cli.segment !== "all" || cli.city !== "all"
                         ? "لا توجد نتائج مطابقة"
-                        : 'اضغط "مزامنة من دفترة" لجلب البيانات'}
+                        : "لا يوجد عملاء بعد"}
                     </p>
                   </td>
                 </tr>
@@ -2119,7 +2104,7 @@ export function ClientsPage() {
             <div className="p-12 text-center">
               <Users size={32} className="text-gray-300 mx-auto mb-2" />
               <p className="font-bold text-sm text-gray-400">
-                {cli.search ? "لا توجد نتائج" : "اضغط مزامنة"}
+                {cli.search ? "لا توجد نتائج" : "لا يوجد عملاء بعد"}
               </p>
             </div>
           ) : (

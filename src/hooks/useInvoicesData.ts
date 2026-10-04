@@ -104,7 +104,6 @@ export function useInvoicesData() {
     setLoading(true)
     setError(null)
     try {
-      await invoiceService.syncRecent()
       await fetchPage(page)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sync failed')
