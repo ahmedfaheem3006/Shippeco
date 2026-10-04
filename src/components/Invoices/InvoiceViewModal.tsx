@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom'
 import { PAYMENT_EVENTS, batchTouchesInvoice, useRealtimeRefresh } from '../../hooks/useRealtimeRefresh'
 import { api } from '../../utils/apiClient'
 import { useAuthStore } from '../../hooks/useAuthStore'
+import { InvoiceEmailStatus } from './InvoiceEmailStatus'
 import { useSettingsStore } from '../../hooks/useSettingsStore'
 import { downloadInvoicePDF, shareInvoiceWhatsApp } from '../../utils/pdfGenerator'
 import { Download, MessageCircle } from 'lucide-react'
@@ -534,6 +535,9 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
               <span className="text-xs font-semibold text-indigo-600">{displayInv.payment}</span>
             </div>
           )}
+
+          {/* ─── بريد تأكيد الدفع للعميل (admin/accountant) ─── */}
+          <InvoiceEmailStatus invoiceId={displayInv.id} />
 
           {/* ─── سند التحويل البنكي (قد يكون أكثر من صورة) ─── */}
           {receipts.length > 0 && (
