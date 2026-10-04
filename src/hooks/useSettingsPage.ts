@@ -76,7 +76,6 @@ export function useSettingsPage() {
   }, []);
 
   const [connPaymob, setConnPaymob] = useState<{ ok: boolean; text: string } | null>(null);
-  const [connDaftra, setConnDaftra] = useState<{ ok: boolean; text: string } | null>(null);
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
 
   /* ── setSettings wrapper: accepts object or updater function ── */
@@ -293,32 +292,6 @@ export function useSettingsPage() {
     } catch (e) { setError(e instanceof Error ? e.message : 'فشل تحديث البيانات'); }
   }), [refresh, withUserPending]);
 
-  /* ── Manual sync ── */
-  const triggerManualSync = useCallback(async () => {
-    setSaving(true); setError(null); setStatus(null);
-    try {
-      const result = await api.get<any>('/sync/recent');
-      const d = result?.data || result;
-      const synced = d?.synced || 0;
-      const total = d?.total || d?.total_invoices || syncInfo?.total_invoices || 0;
-      
-      setStatus(`✅ تم المزامنة — ${synced} فاتورة`);
-      
-      // Update sync info locally to reflect today's date and updated count
-      setSyncInfo(prev => ({
-        last_recent_sync: new Date().toISOString(),
-        total_invoices: total,
-        cron_enabled: prev?.cron_enabled ?? true
-      }));
-
-      setTimeout(() => { 
-        setStatus(null); 
-        refresh(); // Refresh everything else
-      }, 3000);
-    } catch (e) { setError(e instanceof Error ? e.message : 'فشل تشغيل المزامنة'); }
-    finally { setSaving(false); }
-  }, [refresh]);
-
   /* ── Sort users ── */
   const sortedUsers = useMemo(() => {
     const rank: Record<string, number> = { admin: 0, manager: 1, accountant: 2, employee: 3, viewer: 4 };
@@ -343,28 +316,6 @@ export function useSettingsPage() {
   }, []);
 
   /* ── Test Daftra ── */
-  const testDaftra = useCallback(async () => {
-    setConnDaftra(null);
-    try {
-      const res = await api.get<any>('/invoices/light?limit=1');
-      const d = res?.data || res;
-      const total = d?.pagination?.total || d?.total || 0;
-      
-      if (total > 0) {
-        setConnDaftra({ ok: true, text: `متصل — ${total.toLocaleString()} فاتورة في قاعدة البيانات` });
-        setSyncInfo(prev => ({
-          last_recent_sync: new Date().toISOString(),
-          total_invoices: total,
-          cron_enabled: prev?.cron_enabled ?? true
-        }));
-      } else {
-        setConnDaftra({ ok: false, text: 'لا توجد فواتير في قاعدة البيانات' });
-      }
-    } catch (e) {
-      setConnDaftra({ ok: false, text: e instanceof Error ? e.message : 'غير متصل' });
-    }
-  }, []);
-
   return {
     loading, saving, error, status,
     settings, setSettings,
@@ -373,8 +324,7 @@ export function useSettingsPage() {
     usersError, usersLoadedOnce, isUserPending,
     handleApprove, handleReject, handleDelete,
     handleChangeRole, handleToggleActive, handleUpdateUser,
-    triggerManualSync, syncInfo,
+    syncInfo,
     connPaymob, testPaymob,
-    connDaftra, testDaftra,
   };
 }

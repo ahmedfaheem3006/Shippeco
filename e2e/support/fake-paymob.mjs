@@ -7,13 +7,15 @@
 //   POST /api/auth/tokens                          → { token }
 //   POST /v1/intention/                            → { id, intention_order_id, client_secret }
 //   POST /api/ecommerce/orders/transaction_inquiry → transaction set via control API, else 404
+//   GET  /api/acceptance/transactions/:id          → transaction set via control API, else 404
 // Control API for the test:
-//   POST /_control/inquiry { order_id, tx }   GET /_control/intentions
+//   POST /_control/inquiry { order_id, tx }   POST /_control/tx { tx }   GET /_control/intentions
 import http from 'node:http'
 
 const port = Number(process.argv[2] || 4599)
 let orderSeq = 800000 + Math.floor(Math.random() * 100000)
 const inquiry = new Map()
+const byId = new Map()
 const intentions = []
 
 http
@@ -35,6 +37,15 @@ http
       if (req.url === '/api/ecommerce/orders/transaction_inquiry') {
         const tx = inquiry.get(String(body.order_id))
         return tx ? send(200, tx) : send(404, { detail: 'Not found.' })
+      }
+      const txMatch = /^\/api\/acceptance\/transactions\/(\d+)$/.exec(req.url || '')
+      if (txMatch && req.method === 'GET') {
+        const tx = byId.get(txMatch[1])
+        return tx ? send(200, tx) : send(404, { detail: 'Not found.' })
+      }
+      if (req.url === '/_control/tx') {
+        byId.set(String(body.tx.id), body.tx)
+        return send(200, { ok: true })
       }
       if (req.url === '/_control/inquiry') {
         inquiry.set(String(body.order_id), body.tx)

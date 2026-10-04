@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { paymobBackend } from '../services/paymobService'
 import shippecLogo from '../assets/shippec.jpeg'
 import { 
@@ -31,8 +31,26 @@ interface PublicLinkDetails {
   payment_url_full?: string;
 }
 
+/**
+ * Paymob sends the customer back here after checkout with the transaction in
+ * the query (?id=<transaction>&order=<order>&success=…). The server confirms
+ * that transaction with Paymob's API — the query is only a pointer to it.
+ */
+function readReturn(params: URLSearchParams): { tx: string; order: string; success: boolean } | null {
+  const tx = params.get('id') || ''
+  const order = params.get('order') || ''
+  if (!/^\d{1,20}$/.test(tx) || !/^\d{1,20}$/.test(order)) return null
+  return { tx, order, success: params.get('success') === 'true' }
+}
+
+const CONFIRM_POLL_MS = 3000
+const CONFIRM_MAX_MS = 90_000
+
 export function PublicPayPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
+  const [returned] = useState(() => readReturn(searchParams))
+  const [confirming, setConfirming] = useState(() => !!returned?.success)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +68,15 @@ export function PublicPayPage() {
   // Polling reference
   const pollingIntervalRef = useRef<any | null>(null)
 
+  // Checkout ran inside the iframe below, so Paymob's redirect lands in the
+  // frame: show the result on the whole page instead (same origin).
+  useEffect(() => {
+    if (!returned) return
+    try {
+      if (window.top && window.top !== window.self) window.top.location.href = window.location.href
+    } catch { /* not same-origin — stay in the frame */ }
+  }, [returned])
+
   // Fetch link details on mount
   useEffect(() => {
     if (!id) return;
@@ -58,7 +85,7 @@ export function PublicPayPage() {
       try {
         setLoading(true)
         setError(null)
-        const res = await paymobBackend.getPublicLink(id)
+        const res = await paymobBackend.getPublicLink(id, returned ? { tx: returned.tx, order: returned.order } : undefined)
         if (res && res.success !== false) {
           const data = res.data || res
           setLinkDetails(data)
@@ -70,6 +97,9 @@ export function PublicPayPage() {
           // If already paid, no need to show form
           if (data.status === 'paid' && data.payment_url_full) {
             setPaymentUrl(data.payment_url_full)
+          }
+          if (returned && !returned.success && data.status !== 'paid') {
+            toast.error('لم تكتمل عملية الدفع. يمكنك المحاولة مرة أخرى.')
           }
         } else {
           setError('رابط الدفع هذا غير صحيح أو غير موجود.')
@@ -83,7 +113,34 @@ export function PublicPayPage() {
     }
     
     void fetchDetails()
-  }, [id])
+  }, [id, returned])
+
+  // Back from a successful checkout: keep confirming for a short while
+  // (Paymob can take a few seconds to settle the transaction).
+  useEffect(() => {
+    if (!id || !returned || !confirming || linkDetails?.status === 'paid') return
+    const started = Date.now()
+    const timer = setInterval(async () => {
+      try {
+        const res = await paymobBackend.getPublicLink(id, { tx: returned.tx, order: returned.order })
+        const data = res?.data || res
+        if (data?.status === 'paid') {
+          setLinkDetails(data)
+          setConfirming(false)
+          clearInterval(timer)
+          return
+        }
+      } catch (err) {
+        console.warn('[PublicPay] Confirmation polling error:', err)
+      }
+      if (Date.now() - started > CONFIRM_MAX_MS) {
+        setConfirming(false)
+        clearInterval(timer)
+        toast('تم استلام طلب الدفع، وسيتم تأكيده خلال دقائق.', { icon: '⏳', duration: 8000 })
+      }
+    }, CONFIRM_POLL_MS)
+    return () => clearInterval(timer)
+  }, [id, returned, confirming, linkDetails?.status])
 
   // Poll status when payment intent is created
   useEffect(() => {
@@ -180,13 +237,13 @@ export function PublicPayPage() {
     return new Intl.NumberFormat('sa-SA', { style: 'currency', currency: 'SAR' }).format(amount)
   }
 
-  if (loading) {
+  if (loading || (confirming && linkDetails?.status !== 'paid' && !error)) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center font-cairo" dir="rtl">
         <div className="space-y-4 text-center">
           <RefreshCw className="animate-spin text-indigo-500 mx-auto" size={48} />
-          <h2 className="text-xl font-bold text-white">جاري تحميل تفاصيل الدفع...</h2>
-          <p className="text-gray-400 text-sm">يرجى الانتظار لحين تحميل البيانات بأمان</p>
+          <h2 className="text-xl font-bold text-white">{confirming ? 'جاري تأكيد عملية الدفع...' : 'جاري تحميل تفاصيل الدفع...'}</h2>
+          <p className="text-gray-400 text-sm">{confirming ? 'لا تغلق الصفحة — نتحقق من الدفع مع بوابة الدفع' : 'يرجى الانتظار لحين تحميل البيانات بأمان'}</p>
         </div>
       </div>
     )
