@@ -281,8 +281,9 @@ export const paymobBackend = {
     return result?.data || result;
   },
 
-  payPublicLink: async (id: string | number, email: string, phone: string): Promise<any> => {
-    const result = await api.post<any>(`/paymob/public-link/${id}/pay`, { email, phone });
+  /** Saves the payer's receipt e-mail with a new (or their own reusable) checkout; returns its Paymob URL. */
+  payPublicLink: async (id: string | number, email: string, phone: string, allowWhilePending = false): Promise<any> => {
+    const result = await api.post<any>(`/paymob/public-link/${id}/pay`, { email, phone, ...(allowWhilePending ? { allow_while_pending: true } : {}) });
     return result?.data || result;
   },
 };

@@ -7,8 +7,13 @@ import { PAYMENT_EVENTS, batchTouchesInvoice, useRealtimeRefresh } from '../../h
 type InvoiceEmail = {
   id: number
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'uncertain'
-  skip_reason: 'no_email' | 'invalid_email' | 'mail_not_configured' | null
+  skip_reason: 'no_email' | 'no_payer_email' | 'invalid_email' | 'mail_not_configured' | null
   recipient: string | null
+  /** payer_checkout: the address the payer confirmed on the payment page */
+  recipient_source: 'payer_checkout' | 'client_record' | 'staff_test' | null
+  /** Provider event after acceptance (Resend webhooks). */
+  delivery_status: 'accepted' | 'delivery_delayed' | 'delivered' | 'bounced' | 'suppressed' | 'complained' | 'failed' | null
+  delivery_detail: string | null
   attempts: number
   last_attempt_at: string | null
   accepted_at: string | null
@@ -32,12 +37,28 @@ function describe(e: InvoiceEmail): { label: string; hint?: string; tone: 'ok' |
     case 'sending':
       return { label: 'في انتظار الإرسال', hint: e.attempts > 0 ? `محاولة ${e.attempts} لم تنجح — ستُعاد تلقائيًا` : undefined, tone: 'wait', canResend: false }
     case 'sent':
-      return { label: 'قبله مزود البريد', hint: 'قبول المزود لا يؤكد وصولها لصندوق الوارد لدى العميل', tone: 'ok', canResend: true }
+      switch (e.delivery_status) {
+        case 'delivered':
+          return { label: 'سُلّمت لخادم بريد المستلم', hint: 'أكد المزود التسليم لخادم البريد؛ لا يؤكد ذلك قراءتها أو وجودها في الوارد', tone: 'ok', canResend: true }
+        case 'delivery_delayed':
+          return { label: 'تأخر التسليم', hint: 'خادم المستلم لم يستقبلها بعد — المزود يعيد المحاولة تلقائيًا', tone: 'wait', canResend: false }
+        case 'bounced':
+          return { label: 'ارتدّت الرسالة', hint: 'رفض خادم المستلم العنوان نهائيًا — تحقق من البريد الصحيح مع العميل', tone: 'bad', canResend: false }
+        case 'suppressed':
+          return { label: 'محظور لدى مزود البريد', hint: 'العنوان في قائمة المنع (ارتداد أو شكوى سابقة) فلم تُرسل — لن نعيد المحاولة إليه', tone: 'bad', canResend: false }
+        case 'complained':
+          return { label: 'أبلغ المستلم عنها كرسالة مزعجة', tone: 'warn', canResend: false }
+        case 'failed':
+          return { label: 'فشل الإرسال لدى المزود', hint: 'راجع السبب أدناه قبل إعادة الإرسال', tone: 'bad', canResend: true }
+        default:
+          return { label: 'قبله مزود البريد', hint: 'قبول المزود لا يؤكد وصولها لصندوق الوارد لدى العميل', tone: 'ok', canResend: true }
+      }
     case 'failed':
       return { label: 'تعذر الإرسال', hint: 'رفض مزود البريد الرسالة أو استُنفدت المحاولات', tone: 'bad', canResend: true }
     case 'uncertain':
       return { label: 'نتيجة غير مؤكدة', hint: 'انقطع الاتصال بعد تسليم الرسالة — ربما وصلت. تحقّق قبل إعادة الإرسال', tone: 'warn', canResend: true }
     case 'skipped':
+      if (e.skip_reason === 'no_payer_email') return { label: 'لا يوجد بريد دافع لهذه العملية', hint: 'دفعة من صفحة دفع قديمة قبل حقل بريد الإيصال. إعادة الإرسال تستخدم بريد العميل المسجل بعد التحقق منه', tone: 'warn', canResend: true }
       if (e.skip_reason === 'no_email') return { label: 'بريد العميل غير متوفر', hint: 'أضف البريد في بيانات العميل ثم أعد الإرسال', tone: 'warn', canResend: true }
       if (e.skip_reason === 'invalid_email') return { label: 'بريد العميل غير صالح', hint: 'صحّح البريد في بيانات العميل ثم أعد الإرسال', tone: 'warn', canResend: true }
       return { label: 'إرسال البريد غير مُفعّل', hint: 'لم تُضبط إعدادات البريد على السيرفر وقت الدفع', tone: 'warn', canResend: true }
@@ -85,7 +106,9 @@ export function InvoiceEmailStatus({ invoiceId }: { invoiceId: string | number }
   const resend = async (e: InvoiceEmail) => {
     if (!window.confirm(e.status === 'uncertain'
       ? 'قد تكون الرسالة وصلت للعميل بالفعل. هل تريد إرسالها مرة أخرى؟'
-      : 'إعادة إرسال بريد تأكيد الدفع إلى البريد المسجل للعميل؟')) return
+      : e.recipient_source === 'payer_checkout' && e.recipient
+        ? `إعادة إرسال الإيصال إلى بريد الدافع نفسه (${e.recipient})؟`
+        : 'إعادة إرسال بريد تأكيد الدفع إلى البريد المسجل للعميل؟ تأكد أولًا أنه البريد الصحيح.')) return
     setBusyId(e.id)
     setMessage(null)
     try {
@@ -108,7 +131,7 @@ export function InvoiceEmailStatus({ invoiceId }: { invoiceId: string | number }
       <ul className="divide-y divide-gray-100 dark:divide-slate-700">
         {emails.map((e) => {
           const d = describe(e)
-          const Icon = e.skip_reason === 'no_email' ? MailX : ICON[d.tone]
+          const Icon = e.skip_reason === 'no_email' || e.skip_reason === 'no_payer_email' ? MailX : ICON[d.tone]
           const amount = e.payment_cents != null ? (Number(e.payment_cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 }) : null
           return (
             <li key={e.id} className="px-4 py-3 flex items-start gap-3">
@@ -118,10 +141,14 @@ export function InvoiceEmailStatus({ invoiceId }: { invoiceId: string | number }
                 {d.hint && <div className="text-gray-500 dark:text-gray-400 mt-0.5">{d.hint}</div>}
                 <div className="text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                   {e.recipient && <span dir="ltr" className="font-inter">{e.recipient}</span>}
+                  {e.recipient_source === 'payer_checkout' && <span>بريد أدخله الدافع</span>}
                   {amount && <span>دفعة <span dir="ltr" className="font-inter">{amount}</span> ر.س</span>}
                   <span>آخر محاولة: {when(e.accepted_at || e.last_attempt_at || e.created_at)}</span>
                   {e.resend_count > 0 && <span>أُعيد الإرسال {e.resend_count}×</span>}
                 </div>
+                {e.delivery_detail && e.status === 'sent' && (
+                  <div className="text-gray-400 dark:text-gray-500 mt-1 break-words" dir="ltr">{e.delivery_detail}</div>
+                )}
                 {e.last_error && e.status !== 'sent' && (
                   <div className="text-gray-400 dark:text-gray-500 mt-1 break-words" dir="auto">السبب: {e.last_error}</div>
                 )}

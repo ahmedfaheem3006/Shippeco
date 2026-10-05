@@ -16,6 +16,10 @@ type Props = {
   onExited?: () => void
 }
 
+const ATTEMPT_STATUS: Record<string, string> = {
+  open: 'مفتوحة', settled: 'مدفوعة', abandoned: 'متروكة', creating: 'قيد الإنشاء',
+  create_failed: 'تعذر إنشاؤها', create_unknown: 'انقطع الاتصال أثناء إنشائها',
+}
 const TX_STATUS: Record<string, string> = {
   success: 'ناجحة',
   pending: 'قيد المعالجة',
@@ -159,6 +163,21 @@ export function PaymentLinkDetailsDialog({ open, linkId, onClose, onExited }: Pr
                 </ul>
               )}
             </section>
+
+            {link.attempts.length > 0 && (
+              <section>
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-2">محاولات الدفع وبريد الإيصال</h3>
+                <ul className="space-y-1.5">
+                  {link.attempts.map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-xs">
+                      <span className="font-inter text-slate-500">طلب #{a.paymob_order_id.startsWith('ref:') ? '—' : a.paymob_order_id}</span>
+                      <span dir="ltr" className="font-inter">{a.payer_email || 'بدون بريد (صفحة قديمة)'}</span>
+                      <span className="text-slate-500">{ATTEMPT_STATUS[a.status] || a.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             <section>
               <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-2">عمليات Paymob</h3>

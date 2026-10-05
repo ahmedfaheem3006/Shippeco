@@ -248,10 +248,16 @@ export type PaymobLinkDetails = PaymobLink & {
     payment_status: number
   }[]
   missing_invoice_ids: number[]
-  attempts: { id: number; paymob_order_id: string; status: string; check_attempts: number; last_checked_at: string | null; created_at: string }[]
+  attempts: {
+    id: number; paymob_order_id: string; status: string; check_attempts: number; last_checked_at: string | null; created_at: string
+    /** Receipt address the payer confirmed for this checkout (null for checkouts before that field). */
+    payer_email?: string | null; payer_phone?: string | null; create_error?: string | null
+  }[]
   transactions: {
     paymob_transaction_id: string
     paymob_order_id: string | null
+    attempt_id?: number | null
+    integration_id?: string | null
     status: string
     amount_cents: number | string | null
     currency: string | null
