@@ -128,6 +128,11 @@ export type Invoice = {
   // ═══ تعيين الموظف ═══
   assigned_to?: number
   assigned_employee_name?: string
+
+  // ═══ الربحية (من الخادم: الإيراد − تكلفة DHL) ═══
+  profit_status?: 'profit' | 'loss' | 'break_even' | 'no_cost' | 'returned'
+  net_profit?: number | null
+  margin_pct?: number | null
 }
 
 export type PlatformSettings = {

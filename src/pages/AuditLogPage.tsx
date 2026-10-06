@@ -1,6 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuditLogPage } from '../hooks/useAuditLogPage'
 import { formatAtShort, formatAuditType } from '../utils/auditLog'
+import { ExportDialog } from '../components/shared/ExportDialog'
+import type { ExportFormat } from '../utils/exportPeriods'
 import {
   ClipboardList, CheckCircle2, Clock, Trash2,
   Download, FileSpreadsheet, RefreshCw, Search,
@@ -97,6 +99,9 @@ function getActionStyle(action: string): { icon: typeof Lock; color: string } {
 
 export function AuditLogPage() {
   const aud = useAuditLogPage()
+  const [exportFormat, setExportFormat] = useState<ExportFormat | null>(null)
+  const typeLabel = aud.typeOptions.find((t) => t.key === aud.type)?.label
+  const selectedUser = aud.users.find((u) => u.id === aud.selectedUserId)
 
   useEffect(() => {
     void aud.refresh()
@@ -104,6 +109,27 @@ export function AuditLogPage() {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300 pb-20 lg:pb-0">
+      <ExportDialog
+        open={exportFormat !== null}
+        onClose={() => setExportFormat(null)}
+        title="تصدير سجل العمليات"
+        endpoint="/audit-log/export"
+        initialFormat={exportFormat ?? 'xlsx'}
+        params={{
+          action: aud.type !== 'all' ? aud.type : undefined,
+          search: aud.query.trim() || undefined,
+          user_id: aud.selectedUserId !== 'all' ? aud.selectedUserId : undefined,
+        }}
+        filterLabels={[
+          ...(aud.type !== 'all' && typeLabel ? [`النوع: ${typeLabel}`] : []),
+          ...(selectedUser ? [`المستخدم: ${selectedUser.full_name}`] : []),
+          ...(aud.query.trim() ? [`بحث: ${aud.query.trim()}`] : []),
+        ]}
+        dateFieldNote="حسب وقت العملية (توقيت السعودية)"
+        fileBase="audit_log"
+        defaultPreset="all"
+        rowNoun="عملية"
+      />
       {/* ── Header ── */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
         <div className="flex items-center gap-3">
@@ -119,15 +145,15 @@ export function AuditLogPage() {
         <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
           <button
             className="flex-1 xl:flex-none flex justify-center items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl border border-indigo-200 dark:border-indigo-800/30 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition disabled:opacity-50"
-            onClick={() => void aud.exportReport('xlsx')}
-            disabled={aud.loading}
+            onClick={() => setExportFormat('xlsx')}
+            disabled={exportFormat !== null}
           >
             <FileSpreadsheet size={16} /> Excel
           </button>
           <button
             className="flex-1 xl:flex-none flex justify-center items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl border border-blue-200 dark:border-blue-800/30 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition disabled:opacity-50"
-            onClick={() => void aud.exportReport('csv')}
-            disabled={aud.loading}
+            onClick={() => setExportFormat('csv')}
+            disabled={exportFormat !== null}
           >
             <Download size={16} /> CSV
           </button>

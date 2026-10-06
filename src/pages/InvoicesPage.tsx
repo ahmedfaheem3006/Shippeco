@@ -21,14 +21,43 @@ import {
   AlertCircle, AlertTriangle, CheckCircle2,
   Clock, Eye, Edit3, Plus, Trash2, MessageSquare,
   RotateCcw, X, ListTodo, User, Download,
-  UserPlus, Users, Building2, Phone, Mail, MapPin, Loader2
+  UserPlus, Users, Building2, Phone, Mail, MapPin, Loader2,
+  FileSpreadsheet, TrendingUp, TrendingDown
 } from 'lucide-react'
+import { ExportDialog } from '../components/shared/ExportDialog'
+import type { ExportFormat } from '../utils/exportPeriods'
+import {
+  PROFIT_FILTER_OPTIONS, PROFIT_STATUS_CLASS, PROFIT_STATUS_LABEL,
+  fmtSigned, netProfitOf, profitStatusOf, type ProfitFilter,
+} from '../utils/invoiceProfit'
 import { useSettingsStore } from '../hooks/useSettingsStore'
 import { downloadInvoicePDF } from '../utils/pdfGenerator'
 import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh'
 import { describeOpenError } from '../utils/notificationTarget'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
+
+/** Net profit of one invoice: green profit, red loss, amber break-even. */
+function ProfitBadge({ inv }: { inv: Invoice }) {
+  const st = profitStatusOf(inv)
+  const net = netProfitOf(inv)
+  if (st === 'no_cost') {
+    return <span className="text-[10px] font-bold text-gray-300 dark:text-slate-600" title="لا توجد تكلفة DHL لحساب الربح">بدون تكلفة</span>
+  }
+  if (st === 'returned' || net === null) {
+    return <span className="text-[10px] font-bold text-purple-400" title="المرتجعات لا تدخل في حساب الربح">—</span>
+  }
+  const margin = inv.margin_pct
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold font-inter whitespace-nowrap ${PROFIT_STATUS_CLASS[st]}`}
+      title={`${PROFIT_STATUS_LABEL[st]}: الإيراد ${Number(inv.price || 0).toFixed(2)} − تكلفة DHL ${Number(inv.dhl_cost || 0).toFixed(2)}${margin != null ? ` · الهامش ${margin}%` : ''}`}
+    >
+      {st === 'loss' ? <TrendingDown size={11} /> : st === 'profit' ? <TrendingUp size={11} /> : null}
+      {st === 'break_even' ? 'تعادل 0.00' : <span dir="ltr">{fmtSigned(net)}</span>}
+    </span>
+  )
+}
 type QuickStatus = 'all' | 'unpaid' | 'partial' | 'paid' | 'returned'
 
 function timeAgo(dateStr: string): string {
@@ -57,7 +86,9 @@ export function InvoicesPage() {
     clearDateRangeVisible, clearDateRange, toggleAdvOpen, clearAdvSearch,
     setQuickDate, setQuickStatus, togglePriceSort, toggleDateSort,
     setPage, syncFromDb, formatDateEnGb, readItemLabel,
+    setProfit, setMinAmount, summary, exportParams, exportFilterLabels, currentRange,
   } = useLegacyInvoicesPage()
+  const [exportFormat, setExportFormat] = useState<ExportFormat | null>(null)
   const location = useLocation()
 
   const storeInvoices = useInvoicesStore((s) => s.invoices)
@@ -611,6 +642,22 @@ export function InvoicesPage() {
           <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-900 px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700">
             {rawCount} فاتورة
           </span>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl border border-green-200 dark:border-green-800/30 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 disabled:opacity-50"
+            onClick={() => setExportFormat('xlsx')}
+            disabled={exportFormat !== null}
+          >
+            <FileSpreadsheet size={16} /> Excel
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl border border-blue-200 dark:border-blue-800/30 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 disabled:opacity-50"
+            onClick={() => setExportFormat('csv')}
+            disabled={exportFormat !== null}
+          >
+            <Download size={16} /> CSV
+          </button>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto">
           <button
@@ -661,6 +708,18 @@ export function InvoicesPage() {
             <option value="paid">مدفوعة</option>
             <option value="returned">مرتجعة</option>
           </select>
+          <select
+            value={ui.profit}
+            onChange={(e) => setProfit(e.target.value as ProfitFilter)}
+            aria-label="فلتر الربحية"
+            className={`border rounded-lg px-3 py-1.5 text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none ${
+              ui.profit === 'loss' ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-400'
+                : ui.profit === 'profit' ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/40 text-green-700 dark:text-green-400'
+                : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            {PROFIT_FILTER_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
           <button onClick={togglePriceSort} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
             السعر {ui.priceSort === 'desc' ? '↓' : ui.priceSort === 'asc' ? '↑' : ''}
           </button>
@@ -696,6 +755,41 @@ export function InvoicesPage() {
               <option value="unpaid">غير مدفوعة</option><option value="partial">جزئية</option><option value="paid">مدفوعة</option><option value="returned">مرتجعة</option>
             </select>
             <button onClick={clearAdvSearch} className="text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-2 rounded-lg transition-colors">مسح الفلاتر</button>
+            <label className="flex items-center gap-2 text-[11px] font-bold text-green-700 dark:text-green-400 md:col-span-2">
+              <TrendingUp size={14} className="shrink-0" /> ربح لا يقل عن
+              <input inputMode="decimal" value={ui.minProfit} onChange={(e) => setMinAmount('minProfit', e.target.value)} placeholder="مثال: 100"
+                className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-inter text-gray-700 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500 outline-none" />
+              ر.س
+            </label>
+            <label className="flex items-center gap-2 text-[11px] font-bold text-red-600 dark:text-red-400 md:col-span-2">
+              <TrendingDown size={14} className="shrink-0" /> خسارة لا تقل عن
+              <input inputMode="decimal" value={ui.minLoss} onChange={(e) => setMinAmount('minLoss', e.target.value)} placeholder="مثال: 50"
+                className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-inter text-gray-700 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500 outline-none" />
+              ر.س
+            </label>
+          </div>
+        )}
+
+        {summary && summary.count > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1" aria-label="ملخص ربحية الفواتير المعروضة">
+            <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/60 dark:bg-slate-900/40 px-3 py-2">
+              <div className="text-[10px] font-bold text-gray-400">إجمالي الإيراد (بدون المرتجعات)</div>
+              <div className="font-inter font-black text-sm text-gray-900 dark:text-white">{summary.revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-gray-400">ر.س</span></div>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/60 dark:bg-slate-900/40 px-3 py-2">
+              <div className="text-[10px] font-bold text-gray-400">تكلفة DHL ({summary.countedCount} فاتورة لها تكلفة)</div>
+              <div className="font-inter font-black text-sm text-gray-900 dark:text-white">{summary.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-gray-400">ر.س</span></div>
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${summary.net < 0 ? 'border-red-200 dark:border-red-800/40 bg-red-50/60 dark:bg-red-900/10' : 'border-green-200 dark:border-green-800/40 bg-green-50/60 dark:bg-green-900/10'}`}>
+              <div className="text-[10px] font-bold text-gray-500">صافي الربح/الخسارة{summary.marginPct != null ? ` · الهامش ${summary.marginPct}%` : ''}</div>
+              <div className={`font-inter font-black text-sm ${summary.net < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}><span dir="ltr">{fmtSigned(summary.net)}</span> <span className="text-[10px] opacity-70">ر.س</span></div>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/60 dark:bg-slate-900/40 px-3 py-2 flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+              <button type="button" onClick={() => setProfit('profit')} className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" title="عرض الرابحة فقط">رابحة {summary.profitCount}</button>
+              <button type="button" onClick={() => setProfit('loss')} className="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" title="عرض الخاسرة فقط">خاسرة {summary.lossCount}</button>
+              <button type="button" onClick={() => setProfit('break_even')} className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" title="عرض المتعادلة فقط">متعادلة {summary.breakEvenCount}</button>
+              <button type="button" onClick={() => setProfit('no_cost')} className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-500" title="فواتير بدون تكلفة DHL — لا يمكن حساب ربحها">بدون تكلفة {summary.noCostCount}</button>
+            </div>
           </div>
         )}
       </div>
@@ -717,10 +811,10 @@ export function InvoicesPage() {
           {/* ═══ Desktop Table ═══ */}
           <div className="hidden lg:block bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
             <div className="w-full overflow-x-auto">
-              <table className="w-full text-right border-collapse" style={{ minWidth: 1000 }}>
+              <table className="w-full text-right border-collapse" style={{ minWidth: 1100 }}>
                 <thead>
                   <tr className="bg-gray-50 dark:bg-slate-900/60 border-b border-gray-200 dark:border-slate-700">
-                    {['الفاتورة', 'العميل', 'المسؤول', 'الجوال', 'الناقل', 'التفاصيل', 'المبلغ', 'المدفوع', 'المتبقي', 'الحالة', 'التاريخ', 'إجراءات'].map((h) => (
+                    {['الفاتورة', 'العميل', 'المسؤول', 'الجوال', 'الناقل', 'التفاصيل', 'المبلغ', 'المدفوع', 'المتبقي', 'الربح', 'الحالة', 'التاريخ', 'إجراءات'].map((h) => (
                       <th key={h} className="px-3 py-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
@@ -815,6 +909,8 @@ export function InvoicesPage() {
                           )}
                         </td>
 
+                        <td className="px-3 py-3"><ProfitBadge inv={inv} /></td>
+
                         <td className="px-3 py-3">{statusBadge(inv)}</td>
 
                         <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400 font-inter whitespace-nowrap">
@@ -897,7 +993,8 @@ export function InvoicesPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 mb-3 text-[10px]">
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[10px]">
+                    <span className="text-gray-400 font-bold">الربح:</span> <ProfitBadge inv={inv} />
                     <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded font-bold text-gray-600 dark:text-gray-300">{displayValue(inv.carrier)}</span>
                     <span className="bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded font-bold text-blue-600 dark:text-blue-400 truncate max-w-[120px]">{readItemLabel(inv)}</span>
                     {inv.phone && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded font-inter text-gray-500 dark:text-gray-400" dir="ltr">{inv.phone}</span>}
@@ -941,6 +1038,20 @@ export function InvoicesPage() {
       )}
 
       {/* Modals */}
+      <ExportDialog
+        open={exportFormat !== null}
+        onClose={() => setExportFormat(null)}
+        title="تصدير الفواتير"
+        endpoint="/invoices/export"
+        initialFormat={exportFormat ?? 'xlsx'}
+        params={exportParams}
+        filterLabels={exportFilterLabels}
+        dateFieldNote="حسب تاريخ الفاتورة"
+        fileBase="invoices"
+        currentRange={currentRange}
+        defaultPreset="current"
+        rowNoun="فاتورة"
+      />
       <InvoiceWizardModal
         key={wizardKey}
         open={wizardOpen}

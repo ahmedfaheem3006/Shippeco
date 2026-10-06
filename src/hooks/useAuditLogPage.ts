@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../utils/apiClient'
-import { downloadBlob } from '../utils/download'
-import { rowsToCsv } from '../utils/reports'
 import type { AuditTypeFilter } from '../utils/auditLog'
-import { formatAtShort } from '../utils/auditLog'
 
-type ExportFormat = 'csv' | 'xlsx'
 const PAGE_SIZE = 50
 
 type AuditLogEntry = {
@@ -29,15 +25,6 @@ type AuditSummary = {
   total: number
   counts: Record<string, number>
   lastAt: string
-}
-
-async function exportXlsx(rows: Record<string, string>[], filename: string) {
-  const XLSX = await import('xlsx')
-  const ws = XLSX.utils.json_to_sheet(rows)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Audit')
-  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-  downloadBlob(filename, new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
 }
 
 async function fetchAuditLogs(params: {
@@ -219,44 +206,6 @@ export function useAuditLogPage() {
     }
   }, [])
 
-  // ── Export ──
-  const exportReport = useCallback(
-    async (format: ExportFormat) => {
-      try {
-        // Fetch all for export (up to 5000)
-        const allData = await fetchAuditLogs({
-          page: 1,
-          limit: 5000,
-          action: type !== 'all' ? type : undefined,
-          search: query || undefined,
-        })
-
-        const rows = allData.logs.map((e) => ({
-          id: String(e.id),
-          time: formatAtShort(e.created_at),
-          user: e.user_name || String(e.user_id || '—'),
-          action: e.action || '—',
-          entity: e.entity_type || '—',
-          entity_id: String(e.entity_id || ''),
-          description: e.description || '—',
-          ip: e.ip_address || '',
-          meta: e.meta ? JSON.stringify(e.meta) : '',
-        }))
-
-        const stamp = new Date().toISOString().slice(0, 10)
-        if (format === 'csv') {
-          const csv = rowsToCsv(rows)
-          downloadBlob(`audit-log-${stamp}.csv`, new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-          return
-        }
-        await exportXlsx(rows, `audit-log-${stamp}.xlsx`)
-      } catch (e: any) {
-        console.error('[AuditLog] Export error:', e.message)
-      }
-    },
-    [type, query],
-  )
-
   // ── Type filter options ──
   const typeOptions = useMemo(() => [
     { key: 'all' as AuditTypeFilter, label: 'الكل' },
@@ -336,7 +285,6 @@ export function useAuditLogPage() {
 
     refresh,
     clear,
-    exportReport,
 
     // Pagination
     currentPage,

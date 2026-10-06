@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../utils/apiClient'
-import { downloadBlob } from '../utils/download'
-import { rowsToCsv } from '../utils/reports'
 import {
   computeProfitRange,
   formatSar,
-  toProfitExportRows,
   isLocalInvoice,
   type ProfitPeriod,
   type ProfitTab,
@@ -16,20 +13,7 @@ import {
   type ProfitChartPoint,
 } from '../utils/profitReport'
 
-type ExportFormat = 'csv' | 'xlsx'
 const PAGE_SIZE = 50
-
-async function exportXlsx(rows: Record<string, string>[], filename: string) {
-  const XLSX = await import('xlsx')
-  const ws = XLSX.utils.json_to_sheet(rows)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Profit')
-  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-  downloadBlob(
-    filename,
-    new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-  )
-}
 
 /* ═══════════════════════════════════════════════════
    FETCH — tries /profit-data, falls back to /light
@@ -401,42 +385,6 @@ export function useProfitReportPage() {
     }
   }, [summary])
 
-  const exportReport = useCallback(
-    async (format: ExportFormat) => {
-      try {
-        const allData = await fetchProfitData({
-          date_from: range.from, date_to: range.to,
-          local_only: localOnly, search: query, page: 1, limit: 5000,
-        })
-        const allRows: ProfitInvoiceRow[] = (allData.invoices || []).map((inv: any) => {
-          const price = Number(inv.price) || 0
-          const cost = Number(inv.dhlCost) || 0
-          const hasCost = cost > 0
-          const profit = hasCost ? price - cost : null
-          const marginPct = hasCost && cost > 0 ? (profit! / cost) * 100 : null
-          return {
-            id: String(inv.id || ''), invoiceNumber: inv.invoiceNumber || String(inv.id || ''),
-            client: inv.client || '—', awb: inv.awb || '', carrier: inv.carrier || '—',
-            status: inv.status || 'unpaid', date: inv.date || '—', price,
-            cost: hasCost ? cost : null, profit, marginPct, hasCost,
-            losing: hasCost && (profit ?? 0) < 0, isLocal: !inv.daftra_id,
-            raw: inv,
-          }
-        })
-        const rows = toProfitExportRows(allRows)
-        const stamp = range.label.replace(/[^\w\u0600-\u06FF-]+/g, '-')
-        if (format === 'csv') {
-          downloadBlob(`profit-report-${stamp}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv;charset=utf-8' }))
-          return
-        }
-        await exportXlsx(rows, `profit-report-${stamp}.xlsx`)
-      } catch (e: any) {
-        console.error('[ProfitReport] Export error:', e.message)
-      }
-    },
-    [range, localOnly, query],
-  )
-
   return {
     loading, error, refresh,
     period, setPeriod: onSetPeriod,
@@ -448,7 +396,7 @@ export function useProfitReportPage() {
     invoiceRows, allInvoiceRows: invoiceRows,
     clientRows, allClientRows: clientRows,
     dailyRows, weeklyRows, monthlyRows, yearlyRows,
-    chartData, exportReport,
+    chartData,
     currentPage, setCurrentPage: onSetPage,
     totalPages: pagination.pages,
     totalClientPages: Math.ceil(clientRows.length / PAGE_SIZE) || 1,

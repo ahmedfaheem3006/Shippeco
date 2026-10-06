@@ -1,13 +1,11 @@
 // Frontend/src/hooks/useReportsPage.ts
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { unifiedService } from '../services/unifiedService';
-import { downloadBlob } from '../utils/download';
 import {
   computeRange,
   formatSar,
   formatNum,
   formatPct,
-  rowsToCsv,
   type ReportsPeriod,
   type ReportsStatus,
   type DateRange,
@@ -418,52 +416,6 @@ export function useReportsPage() {
     [fetchData]
   );
 
-  // ── Export ──
-  const exportReport = useCallback(
-    async (format: 'csv' | 'xlsx') => {
-      const exportRows = tableRows.map((r) => ({
-        'رقم الفاتورة': r.invoice_number || r.id,
-        'رقم دفترة': r.daftra_id,
-        'التاريخ': r.date,
-        'العميل': r.client,
-        'الجوال': r.phone,
-        'الناقل': r.carrier,
-        'الحالة': r.statusLabel,
-        'المبلغ (SAR)': r.price.toFixed(2),
-        'المدفوع (SAR)': r.paid.toFixed(2),
-        'المتبقي (SAR)': r.remaining.toFixed(2),
-        'نسبة التحصيل': r.collectionPct.toFixed(1) + '%',
-      }));
-
-      const stamp = range.label.replace(/[^\w\u0600-\u06FF-]+/g, '-');
-
-      if (format === 'csv') {
-        const csv = rowsToCsv(exportRows);
-        downloadBlob(
-          `تقرير-${stamp}.csv`,
-          new Blob([csv], { type: 'text/csv;charset=utf-8' })
-        );
-        return;
-      }
-
-      // XLSX
-      try {
-        const XLSX = await import('xlsx');
-        const ws = XLSX.utils.json_to_sheet(exportRows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'تقرير');
-        const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-        downloadBlob(
-          `تقرير-${stamp}.xlsx`,
-          new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-        );
-      } catch (e) {
-        console.error('[Reports] Export error:', e);
-      }
-    },
-    [tableRows, range.label]
-  );
-
   /** Re-fetch the current view in place after a recorded payment. */
   const refreshSilently = useCallback(() => fetchData({ silent: true }), [fetchData]);
 
@@ -496,7 +448,6 @@ export function useReportsPage() {
     tablePagination,
     tablePage,
     setTablePage: onSetTablePage,
-    exportReport,
     syncInfo,
   };
 }

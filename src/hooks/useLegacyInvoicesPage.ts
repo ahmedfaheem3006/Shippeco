@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState, useRef } from 'react'
+import { useCallback, useState, useRef } from 'react'
 import { invoiceService } from '../services/invoiceService'
 import type { Invoice, InvoiceItem, InvoiceStatus } from '../utils/models'
 import { useInvoicesStore } from './useInvoicesStore'
+import { PROFIT_FILTER_OPTIONS, type InvoiceProfitSummary, type ProfitFilter } from '../utils/invoiceProfit'
 
 type QuickDate = 'all' | 'today' | 'week' | 'month' | 'year'
 type SortDir = 'asc' | 'desc' | null
@@ -21,6 +22,11 @@ export type LegacyInvoicesUiState = {
   dateSort: SortDir
   page: number
   advOpen: boolean
+  /** Profit/loss filter (server-side, same rule as the profit report). */
+  profit: ProfitFilter
+  /** Minimum net profit / loss in SAR ('' = none). */
+  minProfit: string
+  minLoss: string
 }
 
 function normalizeDateInput(date: string) {
@@ -123,6 +129,19 @@ function readRemaining(inv: Invoice) {
 
 const PAGE_SIZE = 50
 
+const STATUS_LABELS: Record<string, string> = { unpaid: 'غير مدفوعة', partial: 'جزئية', paid: 'مدفوعة', returned: 'مرتجعة' }
+
+/** Filters sent to the server for the list AND the export. */
+function serverFilterParams(s: LegacyInvoicesUiState) {
+  return {
+    carrier: s.advCarrier || undefined,
+    payment_method: s.advPayment || undefined,
+    profit: s.profit || undefined,
+    min_profit: Number(s.minProfit) > 0 ? s.minProfit : undefined,
+    min_loss: Number(s.minLoss) > 0 ? s.minLoss : undefined,
+  }
+}
+
 export function useLegacyInvoicesPage() {
   const invoices = useInvoicesStore((s) => s.invoices)
   const setInvoices = useInvoicesStore((s) => s.setInvoices)
@@ -146,7 +165,11 @@ export function useLegacyInvoicesPage() {
     dateSort: 'desc',
     page: 1,
     advOpen: false,
+    profit: '',
+    minProfit: '',
+    minLoss: '',
   }))
+  const [summary, setSummary] = useState<InvoiceProfitSummary | null>(null)
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -174,15 +197,18 @@ export function useLegacyInvoicesPage() {
       const result = await invoiceService.getInvoicesLight({
         page: pageNum,
         limit: PAGE_SIZE,
+        ...serverFilterParams(s),
         status: statusFilter,
         search,
         date_from: dateFrom,
         date_to: dateTo,
         ...sort,
+        include_summary: true,
       })
 
       setInvoices(result.invoices)
       setServerPagination(result.pagination)
+      setSummary(result.summary ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'فشل تحميل الفواتير')
     } finally {
@@ -198,13 +224,9 @@ export function useLegacyInvoicesPage() {
     await fetchPage(ui.page)
   }, [fetchPage, ui.page])
 
-  const filtered = useMemo(() => {
-    let list = [...invoices]
-    if (ui.advCarrier) list = list.filter(i => i.carrier === ui.advCarrier)
-    if (ui.advPayment) list = list.filter(i => i.payment === ui.advPayment)
-    // NO client-side sorting — server sorts by daftra_id DESC
-    return list
-  }, [invoices, ui.advCarrier, ui.advPayment])
+  // Every filter (incl. carrier / payment method / profit) runs on the
+  // server, so the count, the summary and the export all match the list.
+  const filtered = invoices
 
   const setQuery = useCallback((q: string) => {
     setUi(prev => ({ ...prev, q, page: 1 }))
@@ -253,12 +275,32 @@ export function useLegacyInvoicesPage() {
   }, [fetchPage, ui])
 
   const setAdvCarrier = useCallback((advCarrier: string) => {
-    setUi(prev => ({ ...prev, advCarrier, page: 1 }))
-  }, [])
+    const next = { ...ui, advCarrier, page: 1 }
+    setUi(next)
+    void fetchPage(1, next)
+  }, [fetchPage, ui])
 
   const setAdvPayment = useCallback((advPayment: string) => {
-    setUi(prev => ({ ...prev, advPayment, page: 1 }))
-  }, [])
+    const next = { ...ui, advPayment, page: 1 }
+    setUi(next)
+    void fetchPage(1, next)
+  }, [fetchPage, ui])
+
+  const setProfit = useCallback((profit: ProfitFilter) => {
+    const next = { ...ui, profit, page: 1 }
+    setUi(next)
+    void fetchPage(1, next)
+  }, [fetchPage, ui])
+
+  const amountTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const setMinAmount = useCallback((key: 'minProfit' | 'minLoss', value: string) => {
+    const clean = value.replace(/[^\d.]/g, '')
+    setUi(prev => ({ ...prev, [key]: clean, page: 1 }))
+    if (amountTimer.current) clearTimeout(amountTimer.current)
+    amountTimer.current = setTimeout(() => {
+      void fetchPage(1, { ...ui, [key]: clean, page: 1 })
+    }, 500)
+  }, [fetchPage, ui])
 
   const toggleAdvOpen = useCallback(() => {
     setUi(prev => ({ ...prev, advOpen: !prev.advOpen }))
@@ -267,7 +309,8 @@ export function useLegacyInvoicesPage() {
   const clearAdvSearch = useCallback(() => {
     const next: LegacyInvoicesUiState = {
       ...ui, advCarrier: '', advPayment: '', advStatus: '' as const,
-      advDateFrom: '', advDateTo: '', page: 1
+      advDateFrom: '', advDateTo: '', page: 1,
+      profit: '', minProfit: '', minLoss: '',
     }
     setUi(next)
     void fetchPage(1, next)
@@ -305,6 +348,28 @@ export function useLegacyInvoicesPage() {
 
   const clearDateRangeVisible = Boolean(ui.quickDateFrom || ui.quickDateTo)
 
+  // ── Export: the same filters as the list (the dialog supplies the dates) ──
+  const effectiveStatus = ui.advStatus || (ui.quickStatus !== 'all' ? ui.quickStatus : '')
+  const sortParams = getSortParams(ui)
+  const exportParams = {
+    ...serverFilterParams(ui),
+    status: effectiveStatus || undefined,
+    search: ui.q.trim() || undefined,
+    ...sortParams,
+  }
+  const exportFilterLabels = [
+    ...(effectiveStatus ? [`الحالة: ${STATUS_LABELS[effectiveStatus]}`] : []),
+    ...(ui.q.trim() ? [`بحث: ${ui.q.trim()}`] : []),
+    ...(ui.advCarrier ? [`الناقل: ${ui.advCarrier}`] : []),
+    ...(ui.advPayment ? [`طريقة الدفع: ${ui.advPayment}`] : []),
+    ...(ui.profit ? [`الربحية: ${PROFIT_FILTER_OPTIONS.find((o) => o.key === ui.profit)?.label}`] : []),
+    ...(Number(ui.minProfit) > 0 ? [`ربح ≥ ${ui.minProfit} ر.س`] : []),
+    ...(Number(ui.minLoss) > 0 ? [`خسارة ≥ ${ui.minLoss} ر.س`] : []),
+  ]
+  const shownFrom = ui.quickDateFrom || ui.advDateFrom
+  const shownTo = ui.quickDateTo || ui.advDateTo
+  const currentRange = { from: shownFrom || undefined, to: shownTo || undefined }
+
   return {
     invoices: filtered,
     rawCount: serverPagination.total,
@@ -319,6 +384,12 @@ export function useLegacyInvoicesPage() {
     setQuery,
     setAdvCarrier,
     setAdvPayment,
+    setProfit,
+    setMinAmount,
+    summary,
+    exportParams,
+    exportFilterLabels,
+    currentRange,
     setAdvStatus,
     setQuickDateFrom,
     setQuickDateTo,

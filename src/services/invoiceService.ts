@@ -1,4 +1,5 @@
 import { unifiedService } from './unifiedService';
+import type { InvoiceProfitSummary } from '../utils/invoiceProfit';
 import type { Invoice, InvoiceReceipt } from '../utils/models';
 
 export const invoiceService = {
@@ -87,6 +88,7 @@ export const invoiceService = {
   async getInvoicesLight(params: any = {}): Promise<{
     invoices: Invoice[];
     pagination: { page: number; limit: number; total: number; pages: number };
+    summary?: InvoiceProfitSummary;
   }> {
     const qp = new URLSearchParams();
     if (params.page) qp.set('page', String(params.page));
@@ -99,6 +101,12 @@ export const invoiceService = {
     if (params.date_to) qp.set('date_to', params.date_to);
     if (params.sort_by) qp.set('sort_by', params.sort_by);
     if (params.sort_dir) qp.set('sort_dir', params.sort_dir);
+    if (params.carrier) qp.set('carrier', params.carrier);
+    if (params.payment_method) qp.set('payment_method', params.payment_method);
+    if (params.profit) qp.set('profit', params.profit);
+    if (params.min_profit) qp.set('min_profit', String(params.min_profit));
+    if (params.min_loss) qp.set('min_loss', String(params.min_loss));
+    if (params.include_summary) qp.set('include_summary', '1');
 
     const result = await unifiedService.get<any>(
       `/invoices/light?${qp.toString()}`
@@ -111,6 +119,7 @@ export const invoiceService = {
     return {
       invoices,
       pagination: result.pagination || { page: 1, limit: 50, total: 0, pages: 1 },
+      summary: result.summary,
     };
   },
 

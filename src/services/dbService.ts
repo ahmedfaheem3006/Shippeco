@@ -315,6 +315,12 @@ export type ClientRecord = {
   segment: ClientSegment;
   collection_rate: number;
   updated_at: string;
+  /** Unpaid + partial invoices. */
+  open_invoices?: number;
+  /** Open invoices older than the chosen overdue age (default 30 days). */
+  overdue_count?: number;
+  overdue_amount?: number;
+  last_payment_date?: string | null;
 };
 
 export type ClientsStatsResponse = {

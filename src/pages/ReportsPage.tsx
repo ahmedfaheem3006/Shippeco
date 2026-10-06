@@ -1,5 +1,5 @@
 // Frontend/src/pages/ReportsPage.tsx
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useReportsPage } from '../hooks/useReportsPage';
 import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import {
@@ -10,6 +10,8 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { formatSar, formatNum } from '../utils/reports';
+import { ExportDialog } from '../components/shared/ExportDialog';
+import type { ExportFormat } from '../utils/exportPeriods';
 
 // ═══════════════════════════════════════════════════════════
 //  Constants
@@ -90,6 +92,9 @@ function CollectionBar({ pct }: { pct: number }) {
 // ═══════════════════════════════════════════════════════════
 export function ReportsPage() {
   const rep = useReportsPage();
+  const [exportFormat, setExportFormat] = useState<ExportFormat | null>(null);
+  const statusLabel = STATUSES.find((x) => x.key === rep.status)?.label;
+  const allTime = rep.period === 'all';
 
   useEffect(() => {
     void rep.refresh();
@@ -100,6 +105,23 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-3 sm:space-y-5 animate-in fade-in duration-300 pb-24 sm:pb-20 lg:pb-0">
+      <ExportDialog
+        open={exportFormat !== null}
+        onClose={() => setExportFormat(null)}
+        title="تصدير جدول التقارير"
+        endpoint="/reports/export"
+        initialFormat={exportFormat ?? 'xlsx'}
+        params={{ status: rep.status !== 'all' ? rep.status : undefined, search: rep.query.trim() || undefined }}
+        filterLabels={[
+          ...(rep.status !== 'all' && statusLabel ? [`الحالة: ${statusLabel}`] : []),
+          ...(rep.query.trim() ? [`بحث: ${rep.query.trim()}`] : []),
+        ]}
+        dateFieldNote="حسب تاريخ الفاتورة"
+        fileBase="reports_invoices"
+        currentRange={allTime ? {} : { from: rep.range.from, to: rep.range.to }}
+        defaultPreset="current"
+        rowNoun="فاتورة"
+      />
 
       {/* ═══ الهيدر ═══ */}
       <div className="flex flex-col gap-3 sm:gap-4 bg-white dark:bg-slate-800 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
@@ -118,11 +140,11 @@ export function ReportsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex-1 flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all border border-green-200 dark:border-green-800/30 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 disabled:opacity-50" type="button" onClick={() => void rep.exportReport('xlsx')} disabled={rep.loading}>
+          <button className="flex-1 flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all border border-green-200 dark:border-green-800/30 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 disabled:opacity-50" type="button" onClick={() => setExportFormat('xlsx')} disabled={exportFormat !== null}>
             <FileSpreadsheet className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             <span className="hidden xs:inline">تصدير</span> Excel
           </button>
-          <button className="flex-1 flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all border border-blue-200 dark:border-blue-800/30 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 disabled:opacity-50" type="button" onClick={() => void rep.exportReport('csv')} disabled={rep.loading}>
+          <button className="flex-1 flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all border border-blue-200 dark:border-blue-800/30 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 disabled:opacity-50" type="button" onClick={() => setExportFormat('csv')} disabled={exportFormat !== null}>
             <Download className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             <span className="hidden xs:inline">تصدير</span> CSV
           </button>

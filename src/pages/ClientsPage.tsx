@@ -5,6 +5,9 @@ import {
   SEGMENT_COLORS,
 } from "../hooks/useClientsPage";
 import type { ClientRecord, ClientProfileInvoice } from "../services/dbService";
+import { ClientFiltersPanel } from "../components/Clients/ClientFiltersPanel";
+import { ExportDialog } from "../components/shared/ExportDialog";
+import type { ExportFormat } from "../utils/exportPeriods";
 import { openWhatsApp } from "../utils/whatsapp";
 import { createPaymentLink } from "../services/paymobService";
 import { downloadInvoicePDF } from "../utils/pdfGenerator";
@@ -1641,6 +1644,7 @@ function ClientProfilePage({
 
 export function ClientsPage() {
   const cli = useClientsPage();
+  const [exportFormat, setExportFormat] = useState<ExportFormat | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState("");
@@ -1730,8 +1734,8 @@ export function ClientsPage() {
           </button>
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 disabled:opacity-50"
-            onClick={() => void cli.exportClients("xlsx")}
-            disabled={cli.loading || !cli.clients.length}
+            onClick={() => setExportFormat("xlsx")}
+            disabled={exportFormat !== null}
             type="button"
           >
             <FileSpreadsheet size={15} />
@@ -1739,8 +1743,8 @@ export function ClientsPage() {
           </button>
           <button
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 disabled:opacity-50"
-            onClick={() => void cli.exportClients("csv")}
-            disabled={cli.loading || !cli.clients.length}
+            onClick={() => setExportFormat("csv")}
+            disabled={exportFormat !== null}
             type="button"
           >
             <Download size={15} />
@@ -1908,6 +1912,38 @@ export function ClientsPage() {
         </div>
       </div>
 
+      <ClientFiltersPanel
+        filters={cli.filters}
+        setFilter={cli.setFilter}
+        patchFilters={cli.patchFilters}
+        presets={cli.presets}
+        applyPreset={cli.applyPreset}
+        chips={cli.filterChips}
+        extraChips={[
+          ...(cli.search ? [{ id: "search", label: `بحث: ${cli.search}`, onClear: () => cli.setSearch("") }] : []),
+          ...(cli.segment !== "all" ? [{ id: "segment", label: `التصنيف: ${EXTENDED_SEGMENT_LABELS[cli.segment] || cli.segment}`, onClear: () => { cli.setSegment("all"); cli.setPage(1); } }] : []),
+          ...(cli.city !== "all" ? [{ id: "city", label: `المدينة: ${cli.city}`, onClear: () => { cli.setCity("all"); cli.setPage(1); } }] : []),
+        ]}
+        hasAnyFilter={cli.hasAnyFilter}
+        clearAll={cli.clearAllFilters}
+        total={cli.pagination.total}
+        loading={cli.loading}
+      />
+
+      <ExportDialog
+        open={exportFormat !== null}
+        onClose={() => setExportFormat(null)}
+        title="تصدير العملاء"
+        endpoint="/clients/export"
+        initialFormat={exportFormat ?? "xlsx"}
+        params={cli.exportParams}
+        filterLabels={cli.exportFilterLabels}
+        dateFieldNote="العملاء الذين لديهم فاتورة بتاريخ داخل الفترة (كل البيانات = كل العملاء المطابقين)"
+        fileBase="customers"
+        defaultPreset="all"
+        rowNoun="عميل"
+      />
+
       {/* Table */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
         <div className="hidden lg:block overflow-x-auto">
@@ -1995,8 +2031,8 @@ export function ClientsPage() {
                   <td colSpan={9} className="p-12 text-center">
                     <Users size={32} className="text-gray-300 mx-auto mb-2" />
                     <p className="font-bold text-sm text-gray-400">
-                      {cli.search || cli.segment !== "all" || cli.city !== "all"
-                        ? "لا توجد نتائج مطابقة"
+                      {cli.hasAnyFilter
+                        ? "لا توجد نتائج مطابقة للفلاتر"
                         : "لا يوجد عملاء بعد"}
                     </p>
                   </td>
@@ -2059,6 +2095,11 @@ export function ClientsPage() {
                       >
                         {formatSar(c.total_remaining)}
                       </span>
+                      {safe(c.overdue_amount) > 0 && (
+                        <div className="text-[9px] font-bold text-red-500 dark:text-red-400 mt-0.5" title="فواتير غير مسددة مضى عليها أكثر من 30 يومًا (أو المدة المختارة)">
+                          متأخر: {formatSar(c.overdue_amount)}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3">
                       <CollectionBar rate={safe(c.collection_rate)} />
@@ -2104,7 +2145,7 @@ export function ClientsPage() {
             <div className="p-12 text-center">
               <Users size={32} className="text-gray-300 mx-auto mb-2" />
               <p className="font-bold text-sm text-gray-400">
-                {cli.search ? "لا توجد نتائج" : "لا يوجد عملاء بعد"}
+                {cli.hasAnyFilter ? "لا توجد نتائج مطابقة للفلاتر" : "لا يوجد عملاء بعد"}
               </p>
             </div>
           ) : (

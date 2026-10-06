@@ -5,7 +5,7 @@ import { useTheme } from '../../hooks/useTheme';
 import {
   Menu, Moon, Sun, Bell, LayoutDashboard, FileText,
   Users, BarChart3, MoreHorizontal, CheckCheck,
-  CreditCard, ClipboardCheck, ClipboardList, Check, AlertTriangle, AlarmClock,
+  CreditCard, ClipboardCheck, ClipboardList, Check, AlertTriangle, AlarmClock, TrendingDown,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../hooks/useAuthStore';
@@ -27,6 +27,7 @@ const NOTIF_CONFIG: Record<string, {
   payment_review:      { icon: AlertTriangle,  color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
   payment_link:        { icon: CreditCard,     color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
   collection_reminder: { icon: AlarmClock,     color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  invoice_loss:        { icon: TrendingDown,   color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
   sync_complete:       { icon: ClipboardCheck, color: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400' },
   report_ready:        { icon: BarChart3,      color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
   reconcile:           { icon: ClipboardList,  color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
@@ -253,7 +254,7 @@ export function AppLayout() {
                                   </p>
                                 </div>
                                 {n.message && (
-                                  <p className={`text-[11px] line-clamp-2 leading-relaxed ${
+                                  <p className={`text-[11px] ${n.type === 'invoice_loss' ? 'line-clamp-3' : 'line-clamp-2'} leading-relaxed ${
                                     n.is_read
                                       ? 'text-gray-400 dark:text-gray-500'
                                       : 'text-gray-600 dark:text-gray-300'

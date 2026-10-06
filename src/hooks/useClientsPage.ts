@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { clientService } from "../services/clientService";
 import {
@@ -6,8 +6,15 @@ import {
   type ClientProfileResponse,
   type ClientsStatsResponse,
 } from "../services/dbService";
-import { downloadBlob } from "../utils/download";
-import { rowsToCsv } from "../utils/reports";
+import {
+  CLIENT_PRESETS,
+  EMPTY_CLIENT_FILTERS,
+  activeClientFilterChips,
+  clientFilterParams,
+  validateClientFilters,
+  type ClientFilterState,
+  type ClientPreset,
+} from "../utils/clientFilters";
 
 export type SortField =
   | "revenue"
@@ -18,24 +25,6 @@ export type SortField =
   | "paid"
   | "collection";
 export type SortOrder = "asc" | "desc";
-export type ExportFormat = "csv" | "xlsx";
-
-async function exportXlsx(rows: Record<string, string>[], filename: string) {
-  const XLSX = await import("xlsx");
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Clients");
-  const out = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-  }) as ArrayBuffer;
-  downloadBlob(
-    filename,
-    new Blob([out], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-  );
-}
 
 export const SEGMENT_LABELS: Record<string, string> = {
   vip: "VIP",
@@ -92,6 +81,18 @@ export function useClientsPage() {
   const [page, setPage] = useState(1);
   const [limit] = useState(30);
 
+  // ═══ Advanced filters (server-side, combined with AND) ═══
+  const [filters, setFiltersState] = useState<ClientFilterState>(EMPTY_CLIENT_FILTERS);
+  const [debouncedFilters, setDebouncedFilters] = useState<ClientFilterState>(EMPTY_CLIENT_FILTERS);
+  useEffect(() => {
+    if (filters === debouncedFilters) return;
+    const t = setTimeout(() => {
+      setDebouncedFilters(filters);
+      setPage(1);
+    }, 450);
+    return () => clearTimeout(t);
+  }, [filters, debouncedFilters]);
+
   // ═══ Debounce search ═══
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -107,21 +108,31 @@ export function useClientsPage() {
     };
   }, [search]);
 
+  // ═══ One parameter set for the list AND the export ═══
+  const filterError = validateClientFilters(debouncedFilters);
+  const listParams = useMemo(
+    () => ({
+      search: debouncedSearch || undefined,
+      segment: segment !== "all" ? segment : undefined,
+      city: city !== "all" ? city : undefined,
+      sort,
+      order: sortOrder,
+      ...clientFilterParams(debouncedFilters),
+    }),
+    [debouncedSearch, segment, city, sort, sortOrder, debouncedFilters],
+  );
+
   // ═══ Fetch Clients ═══
   const fetchClients = useCallback(async () => {
+    if (filterError) {
+      setError(filterError);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const [statsRes, summaryRes] = await Promise.all([
-        clientService.getClients({
-          page,
-          limit,
-          search: debouncedSearch || undefined,
-          segment: segment !== "all" ? segment : undefined,
-          city: city !== "all" ? city : undefined,
-          sort,
-          order: sortOrder,
-        }),
+        clientService.getClients({ page, limit, ...listParams }),
         summary ? Promise.resolve(summary) : clientService.getClientSummary(),
       ]);
       setClientsData(statsRes);
@@ -131,7 +142,7 @@ export function useClientsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, debouncedSearch, segment, city, sort, sortOrder, summary, clientService]);
+  }, [page, limit, listParams, filterError, summary, clientService]);
 
   // ═══ Refresh all ═══
   const refresh = useCallback(async () => {
@@ -141,7 +152,7 @@ export function useClientsPage() {
       const summary = await clientService.getClientSummary()
       setSummary(summary)
       
-      const stats = await clientService.getClients({ page: 1, limit, sort, order: sortOrder, search: debouncedSearch })
+      const stats = await clientService.getClients({ page: 1, limit, ...listParams })
       setClientsData(stats)
       setPage(1)
     } catch (e) {
@@ -149,7 +160,7 @@ export function useClientsPage() {
     } finally {
       setLoading(false)
     }
-  }, [limit, sort, sortOrder, debouncedSearch])
+  }, [limit, listParams])
 
 
   // ═══ Auto-fetch on filter change ═══
@@ -284,38 +295,46 @@ export function useClientsPage() {
     [refresh]
   );
 
-  // ═══ Export ═══
-  const exportClients = useCallback(
-    async (format: ExportFormat) => {
-      if (!clientsData?.clients.length) return;
-      const rows = clientsData.clients.map((c) => ({
-        الاسم: c.name,
-        الجوال: c.phone,
-        البريد: c.email || "",
-        المدينة: c.city || "",
-        "عدد الفواتير": String(c.total_invoices),
-        "إجمالي الإيرادات": (c.total_revenue || 0).toFixed(2),
-        المدفوع: (c.total_paid || 0).toFixed(2),
-        المتبقي: (c.total_remaining || 0).toFixed(2),
-        "نسبة التحصيل": (c.collection_rate || 0).toFixed(1) + "%",
-        التصنيف: SEGMENT_LABELS[c.segment] || c.segment,
-        "آخر فاتورة": c.last_invoice_date || "",
-        "تاريخ التسجيل": (c.created_at || "").slice(0, 10),
-      }));
+  // ═══ Filter actions ═══
+  const setFilter = useCallback(<K extends keyof ClientFilterState>(key: K, value: ClientFilterState[K]) => {
+    setFiltersState((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
-      const stamp = new Date().toISOString().slice(0, 10);
-      if (format === "csv") {
-        const csv = rowsToCsv(rows);
-        downloadBlob(
-          `عملاء-${stamp}.csv`,
-          new Blob([csv], { type: "text/csv;charset=utf-8" }),
-        );
-      } else {
-        await exportXlsx(rows, `عملاء-${stamp}.xlsx`);
-      }
-    },
-    [clientsData],
-  );
+  const patchFilters = useCallback((patch: Partial<ClientFilterState>) => {
+    setFiltersState((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  /** Presets ADD their rule to the current filters (they never wipe the others). */
+  const applyPreset = useCallback((preset: ClientPreset) => {
+    if (preset.patch) setFiltersState((prev) => ({ ...prev, ...preset.patch }));
+    if (preset.sort) {
+      setSort(preset.sort.field);
+      setSortOrder(preset.sort.order);
+    }
+    setPage(1);
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setFiltersState(EMPTY_CLIENT_FILTERS);
+    setDebouncedFilters(EMPTY_CLIENT_FILTERS);
+    setSegment("all");
+    setCity("all");
+    setSearch("");
+    setDebouncedSearch("");
+    setSort("invoices");
+    setSortOrder("desc");
+    setPage(1);
+  }, []);
+
+  const filterChips = useMemo(() => activeClientFilterChips(filters), [filters]);
+  const exportFilterLabels = useMemo(() => {
+    const out = activeClientFilterChips(debouncedFilters).map((c) => c.label);
+    if (segment !== "all") out.unshift(`التصنيف: ${SEGMENT_LABELS[segment] || segment}`);
+    if (city !== "all") out.unshift(`المدينة: ${city}`);
+    if (debouncedSearch) out.unshift(`بحث: ${debouncedSearch}`);
+    return out;
+  }, [debouncedFilters, segment, city, debouncedSearch]);
+  const hasAnyFilter = filterChips.length > 0 || segment !== "all" || city !== "all" || Boolean(search);
 
   // ═══ Sorting ═══
   const toggleSort = useCallback(
@@ -390,6 +409,16 @@ export function useClientsPage() {
     toggleSort,
     page,
     setPage,
+    filters,
+    setFilter,
+    patchFilters,
+    applyPreset,
+    clearAllFilters,
+    filterChips,
+    hasAnyFilter,
+    presets: CLIENT_PRESETS,
+    exportParams: listParams,
+    exportFilterLabels,
 
     // Actions
     refresh,
@@ -408,7 +437,6 @@ export function useClientsPage() {
         throw e;
       }
     },
-    exportClients,
 
     // Helpers
     SEGMENT_LABELS,

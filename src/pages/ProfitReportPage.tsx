@@ -35,6 +35,8 @@ import { toDraftFromInvoice, toInvoiceFromDraft } from '../utils/invoiceWizard'
 import { invoiceService } from '../services/invoiceService'
 import { api } from '../utils/apiClient'
 import s from './ProfitReportPage.module.css'
+import { ExportDialog } from '../components/shared/ExportDialog'
+import type { ExportFormat } from '../utils/exportPeriods'
 
 function timeAgo(dateStr: string): string {
   if (!dateStr) return '—';
@@ -289,6 +291,9 @@ function Pagination({
 export function ProfitReportPage() {
   const rep = useProfitReportPage()
   const user = useAuthStore((st) => st.user)
+  const [exportFormat, setExportFormat] = useState<ExportFormat | null>(null)
+  // The page uses 2099-12-31 as "no upper bound" for the running periods.
+  const shownRange = { from: rep.range.from, to: rep.range.to === '2099-12-31' ? undefined : rep.range.to }
   
   // ── Wizard / Edit State ──
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -392,6 +397,24 @@ export function ProfitReportPage() {
 
   return (
     <div className={s.pageWrap}>
+      <ExportDialog
+        open={exportFormat !== null}
+        onClose={() => setExportFormat(null)}
+        title="تصدير تقرير الربحية"
+        endpoint="/invoices/profit-export"
+        initialFormat={exportFormat ?? 'xlsx'}
+        params={{ local_only: rep.localOnly ? 1 : undefined, search: rep.query.trim() || undefined }}
+        filterLabels={[
+          ...(rep.localOnly ? ['فواتير الموقع فقط (بدون فواتير دفترة)'] : ['كل الفواتير (الموقع + دفترة)']),
+          'بدون المرتجعات',
+          ...(rep.query.trim() ? [`بحث: ${rep.query.trim()}`] : []),
+        ]}
+        dateFieldNote="حسب تاريخ الفاتورة"
+        fileBase="profit_report"
+        currentRange={shownRange}
+        defaultPreset="current"
+        rowNoun="فاتورة"
+      />
       {/* ═══════════════ HEADER ═══════════════ */}
       <div className={s.header}>
         <div className={s.headerTitle}>
@@ -409,16 +432,16 @@ export function ProfitReportPage() {
         <div className={s.headerActions}>
           <button
             className={s.btnPrimary}
-            onClick={() => void rep.exportReport('xlsx')}
-            disabled={rep.loading}
+            onClick={() => setExportFormat('xlsx')}
+            disabled={exportFormat !== null}
           >
             <FileSpreadsheet size={16} />
             تصدير Excel
           </button>
           <button
             className={s.btnSecondary}
-            onClick={() => void rep.exportReport('csv')}
-            disabled={rep.loading}
+            onClick={() => setExportFormat('csv')}
+            disabled={exportFormat !== null}
           >
             <Download size={16} />
             تصدير CSV
