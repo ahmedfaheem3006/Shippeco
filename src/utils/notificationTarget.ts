@@ -15,6 +15,8 @@ export type NotificationTarget =
   | { kind: 'invoice'; id: number; path: string }
   | { kind: 'task'; id: number; path: string }
   | { kind: 'payment_link'; id: number; path: string }
+  | { kind: 'support_conversation'; id: number; path: string }
+  | { kind: 'support_ticket'; id: number; path: string }
   | { kind: 'page'; path: string; unresolvedMessage?: string };
 
 export interface NotificationLike {
@@ -67,6 +69,8 @@ export function resolveNotificationTarget(n: NotificationLike): NotificationTarg
       case 'invoice': return invoice(entityId);
       case 'task': return task(entityId);
       case 'payment_link': return paymentLink(entityId);
+      case 'support_conversation': return { kind: 'support_conversation', id: entityId, path: `/support?conversation=${entityId}` };
+      case 'support_ticket': return { kind: 'support_ticket', id: entityId, path: `/support?ticket=${entityId}` };
       case 'user': return page('/settings');
     }
   }
@@ -102,6 +106,14 @@ export function resolveNotificationTarget(n: NotificationLike): NotificationTarg
       const link = toId(data.link_id) ?? toId(data.id);
       return link ? paymentLink(link) : page('/paymob-links');
     }
+    case 'support_ai_limit':
+      return page('/support?tab=analytics');
+    case 'support_ticket':
+    case 'support_urgent':
+    case 'support_handoff':
+    case 'support_waiting':
+    case 'support_assigned':
+      return page('/support');
     case 'new_user':
       return page('/settings');
     case 'user_approved':

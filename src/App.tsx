@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react'
+import { canSupport } from './utils/support'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout/AppLayout'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -32,6 +33,7 @@ const CollectionModelPage = lazy(() => import('./pages/CollectionModelPage').the
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage').then((m) => ({ default: m.ExpensesPage })))
 const PublicPayPage = lazy(() => import('./pages/PublicPayPage').then((m) => ({ default: m.PublicPayPage })))
 const QuoteRequestsPage = lazy(() => import('./pages/QuoteRequestsPage').then((m) => ({ default: m.QuoteRequestsPage })))
+const SupportCenterPage = lazy(() => import('./pages/SupportCenterPage').then((m) => ({ default: m.SupportCenterPage })))
 
 function RouteFallback() {
   return (
@@ -63,6 +65,12 @@ function RequireAdminOrManager({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+// support.view — same role map the Backend enforces on /api/support/*.
+function RequireSupportView({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user)
+  if (!user || !canSupport(user.role, 'support.view')) return <Navigate to="/dashboard" replace />
+  return <>{children}</>
+}
 
 function App() {
   return (
@@ -166,6 +174,14 @@ function App() {
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/wa-templates" element={<WaTemplatesPage />} />
           <Route path="/tasks" element={<TasksPage />} />
+          <Route
+            path="/support"
+            element={
+              <RequireSupportView>
+                <SupportCenterPage />
+              </RequireSupportView>
+            }
+          />
           <Route
             path="/quote-requests"
             element={

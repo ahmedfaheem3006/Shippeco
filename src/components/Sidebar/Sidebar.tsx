@@ -2,8 +2,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, BarChart3, Users, PlusCircle,
   Calculator, ClipboardCheck, TrendingUp, ClipboardList,
-  FileCode, MessageSquare, CreditCard, Settings, LogOut, Send
+  FileCode, MessageSquare, CreditCard, Settings, LogOut, Send, Headphones
 } from 'lucide-react'
+import { canSupport } from '../../utils/support'
 import shippecLogo from '../../assets/shippec.jpeg'
 import { useAuthStore } from '../../hooks/useAuthStore'
 
@@ -29,6 +30,7 @@ export function Sidebar({ onNavigate }: Props) {
   // Same permission the Backend enforces on the quote-requests review
   // endpoints (requireRole('admin', 'manager')).
   const canReviewQuoteRequests = user?.role === 'admin' || user?.role === 'manager'
+  const canSeeSupport = canSupport(user?.role, 'support.view')
 
   const navItemClass = (path: string, primary = false) => {
     const isActive = path === '/dashboard' ? location.pathname === '/dashboard' || location.pathname === '/' : isActivePath(location.pathname, path);
@@ -75,6 +77,11 @@ export function Sidebar({ onNavigate }: Props) {
         <button className={navItemClass('/tasks')} onClick={() => go('/tasks')}>
           <ClipboardList size={20} /> المهام المسؤول عنها
         </button>
+        {canSeeSupport && (
+          <button className={navItemClass('/support')} onClick={() => go('/support')}>
+            <Headphones size={20} /> مركز خدمة العملاء
+          </button>
+        )}
         {canReviewQuoteRequests && (
           <button className={navItemClass('/quote-requests')} onClick={() => go('/quote-requests')}>
             <Send size={20} /> طلبات الشحن والتواصل

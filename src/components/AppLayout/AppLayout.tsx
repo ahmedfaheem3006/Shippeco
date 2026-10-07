@@ -5,7 +5,7 @@ import { useTheme } from '../../hooks/useTheme';
 import {
   Menu, Moon, Sun, Bell, LayoutDashboard, FileText,
   Users, BarChart3, MoreHorizontal, CheckCheck,
-  CreditCard, ClipboardCheck, ClipboardList, Check, AlertTriangle, AlarmClock, TrendingDown,
+  CreditCard, ClipboardCheck, ClipboardList, Check, AlertTriangle, AlarmClock, TrendingDown, Headphones, Siren, Gauge,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../hooks/useAuthStore';
@@ -28,6 +28,12 @@ const NOTIF_CONFIG: Record<string, {
   payment_link:        { icon: CreditCard,     color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
   collection_reminder: { icon: AlarmClock,     color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
   invoice_loss:        { icon: TrendingDown,   color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  support_ticket:      { icon: Headphones,     color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  support_handoff:     { icon: Headphones,     color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  support_waiting:     { icon: AlarmClock,     color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  support_assigned:    { icon: Headphones,     color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  support_urgent:      { icon: Siren,          color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+  support_ai_limit:    { icon: Gauge,          color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
   sync_complete:       { icon: ClipboardCheck, color: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400' },
   report_ready:        { icon: BarChart3,      color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
   reconcile:           { icon: ClipboardList,  color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
@@ -79,6 +85,7 @@ export function AppLayout() {
     if (path.includes('/paymob')) return 'روابط Paymob';
     if (path.includes('/template')) return 'قالب الفاتورة';
     if (path.includes('/quote-requests')) return 'طلبات الشحن والتواصل';
+    if (path.includes('/support')) return 'مركز خدمة العملاء';
     if (path.includes('/tasks')) return 'المهام';
     return 'الرئيسية';
   };
