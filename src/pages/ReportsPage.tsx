@@ -1,5 +1,6 @@
 // Frontend/src/pages/ReportsPage.tsx
 import { useEffect, useState } from 'react';
+import { carrierCostLabel, carrierCostOf } from '../utils/carrierCost';
 import { useReportsPage } from '../hooks/useReportsPage';
 import { PAYMENT_EVENTS, useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import {
@@ -424,6 +425,10 @@ export function ReportsPage() {
                     <span className="font-inter font-bold text-green-600">{r.paidText}</span>
                   </div>
                 </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400">تكلفة الناقل الأصلية: </span>
+                  <span className={`font-inter font-bold ${carrierCostOf(r.dhl_cost) !== null ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400'}`}>{carrierCostLabel(r.dhl_cost)}</span>
+                </div>
                 {r.remaining > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-red-500 font-inter font-bold">متبقي: {r.remainingText}</span>
@@ -451,7 +456,7 @@ export function ReportsPage() {
 
         {/* ═══ Desktop Table (>= sm) ═══ */}
         <div className="hidden sm:block overflow-x-auto max-h-[650px] overflow-y-auto">
-          <table className="w-full text-right border-collapse whitespace-nowrap" style={{ minWidth: 1050 }}>
+          <table className="w-full text-right border-collapse whitespace-nowrap" style={{ minWidth: 1180 }}>
             <thead className="sticky top-0 bg-gray-50 dark:bg-slate-900 z-10 border-b border-gray-200 dark:border-slate-700">
               <tr className="text-xs text-gray-500 dark:text-gray-400 font-bold tracking-wide">
                 <th className="p-4">الفاتورة</th>
@@ -460,6 +465,7 @@ export function ReportsPage() {
                 <th className="p-4">الجوال</th>
                 <th className="p-4">الناقل</th>
                 <th className="p-4">الحالة</th>
+                <th className="p-4">تكلفة الناقل الأصلية</th>
                 <th className="p-4">المبلغ</th>
                 <th className="p-4">المدفوع</th>
                 <th className="p-4">المتبقي</th>
@@ -507,6 +513,9 @@ export function ReportsPage() {
                         <span className="text-[14px] font-bold text-gray-700 dark:text-gray-300">{r.statusLabel}</span>
                       </div>
                     </td>
+                    <td className={`p-4 font-inter font-bold text-[14px] ${carrierCostOf(r.dhl_cost) !== null ? 'text-orange-600 dark:text-orange-400' : 'text-gray-300 dark:text-slate-600 text-[12px]'}`} data-testid="report-carrier-cost">
+                      {carrierCostLabel(r.dhl_cost)}
+                    </td>
                     <td className="p-4 font-inter font-bold text-[15px] text-gray-900 dark:text-white">
                       {r.totalText}
                     </td>
@@ -523,7 +532,7 @@ export function ReportsPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="p-16 text-center">
+                  <td colSpan={11} className="p-16 text-center">
                     {rep.loading ? (
                       <div className="flex flex-col items-center gap-3">
                         <RefreshCw size={36} className="animate-spin text-indigo-500" />

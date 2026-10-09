@@ -70,6 +70,10 @@ export type Invoice = {
   partial_paid?: number
   dhlCost?: number
   dhl_cost?: number
+  /** "القيمة بالتقرير اليومي" (ر.س) — null when not entered. Not used for profit. */
+  daily_report_value?: number | null
+  /** "الوزن بالتقرير اليومي" (كجم) — null when not entered. */
+  daily_report_weight?: number | null
   items?: InvoiceItem[] | string
   itemType?: string
   details?: string

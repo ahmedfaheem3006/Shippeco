@@ -17,3 +17,22 @@ export const COST_BLOCK_TEXT: Record<string, { label: string; hint: string; cls:
   not_verified: { label: 'تعذر تحديد تكلفة الناقل', hint: 'القيمة من التحليل بالذكاء الاصطناعي فقط ولم يتم التحقق منها من سطر TOTAL CHARGE', cls: 'text-gray-600 bg-gray-50 border-gray-200 dark:bg-slate-900 dark:border-slate-700 dark:text-gray-300' },
   legacy: { label: 'تعذر تحديد تكلفة الناقل', hint: 'هذا التقرير حُلل قبل استخراج التكلفة — أعد تحليل الملف نفسه لاستخراجها', cls: 'text-gray-600 bg-gray-50 border-gray-200 dark:bg-slate-900 dark:border-slate-700 dark:text-gray-300' },
 }
+
+/**
+ * The invoice's original carrier cost (invoices.dhl_cost) as shown on the
+ * invoices / reports / profit pages: "170.91 ر.س", or "بدون تكلفة" when there
+ * is none — NULL or ≤ 0, the same rule as profit_status 'no_cost'.
+ * Never recomputed: it is the stored value only.
+ */
+export function carrierCostOf(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export const NO_CARRIER_COST_LABEL = 'بدون تكلفة'
+
+export function carrierCostLabel(value: unknown): string {
+  const c = carrierCostOf(value)
+  return c === null ? NO_CARRIER_COST_LABEL : formatSar(c)
+}

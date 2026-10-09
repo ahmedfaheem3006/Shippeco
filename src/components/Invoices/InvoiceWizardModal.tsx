@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { DAILY_VALUE_LABEL, DAILY_VALUE_MAX, DAILY_WEIGHT_LABEL, DAILY_WEIGHT_MAX, dailyDecimalError } from '../../utils/dailyReport'
 import type { InvoiceStatus, InvoiceReceipt } from '../../utils/models'
 import type { InvoiceDraftInput, WizardMode, WizardStep } from '../../utils/invoiceWizard'
 import { computeBackStep, createNewInvoiceDraftInput } from '../../utils/invoiceWizard'
@@ -150,9 +151,14 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
     }
   }, [open, step])
 
+  // Daily-report figures: optional, but never sent while invalid (server re-checks).
+  const dailyValueError = dailyDecimalError(draft.dailyReportValue ?? '', DAILY_VALUE_LABEL, DAILY_VALUE_MAX)
+  const dailyWeightError = dailyDecimalError(draft.dailyReportWeight ?? '', DAILY_WEIGHT_LABEL, DAILY_WEIGHT_MAX)
+
   const canSubmit = useMemo(() => {
     const hasBase = Boolean(draft.client.trim() && draft.phone.trim());
     if (!hasBase) return false;
+    if (dailyValueError || dailyWeightError) return false;
 
     // Stricter validations if Paymob is chosen
     if (draft.payment === 'سداد إلكتروني') {
@@ -162,7 +168,7 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
       return !isInvalidPhone;
     }
     return true;
-  }, [draft.client, draft.phone, draft.payment, draft.clientEmail])
+  }, [draft.client, draft.phone, draft.payment, draft.clientEmail, dailyValueError, dailyWeightError])
 
   const backStep = useMemo(() => computeBackStep(mode, step), [mode, step])
 
@@ -508,6 +514,21 @@ export function InvoiceWizardModal({ open, onClose, onSave, prefill, title, init
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-gray-500 dark:text-gray-400">الوزن الفعلي (كجم)</label>
                     <input className="w-full bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm font-mono text-gray-500 dark:text-gray-400 focus:ring-2 focus:ring-indigo-500/50 text-left outline-none" value={draft.final_weight} onChange={(e) => setDraft((p) => ({ ...p, final_weight: e.target.value }))} placeholder="0.0" dir="ltr" />
+                 </div>
+
+                 <div className="flex flex-col gap-1.5">
+                   <label htmlFor="daily-report-value" className="text-xs font-bold text-gray-500 dark:text-gray-400">القيمة بالتقرير اليومي (ر.س)</label>
+                   <input id="daily-report-value" inputMode="decimal" aria-invalid={Boolean(dailyValueError)} aria-describedby={dailyValueError ? 'daily-report-value-error' : undefined}
+                     className={`w-full bg-gray-50 dark:bg-slate-900 border rounded-lg px-3 py-2.5 text-sm font-mono text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50 text-left outline-none ${dailyValueError ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-slate-700'}`}
+                     value={draft.dailyReportValue ?? ''} onChange={(e) => setDraft((p) => ({ ...p, dailyReportValue: e.target.value }))} placeholder="0.00" dir="ltr" />
+                   {dailyValueError && <p id="daily-report-value-error" role="alert" className="text-[11px] font-bold text-red-600 dark:text-red-400">{dailyValueError}</p>}
+                 </div>
+                 <div className="flex flex-col gap-1.5">
+                   <label htmlFor="daily-report-weight" className="text-xs font-bold text-gray-500 dark:text-gray-400">الوزن بالتقرير اليومي (كجم)</label>
+                   <input id="daily-report-weight" inputMode="decimal" aria-invalid={Boolean(dailyWeightError)} aria-describedby={dailyWeightError ? 'daily-report-weight-error' : undefined}
+                     className={`w-full bg-gray-50 dark:bg-slate-900 border rounded-lg px-3 py-2.5 text-sm font-mono text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/50 text-left outline-none ${dailyWeightError ? 'border-red-400 dark:border-red-500' : 'border-gray-200 dark:border-slate-700'}`}
+                     value={draft.dailyReportWeight ?? ''} onChange={(e) => setDraft((p) => ({ ...p, dailyReportWeight: e.target.value }))} placeholder="0.00" dir="ltr" />
+                   {dailyWeightError && <p id="daily-report-weight-error" role="alert" className="text-[11px] font-bold text-red-600 dark:text-red-400">{dailyWeightError}</p>}
                  </div>
 
                  <div className="flex flex-col gap-1.5">

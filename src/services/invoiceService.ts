@@ -1,4 +1,5 @@
 import { unifiedService } from './unifiedService';
+import { readDailyDecimal } from '../utils/dailyReport';
 import type { InvoiceProfitSummary } from '../utils/invoiceProfit';
 import type { Invoice, InvoiceReceipt } from '../utils/models';
 
@@ -276,6 +277,9 @@ function mapToRailway(inv: Partial<Invoice>): any {
     final_weight: i.final_weight,
     code_type: i.codeType || i.code_type,
     payment_method: i.payment_method || i.payment || null,
+    // Sent only when the form carries them (undefined = leave as is, null = clear).
+    daily_report_value: i.daily_report_value,
+    daily_report_weight: i.daily_report_weight,
   };
 }
 
@@ -350,6 +354,8 @@ function mapRailwayToCloudflare(result: any): Invoice {
     assigned_employee_name: result.assigned_employee_name,
     payment_method: result.payment_method || '',
     payment: result.payment_method || result.payment || '',
+    daily_report_value: readDailyDecimal(result.daily_report_value),
+    daily_report_weight: readDailyDecimal(result.daily_report_weight),
   } as Invoice;
 }
 

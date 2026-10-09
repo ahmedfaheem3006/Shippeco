@@ -1,4 +1,5 @@
 import type { Invoice, InvoiceItem, InvoiceStatus } from './models'
+import { dailyDecimalInput, parseDailyDecimal } from './dailyReport'
 
 export type WizardMode = 'calc' | 'direct'
 export type WizardStep = 0 | 1 | 2
@@ -16,6 +17,10 @@ export type InvoiceDraftInput = {
   weight: string
   final_weight: string
   dimensions: string
+  /** "القيمة بالتقرير اليومي" as typed ("" = not entered). */
+  dailyReportValue: string
+  /** "الوزن بالتقرير اليومي" (كجم) as typed ("" = not entered). */
+  dailyReportWeight: string
   date: string
   status: InvoiceStatus
   partialPaid: string
@@ -48,6 +53,8 @@ export function createNewInvoiceDraftInput(todayIso: string): InvoiceDraftInput 
     weight: '',
     final_weight: '',
     dimensions: '',
+    dailyReportValue: '',
+    dailyReportWeight: '',
     date: todayIso,
     status: 'unpaid',
     partialPaid: '',
@@ -131,6 +138,8 @@ export function toInvoiceFromDraft(
     weight,
     final_weight: draft.final_weight || undefined,
     dimensions: draft.dimensions || undefined,
+    daily_report_value: parseDailyDecimal(draft.dailyReportValue ?? ''),
+    daily_report_weight: parseDailyDecimal(draft.dailyReportWeight ?? ''),
     itemType: draft.itemType || undefined,
     details,
     shipperName: shipperName.trim() || undefined,
@@ -164,6 +173,8 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
     weight: inv.weight !== undefined ? String(inv.weight) : '',
     final_weight: inv.final_weight !== undefined ? String(inv.final_weight) : '',
     dimensions: inv.dimensions || '',
+    dailyReportValue: dailyDecimalInput(inv.daily_report_value),
+    dailyReportWeight: dailyDecimalInput(inv.daily_report_weight),
     date: inv.date ? String(inv.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
     status: inv.status && ['paid', 'unpaid', 'partial', 'returned'].includes(inv.status) 
       ? inv.status 

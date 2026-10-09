@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { carrierCostLabel } from '../utils/carrierCost'
 import { useProfitReportPage } from '../hooks/useProfitReportPage'
 import {
   formatSar,
@@ -625,9 +626,9 @@ export function ProfitReportPage() {
                   <th className={s.th}>الوزن الفعلي</th>
                   <th className={s.th}>الوزن المحاسب</th>
                   <th className={s.th}>الناقل</th>
+                  <th className={s.th}>تكلفة الناقل الأصلية</th>
                   <th className={s.th}>الحالة</th>
                   <th className={s.th}>السعر</th>
-                  <th className={s.th}>تكلفة DHL</th>
                   <th className={s.th}>صافي الربح</th>
                   <th className={s.th} style={{ textAlign: 'left' }}>هامش %</th>
                   <th className={s.th} style={{ textAlign: 'center' }}>الإجراءات</th>
@@ -660,6 +661,9 @@ export function ProfitReportPage() {
                         <td className={s.td} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
                           {r.carrier}
                         </td>
+                        <td className={`${s.td} ${s.mono} ${r.hasCost ? s.red : s.muted}`} data-testid="profit-carrier-cost">
+                          {carrierCostLabel(r.hasCost ? r.cost : null)}
+                        </td>
                         <td className={s.td}>
                           <span className={`${s.statusBadge} ${statusColor(r.status)}`}>
                             {statusLabel(r.status)}
@@ -667,9 +671,6 @@ export function ProfitReportPage() {
                         </td>
                         <td className={`${s.td} ${s.mono} ${s.gold}`}>
                           {formatSar(r.price)}
-                        </td>
-                        <td className={`${s.td} ${s.mono} ${r.hasCost ? s.red : s.muted}`}>
-                          {r.hasCost && r.cost != null ? formatSar(r.cost) : '—'}
                         </td>
                         <td className={`${s.td} ${s.mono} ${profitColorClass(r.profit)}`}>
                           {r.hasCost && r.profit != null

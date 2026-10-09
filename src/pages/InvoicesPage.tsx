@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { NO_CARRIER_COST_LABEL, carrierCostLabel, carrierCostOf } from '../utils/carrierCost'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { toast as hotToast } from 'react-hot-toast'
 import { useAppLayout } from '../components/AppLayout/useAppLayout'
@@ -811,10 +812,10 @@ export function InvoicesPage() {
           {/* ═══ Desktop Table ═══ */}
           <div className="hidden lg:block bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
             <div className="w-full overflow-x-auto">
-              <table className="w-full text-right border-collapse" style={{ minWidth: 1100 }}>
+              <table className="w-full text-right border-collapse" style={{ minWidth: 1200 }}>
                 <thead>
                   <tr className="bg-gray-50 dark:bg-slate-900/60 border-b border-gray-200 dark:border-slate-700">
-                    {['الفاتورة', 'العميل', 'المسؤول', 'الجوال', 'الناقل', 'التفاصيل', 'المبلغ', 'المدفوع', 'المتبقي', 'الربح', 'الحالة', 'التاريخ', 'إجراءات'].map((h) => (
+                    {['الفاتورة', 'العميل', 'المسؤول', 'الجوال', 'الناقل', 'التفاصيل', 'تكلفة الناقل الأصلية', 'المبلغ', 'المدفوع', 'المتبقي', 'الربح', 'الحالة', 'التاريخ', 'إجراءات'].map((h) => (
                       <th key={h} className="px-3 py-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
@@ -885,6 +886,16 @@ export function InvoicesPage() {
                               ? String((inv as any).details).split('\n')[0].slice(0, 50)
                               : readItemLabel(inv)}
                           </div>
+                        </td>
+
+                        <td className="px-3 py-3 whitespace-nowrap" data-testid="invoice-carrier-cost">
+                          {carrierCostOf(inv.dhl_cost ?? inv.dhlCost) !== null ? (
+                            <span className="font-inter font-bold text-xs text-orange-600 dark:text-orange-400">
+                              {carrierCostOf(inv.dhl_cost ?? inv.dhlCost)!.toFixed(2)} <span className="text-[10px] text-gray-400">ر.س</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-gray-300 dark:text-slate-600">{NO_CARRIER_COST_LABEL}</span>
+                          )}
                         </td>
 
                         <td className="px-3 py-3 font-inter font-bold text-sm text-gray-900 dark:text-white whitespace-nowrap">
@@ -994,6 +1005,8 @@ export function InvoicesPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[10px]">
+                    <span className="text-gray-400 font-bold">تكلفة الناقل الأصلية:</span>
+                    <span className={`font-inter font-bold ${carrierCostOf(inv.dhl_cost ?? inv.dhlCost) !== null ? 'text-orange-600 dark:text-orange-400' : 'text-gray-300 dark:text-slate-600'}`} data-testid="invoice-card-carrier-cost">{carrierCostLabel(inv.dhl_cost ?? inv.dhlCost)}</span>
                     <span className="text-gray-400 font-bold">الربح:</span> <ProfitBadge inv={inv} />
                     <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded font-bold text-gray-600 dark:text-gray-300">{displayValue(inv.carrier)}</span>
                     <span className="bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded font-bold text-blue-600 dark:text-blue-400 truncate max-w-[120px]">{readItemLabel(inv)}</span>

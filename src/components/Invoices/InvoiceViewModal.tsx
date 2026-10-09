@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import { formatDailyValue, formatDailyWeight } from '../../utils/dailyReport'
 import type { Invoice, InvoiceItem, InvoiceReceipt } from '../../utils/models'
 import { invoiceService } from '../../services/invoiceService'
 import styles from './InvoiceViewModal.module.css'
@@ -459,6 +460,18 @@ export function InvoiceViewModal({ open, invoice, onClose, onEdit, onAddItem, on
               </div>
             </div>
           )}
+
+          {/* ─── بيانات التقرير اليومي (معلومات فقط — لا تدخل في الربح) ─── */}
+          <div className={styles.topGrid} style={{ marginTop: 12, gridTemplateColumns: '1fr 1fr' }} data-testid="daily-report-view">
+            <div className={styles.card}>
+              <div className={styles.k}><CreditCard size={13} /> القيمة بالتقرير اليومي</div>
+              <div className={styles.v} style={{ fontFamily: 'var(--mono)' }}>{formatDailyValue(displayInv.daily_report_value)}</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.k}><Scale size={13} /> الوزن بالتقرير اليومي</div>
+              <div className={styles.v} style={{ fontFamily: 'var(--mono)' }}>{formatDailyWeight(displayInv.daily_report_weight)}</div>
+            </div>
+          </div>
 
           {/* ─── ملخص مالي ─── */}
           <div style={{ marginTop: 16 }} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
