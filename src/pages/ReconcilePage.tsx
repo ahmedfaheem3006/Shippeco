@@ -13,6 +13,9 @@ import {
   Download, Edit3, Eye, ListTodo, User, MessageSquare
 } from 'lucide-react'
 import { useAuthStore } from '../hooks/useAuthStore'
+import { toast } from 'react-hot-toast'
+import { CarrierCostCell } from '../components/Reconcile/CarrierCostCell'
+import { formatSar } from '../utils/carrierCost'
 
 function timeAgo(dateStr: string): string {
   const now = Date.now();
@@ -164,6 +167,11 @@ export function ReconcilePage() {
   
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startTimeRef = useRef(0)
+
+  // ✓ / ✕ on the DHL carrier cost: per-AWB request in flight (a ref blocks a
+  // second click before React re-renders the disabled buttons).
+  const [costBusy, setCostBusy] = useState<Record<string, 'apply' | 'reject'>>({})
+  const costBusyRef = useRef(new Set<string>())
 
   // Edit modal
   const [editModal, setEditModal] = useState<{ open: boolean; awb: string | null }>({ open: false, awb: null })
@@ -410,6 +418,43 @@ export function ReconcilePage() {
     } finally { setEditSaving(false) }
   }
 
+  /* ─── DHL carrier cost: ✓ apply to the invoice / ✕ ignore ─── */
+  const decideCarrierCost = async (awb: string, action: 'apply' | 'reject') => {
+    const rpt = dhlJob.result
+    if (!rpt?.history_id || costBusyRef.current.has(awb)) return
+    costBusyRef.current.add(awb)
+    setCostBusy((b) => ({ ...b, [awb]: action }))
+    try {
+      // The state changes only from the server's answer — never optimistically.
+      const res = await reconcileApiService.decideCarrierCost(rpt.history_id, awb, action)
+      if (res.report) setDhlJob((p) => (p.result?.history_id === rpt.history_id ? { ...p, result: res.report } : p))
+      if (action === 'reject') {
+        toast.success(`تم تجاهل تكلفة البوليصة ${awb} — لم تتغير الفاتورة`)
+      } else if (!res.invoice_changed) {
+        toast.success(`تكلفة الفاتورة ${res.invoice?.invoice_number ?? ''} مطابقة بالفعل لقيمة DHL — تم تسجيل الاعتماد`)
+      } else {
+        const inv = res.invoice
+        const profit = inv?.profit_status === 'loss' ? ` — الفاتورة الآن خاسرة بقيمة ${formatSar(inv.loss)}`
+          : inv?.profit_status === 'profit' ? ` — صافي الربح ${formatSar(inv.net)}`
+          : inv?.profit_status === 'break_even' ? ' — الفاتورة متعادلة' : ''
+        toast.success(`تم تحديث تكلفة الناقل للفاتورة ${inv?.invoice_number ?? ''} إلى ${formatSar(inv?.dhl_cost)}${profit}`, { duration: 6000 })
+      }
+    } catch (e) {
+      toast.error(describeApiError(e, action === 'apply' ? 'تعذر اعتماد تكلفة الناقل — حاول مرة أخرى' : 'تعذر تجاهل القيمة — حاول مرة أخرى'))
+      // Someone else decided meanwhile (409): show what the server has now.
+      if (isConflict(e)) {
+        try {
+          const rec = await reconcileApiService.getResult(rpt.history_id)
+          const details = typeof rec.details === 'string' ? JSON.parse(rec.details) : rec.details
+          setDhlJob((p) => (p.result?.history_id === rpt.history_id ? { ...p, result: { ...details, history_id: rec.id, updated_at: rec.updated_at } } : p))
+        } catch { /* keep the current table */ }
+      }
+    } finally {
+      costBusyRef.current.delete(awb)
+      setCostBusy((b) => { const n = { ...b }; delete n[awb]; return n })
+    }
+  }
+
   /* ─── Reset ─── */
   const resetAll = () => {
     if (pollRef.current) clearTimeout(pollRef.current)
@@ -434,7 +479,7 @@ export function ReconcilePage() {
 
   const stepsList = [
     { key: 'parsing', label: 'جاري قراءة الملف...' },
-    { key: 'extracting', label: 'جاري تحليل الشحنات (Claude AI)...' },
+    { key: 'extracting', label: 'جاري استخراج الشحنات وتكلفة كل بوليصة (TOTAL CHARGE)...' },
     { key: 'daftra', label: 'جاري البحث في قاعدة البيانات...' },
     { key: 'comparing', label: 'جاري المقارنة والمطابقة...' },
   ]
@@ -603,6 +648,14 @@ export function ReconcilePage() {
             </p>
           </div>
         )}
+        {isDhl && extraction?.verified_costs != null && (
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 flex flex-wrap items-center gap-x-4 gap-y-1" data-testid="cost-extraction-summary">
+            <span>فاتورة DHL: <span dir="ltr">{extraction.dhl_invoice_number || rpt.filename}</span></span>
+            <span>تكلفة الناقل مستخرجة من سطر TOTAL CHARGE لكل بوليصة: {extraction.verified_costs} من {extraction.extracted_shipments}</span>
+            {extraction.unverified_costs > 0 && <span className="text-amber-600">تعذر تحديد {extraction.unverified_costs}</span>}
+            <span className="text-gray-400">لن تتغير أي فاتورة إلا بعد الضغط على ✓</span>
+          </div>
+        )}
         {!isDhl && csvSkipped.length > 0 && (
           <details className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-amber-800 dark:text-amber-200 p-4 rounded-xl text-sm">
             <summary className="font-bold cursor-pointer">تم تجاهل {csvSkipped.length} صف غير صالح من الملف — اضغط للتفاصيل</summary>
@@ -644,7 +697,7 @@ export function ReconcilePage() {
         {/* Table */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-            <table className="w-full text-right border-collapse whitespace-nowrap min-w-[1200px]">
+            <table className={`w-full text-right border-collapse whitespace-nowrap ${isDhl ? 'min-w-[1450px]' : 'min-w-[1200px]'}`}>
               <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-900/90 backdrop-blur-sm">
                 <tr className="border-b border-gray-200 dark:border-slate-700 text-gray-500 text-xs uppercase font-bold tracking-wider">
                   <th className="p-3">البوليصة</th>
@@ -655,7 +708,12 @@ export function ReconcilePage() {
                   <th className="p-3">العميل</th>
                   <th className="p-3">الوزن الفعلي</th>
                   <th className="p-3">وزن الفوترة</th>
-                  <th className="p-3 text-yellow-600">سعر DHL</th>
+                  {isDhl ? (
+                    <>
+                      <th className="p-3 text-orange-600">تكلفة الناقل بالفاتورة</th>
+                      <th className="p-3 text-yellow-600">تكلفة الناقل الأصلية من DHL</th>
+                    </>
+                  ) : <th className="p-3 text-yellow-600">سعر DHL</th>}
                   <th className="p-3 text-indigo-600">سعر المنصة</th>
                   <th className="p-3">الفرق</th>
                   <th className="p-3">الهامش</th>
@@ -688,7 +746,15 @@ export function ReconcilePage() {
                       <td className="p-3 text-sm font-bold max-w-[140px] truncate" title={clientName}>{clientName}</td>
                       <td className="p-3 text-sm text-gray-500">{dhlData?.weight_kg || 0} كجم</td>
                       <td className="p-3 text-sm font-bold text-gray-700 dark:text-gray-300">{dhlData?.chargeable_weight || dhlData?.weight_kg || 0} كجم</td>
-                      <td className="p-3 font-bold text-yellow-600">{formatCurrency(dhlCharge)}</td>
+                      {isDhl ? (
+                        <>
+                          <td className="p-3 font-bold text-orange-600 tabular-nums" dir="ltr">{r.cost_action?.current_cost != null ? formatSar(r.cost_action.current_cost) : '—'}</td>
+                          <td className="p-3">
+                            <CarrierCostCell action={r.cost_action} fallbackAmount={dhlCharge} busy={costBusy[awb] ?? null}
+                              onApply={() => void decideCarrierCost(awb, 'apply')} onReject={() => void decideCarrierCost(awb, 'reject')} />
+                          </td>
+                        </>
+                      ) : <td className="p-3 font-bold text-yellow-600">{formatCurrency(dhlCharge)}</td>}
                       <td className="p-3 font-bold text-indigo-600">{platTotal != null ? formatCurrency(platTotal) : '—'}</td>
                       <td className={`p-3 font-black ${diffClass}`}>{diffText}</td>
                       <td className="p-3 text-sm">{pm != null ? <span className={`font-bold ${pm >= 0 ? 'text-green-600' : 'text-red-600'}`}>{pm > 0 ? '+' : ''}{typeof pm === 'number' ? pm.toFixed(1) : pm}%</span> : '—'}</td>
@@ -713,7 +779,7 @@ export function ReconcilePage() {
                   )
                 }) : (
                   <tr>
-                    <td colSpan={14} className="p-16 text-center text-gray-400">
+                    <td colSpan={isDhl ? 15 : 14} className="p-16 text-center text-gray-400">
                       <Search size={40} className="mx-auto mb-3 opacity-30" />
                       <p className="font-bold text-lg">لا توجد نتائج في هذه الفئة</p>
                     </td>

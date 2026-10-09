@@ -89,6 +89,7 @@ function getActionStyle(action: string): { icon: typeof Lock; color: string } {
     payment_link: { icon: CreditCard, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800/30' },
     paid: { icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/30' },
     sync: { icon: RefreshCw, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/30' },
+    carrier_cost_apply: { icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/30' },
   }
   return map[action] || { icon: ClipboardList, color: 'text-gray-500 bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700' }
 }

@@ -6,6 +6,34 @@ import type { SheetShipment } from '../utils/reconcileSheet';
 export type DuplicateRef = { id: number; file_name: string; upload_date: string };
 export type ManualEdit = { client?: string | null; weight?: number | null; daftraTotal?: number | null };
 
+/** Decision state of the DHL carrier cost (TOTAL CHARGE) of one report row — computed by the server. */
+export type CostAction = {
+  state: 'pending' | 'applied' | 'rejected' | 'blocked';
+  reason: 'legacy' | 'unclear' | 'not_verified' | 'ambiguous' | 'not_found' | 'multiple_invoices' | 'needs_review' | 'duplicate_awb' | null;
+  amount: number | null;
+  candidates: number[];
+  can_apply: boolean;
+  can_reject: boolean;
+  invoice_id: number | null;
+  current_cost: number | null;
+  decided_at: string | null;
+  decided_by_name: string | null;
+  previous_cost: number | null;
+  applied_cost: number | null;
+};
+
+export type CostDecisionResult = {
+  awb: string;
+  decision: 'applied' | 'rejected';
+  idempotent: boolean;
+  invoice_changed: boolean;
+  loss_alerts_sent: number;
+  row: Record<string, unknown> | null;
+  invoice: { id: number; invoice_number: string | null; total: number; dhl_cost: number; profit_status: string; net: number | null; loss: number; margin_pct: number | null } | null;
+  /** The whole report as it stands now (live costs + decisions). */
+  report: Record<string, unknown> | null;
+};
+
 const unwrap = (r: any) => (r && typeof r === 'object' && 'success' in r && 'data' in r ? r.data : r);
 
 const API = env.apiUrl;
@@ -40,6 +68,15 @@ export const reconcileApiService = {
   /** A stored report (history record). */
   async getResult(id: number): Promise<any> {
     return unwrap(await api.get(`/reconcile/results/${id}`));
+  },
+
+  /**
+   * ✓ apply / ✕ ignore the carrier cost read from the DHL invoice for one AWB.
+   * Only the AWB and the action are sent — the amount is taken by the server
+   * from the stored, verified report.
+   */
+  async decideCarrierCost(historyId: number, awb: string, action: 'apply' | 'reject'): Promise<CostDecisionResult> {
+    return unwrap(await api.post(`/reconcile/history/${historyId}/carrier-cost`, { awb, action }));
   },
 
   /** Poll job status */

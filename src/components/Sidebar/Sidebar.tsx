@@ -7,6 +7,8 @@ import {
 import { canSupport } from '../../utils/support'
 import shippecLogo from '../../assets/shippec.jpeg'
 import { useAuthStore } from '../../hooks/useAuthStore'
+import { useNavBadges } from '../../hooks/useNavBadges'
+import { NavBadge } from './NavBadge'
 
 type Props = {
   onNavigate?: () => void
@@ -31,6 +33,8 @@ export function Sidebar({ onNavigate }: Props) {
   // endpoints (requireRole('admin', 'manager')).
   const canReviewQuoteRequests = user?.role === 'admin' || user?.role === 'manager'
   const canSeeSupport = canSupport(user?.role, 'support.view')
+  // Counters computed by the server for this user (see useNavBadges).
+  const badges = useNavBadges()
 
   const navItemClass = (path: string, primary = false) => {
     const isActive = path === '/dashboard' ? location.pathname === '/dashboard' || location.pathname === '/' : isActivePath(location.pathname, path);
@@ -75,16 +79,19 @@ export function Sidebar({ onNavigate }: Props) {
           <CreditCard size={20} /> المصروفات
         </button>
         <button className={navItemClass('/tasks')} onClick={() => go('/tasks')}>
-          <ClipboardList size={20} /> المهام المسؤول عنها
+          <ClipboardList size={20} className="shrink-0" /> <span className="flex flex-1 items-center gap-1.5 min-w-0"><span className="whitespace-nowrap">المهام المسؤول عنها</span>
+            <NavBadge count={badges?.assignedTasks} label="مهام مفتوحة مسندة إليك" /></span>
         </button>
         {canSeeSupport && (
           <button className={navItemClass('/support')} onClick={() => go('/support')}>
-            <Headphones size={20} /> مركز خدمة العملاء
+            <Headphones size={20} className="shrink-0" /> <span className="flex flex-1 items-center gap-1.5 min-w-0"><span className="whitespace-nowrap">مركز خدمة العملاء</span>
+              <NavBadge count={badges?.supportAttention} label="محادثات تحتاج انتباهك" /></span>
           </button>
         )}
         {canReviewQuoteRequests && (
           <button className={navItemClass('/quote-requests')} onClick={() => go('/quote-requests')}>
-            <Send size={20} /> طلبات الشحن والتواصل
+            <Send size={20} className="shrink-0" /> <span className="flex flex-1 items-center gap-1.5 min-w-0"><span className="whitespace-nowrap">طلبات الشحن والتواصل</span>
+              <NavBadge count={badges?.shippingRequests} label="طلبات لم تتم مراجعتها" /></span>
           </button>
         )}
         <button

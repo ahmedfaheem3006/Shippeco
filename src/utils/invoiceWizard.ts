@@ -157,7 +157,10 @@ export function toDraftFromInvoice(inv: Invoice): InvoiceDraftInput {
     carrier: inv.carrier ?? 'DHL Express',
     awb: inv.awb ?? '',
     price: String(inv.price ?? ''),
-    dhlCost: inv.dhlCost !== undefined ? String(inv.dhlCost) : '',
+    // Money: always two decimals (154.9 → "154.90").
+    dhlCost: inv.dhlCost !== undefined && inv.dhlCost !== null
+      ? (Number.isFinite(Number(inv.dhlCost)) && String(inv.dhlCost).trim() !== '' ? Number(inv.dhlCost).toFixed(2) : String(inv.dhlCost))
+      : '',
     weight: inv.weight !== undefined ? String(inv.weight) : '',
     final_weight: inv.final_weight !== undefined ? String(inv.final_weight) : '',
     dimensions: inv.dimensions || '',
