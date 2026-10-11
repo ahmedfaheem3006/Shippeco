@@ -541,19 +541,13 @@ async function generateClientPDF(
     return 0;
   });
 
-  // ✅ Use safe() for ALL calculations — NO NaN possible
-  const totalAmount = allInvs.reduce((s, i) => s + realRevenue(i), 0);
-  const totalPaid = allInvs.reduce((s, i) => s + realPaid(i), 0);
-  const totalRemaining = allInvs.reduce((s, i) => s + realRemaining(i), 0);
+  // Account totals come from the backend customer summary (same numbers as
+  // the profile cards), never re-added from the rows here.
+  const roundedAmount = safe(client.total_revenue);
+  const roundedPaid = safe(client.total_paid);
+  const roundedRemaining = safe(client.total_remaining);
 
-  const roundedAmount = Math.round(totalAmount * 100) / 100;
-  const roundedPaid = Math.round(totalPaid * 100) / 100;
-  const roundedRemaining = Math.round(totalRemaining * 100) / 100;
-
-  const unpaidCount = allInvs.filter((i) => {
-    const st = realStatus(i);
-    return st === "unpaid" || st === "partial";
-  }).length;
+  const unpaidCount = safe(client.unpaid_count) + safe(client.partial_count);
 
   const today = new Date().toLocaleDateString("ar-SA", {
     year: "numeric",
@@ -1037,10 +1031,8 @@ function ClientProfilePage({
     const st = realStatus(inv);
     return st === "unpaid" || st === "partial";
   });
-  const totalUnpaid = unpaidInvoices.reduce(
-    (sum, inv) => sum + realRemaining(inv),
-    0,
-  );
+  // The customer's outstanding from the backend summary (all invoices).
+  const totalUnpaid = safe(client?.total_remaining);
 
   const maxRevenue = Math.max(...monthly.map((m) => safe(m.revenue)), 1);
 
