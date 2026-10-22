@@ -66,7 +66,9 @@ describe('TasksPage — "فواتير غير مسجلة" tab', () => {
     renderPage()
     await waitFor(() => expect(screen.getByRole('tab', { name: /فواتير غير مسجلة/ })).toHaveTextContent('3'))
     unregSvc.list.mockResolvedValue(counts(2))
-    const h = realtime.handlers.filter((x) => x.events.includes('tasks:updated') && x.events.includes('nav:badges')).at(-1)!
+    // The page's counter subscription (the list panel is not mounted on this tab).
+    const h = realtime.handlers.filter((x) => x.events.includes('tasks:updated')).at(-1)!
+    expect(h.events).toEqual(['tasks:updated'])
     act(() => h.fn())
     await waitFor(() => expect(screen.getByRole('tab', { name: /فواتير غير مسجلة/ })).toHaveTextContent('2'))
   })

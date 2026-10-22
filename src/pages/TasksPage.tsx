@@ -16,8 +16,11 @@ type FilterTab = 'all' | 'received' | 'unregistered' | 'assigned' | 'open' | 'cl
 
 /** ?tab=unregistered (+ &record=<id>) opens the "فواتير غير مسجلة" tab — used by its notifications. */
 const UNREGISTERED_TAB = 'unregistered';
-/** Events after which the tab's "pending" counter is re-read from the server. */
-const UNREGISTERED_COUNT_EVENTS = ['tasks:updated', 'nav:badges'] as const;
+/** Events after which the tab's "pending" counter is re-read from the server
+ *  (plus reconnects). Every create/complete/cancel emits it to the assignee,
+ *  the sender and admin/manager — everyone whose count can change. Not
+ *  nav:badges: support traffic fires it often and each event clears the API cache. */
+const UNREGISTERED_COUNT_EVENTS = ['tasks:updated'] as const;
 
 function paramsFor(tab: FilterTab): { status?: string; view?: string } {
   if (tab === 'received' || tab === 'assigned') return { view: tab };
