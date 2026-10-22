@@ -40,6 +40,12 @@ describe('resolveNotificationTarget', () => {
     expect(legacy.kind === 'page' && legacy.unresolvedMessage).toBeTruthy()
   })
 
+  it('"فاتورة غير مسجلة جديدة" opens its record in the tasks page tab', () => {
+    const t = resolveNotificationTarget({ type: 'task', data: { entity_type: 'unregistered_invoice', entity_id: 42, taskId: 42 } })
+    expect(t.path).toBe('/tasks?tab=unregistered&record=42')
+    expect(t.kind === 'page' && t.unresolvedMessage).toBeFalsy()
+  })
+
   it('collection reminders open the invoice', () => {
     expect(resolveNotificationTarget({ type: 'collection_reminder', data: { invoiceId: 44 } }).path).toBe('/invoices?invoice=44')
   })

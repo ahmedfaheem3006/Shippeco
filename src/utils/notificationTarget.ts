@@ -68,6 +68,8 @@ export function resolveNotificationTarget(n: NotificationLike): NotificationTarg
     switch (data.entity_type) {
       case 'invoice': return invoice(entityId);
       case 'task': return task(entityId);
+      // The record is a task; its own tab shows it with the "تم تسجيل الفاتورة" action.
+      case 'unregistered_invoice': return page(`/tasks?tab=unregistered&record=${entityId}`);
       case 'payment_link': return paymentLink(entityId);
       case 'support_conversation': return { kind: 'support_conversation', id: entityId, path: `/support?conversation=${entityId}` };
       case 'support_ticket': return { kind: 'support_ticket', id: entityId, path: `/support?ticket=${entityId}` };

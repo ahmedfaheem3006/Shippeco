@@ -217,6 +217,9 @@ function TaskDetailsBody({
   );
   const isClosed = view?.status === 'closed';
   const canReply = loadState === 'ready' && (!isClosed || canChangeStatus);
+  // "فواتير غير مسجلة" records are closed only by linking a matching invoice
+  // (or cancelling) from their tab — never by the plain close/reopen here.
+  const isUnregistered = view?.task_type === 'unregistered_invoice';
 
   // ── Reply ──
   const updateDraft = (text: string) => {
@@ -462,7 +465,22 @@ function TaskDetailsBody({
 
           {/* ── Actions + composer (always visible) ── */}
           <footer className="shrink-0 px-4 sm:px-6 py-3 border-t border-slate-100 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 space-y-2.5">
-            {canChangeStatus && loadState === 'ready' && (
+            {isUnregistered && loadState === 'ready' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isClosed ? 'bg-green-500' : 'bg-orange-500'}`} />
+                  فاتورة غير مسجلة{view?.awb ? ` — AWB ${view.awb}` : ''}: {isClosed ? 'تم اتخاذ الإجراء' : 'لم يتم اتخاذ إجراء'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { onClose(); navigate(`/tasks?tab=unregistered&record=${taskId}`); }}
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  فتح في «فواتير غير مسجلة»
+                </button>
+              </div>
+            )}
+            {canChangeStatus && !isUnregistered && loadState === 'ready' && (
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                   <span className={`w-2 h-2 rounded-full ${isClosed ? 'bg-green-500' : 'bg-amber-500'}`} />

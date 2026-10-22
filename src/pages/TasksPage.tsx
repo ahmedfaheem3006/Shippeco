@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
-import { Plus, ClipboardList, Clock, CheckCircle2, Search, User, ChevronLeft, RotateCcw, AlertCircle, PencilLine, Loader2 } from 'lucide-react';
+import { Plus, ClipboardList, Clock, CheckCircle2, Search, User, ChevronLeft, RotateCcw, AlertCircle, PencilLine, Loader2, FileWarning } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import { tasksService, type Task } from '../services/tasks.service';
@@ -8,8 +8,16 @@ import { CreateTaskModal } from '../components/Tasks/CreateTaskModal';
 import { TaskDetailsModal, type DraftStore } from '../components/Tasks/TaskDetailsModal';
 import { getScrollParent } from '../components/shared/dialogUtils';
 import { describeTaskError, filterTasksBySearch, formatSar, nearestSurvivingId, neighborIds } from '../components/Tasks/taskUtils';
+import { UnregisteredInvoicesPanel } from '../components/Tasks/UnregisteredInvoicesPanel';
+import { unregisteredInvoicesService } from '../services/unregisteredInvoices.service';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
-type FilterTab = 'all' | 'received' | 'assigned' | 'open' | 'closed';
+type FilterTab = 'all' | 'received' | 'unregistered' | 'assigned' | 'open' | 'closed';
+
+/** ?tab=unregistered (+ &record=<id>) opens the "فواتير غير مسجلة" tab — used by its notifications. */
+const UNREGISTERED_TAB = 'unregistered';
+/** Events after which the tab's "pending" counter is re-read from the server. */
+const UNREGISTERED_COUNT_EVENTS = ['tasks:updated', 'nav:badges'] as const;
 
 function paramsFor(tab: FilterTab): { status?: string; view?: string } {
   if (tab === 'received' || tab === 'assigned') return { view: tab };
@@ -32,6 +40,7 @@ function containerTop(container: HTMLElement): number {
 
 export const TasksPage: React.FC = () => {
   const user = useAuthStore(s => s.user);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   // initial: nothing to show yet · switching: tab changed, old list stays (dimmed)
   const [phase, setPhase] = useState<'initial' | 'switching' | 'ready' | 'error'>('initial');
@@ -39,7 +48,8 @@ export const TasksPage: React.FC = () => {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<FilterTab>('all');
+  const [statusFilter, setStatusFilter] = useState<FilterTab>(() => (searchParams.get('tab') === UNREGISTERED_TAB ? 'unregistered' : 'all'));
+  const onUnregisteredTab = statusFilter === 'unregistered';
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -131,15 +141,60 @@ export const TasksPage: React.FC = () => {
   }, [captureAnchor]);
 
   useEffect(() => {
+    // The "فواتير غير مسجلة" tab loads its own (paged, server-searched) list.
+    if (statusFilter === 'unregistered') return;
     void fetchTasks('replace');
   }, [statusFilter, fetchTasks]);
 
   const changeFilter = (tab: FilterTab) => {
     if (tab === statusFilter) return;
     filterRef.current = tab;
-    setPhase((p) => (p === 'initial' || p === 'error' ? 'initial' : 'switching'));
+    if (tab !== 'unregistered') setPhase((p) => (p === 'initial' || p === 'error' ? 'initial' : 'switching'));
     setStatusFilter(tab);
+    // Keep the unregistered tab in the URL (refresh/back stay on it).
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === 'unregistered') next.set('tab', UNREGISTERED_TAB);
+      else {
+        next.delete('tab');
+        next.delete('record');
+      }
+      return next;
+    }, { replace: true });
   };
+
+  // A notification link (?tab=unregistered&record=<id>) while already on this page.
+  const tabParam = searchParams.get('tab');
+  useEffect(() => {
+    if (tabParam === UNREGISTERED_TAB && filterRef.current !== 'unregistered') {
+      filterRef.current = 'unregistered';
+      setStatusFilter('unregistered');
+    }
+  }, [tabParam]);
+  const recordParam = searchParams.get('record');
+  const recordId = recordParam && /^\d+$/.test(recordParam) ? Number(recordParam) : null;
+  const clearRecordParam = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('record');
+      return next;
+    }, { replace: true });
+  };
+
+  // ── "فواتير غير مسجلة" counter on the tab: pending records this user can see ──
+  const [unregisteredPending, setUnregisteredPending] = useState<number | null>(null);
+  const countSeq = useRef(0);
+  const loadUnregisteredCount = useCallback(() => {
+    const n = ++countSeq.current;
+    unregisteredInvoicesService.list({ state: 'pending', limit: 1 })
+      .then((res) => {
+        if (n === countSeq.current && typeof res?.counts?.pending === 'number') setUnregisteredPending(res.counts.pending);
+      })
+      // A failed read keeps the last number the server confirmed.
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => { loadUnregisteredCount(); }, [loadUnregisteredCount]);
+  useRealtimeRefresh(UNREGISTERED_COUNT_EVENTS, loadUnregisteredCount, 400);
   const retryLoad = () => {
     setPhase('initial');
     void fetchTasks('replace');
@@ -220,7 +275,6 @@ export const TasksPage: React.FC = () => {
   // The window loads the task by id itself (GET /tasks/:id enforces access
   // and shows an Arabic error for a deleted/forbidden task), so it opens even
   // when the task is not in the current tab or search.
-  const [searchParams, setSearchParams] = useSearchParams();
   const taskParam = searchParams.get('task');
   const [handledTaskParam, setHandledTaskParam] = useState<string | null>(null);
   if (taskParam !== handledTaskParam) {
@@ -272,19 +326,31 @@ export const TasksPage: React.FC = () => {
     return () => io.disconnect();
   }, [canAssignTasks]);
 
-  const filterTabs: { id: FilterTab; label: string }[] = [
+  // "فواتير غير مسجلة" sits right after "مهامي المستلمة" (or after "الكل" for
+  // roles that only have their received tasks).
+  const unregisteredTab = { id: 'unregistered' as const, label: 'فواتير غير مسجلة', count: unregisteredPending };
+  const filterTabs: { id: FilterTab; label: string; count?: number | null }[] = [
     { id: 'all', label: 'الكل' },
     ...(canAssignTasks
       ? [
           { id: 'received' as const, label: 'مهامي المستلمة' },
+          unregisteredTab,
           { id: 'assigned' as const, label: 'مهام أسندتها' },
         ]
-      : []),
+      : [unregisteredTab]),
     { id: 'open', label: 'مفتوحة' },
     { id: 'closed', label: 'مغلقة' },
   ];
 
-  const busy = phase === 'switching' || refreshing;
+  // The record's discussion: it is a task, opened in the same task window.
+  const openTaskWindow = (id: number) => {
+    setNavOrder([id]);
+    setPinnedSummary(tasksById.get(id));
+    setActiveTaskId(id);
+    setDetailsOpen(true);
+  };
+
+  const busy = !onUnregisteredTab && (phase === 'switching' || refreshing);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -312,7 +378,8 @@ export const TasksPage: React.FC = () => {
         )}
       </div>
 
-      {/* Stats Bar */}
+      {/* Stats Bar (the unregistered tab shows its own) */}
+      {!onUnregisteredTab && (
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" aria-live="polite">
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl">
@@ -342,17 +409,18 @@ export const TasksPage: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Filters — sticky, so search/filters/assign stay reachable mid-list */}
       <div className="sticky top-0 z-20 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-gray-50/95 dark:bg-slate-900/95">
         <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center">
           <div className="relative flex-1 w-full">
             <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-            <label htmlFor="tasks-search" className="sr-only">بحث في المهام</label>
+            <label htmlFor="tasks-search" className="sr-only">{onUnregisteredTab ? 'بحث في الفواتير غير المسجلة' : 'بحث في المهام'}</label>
             <input
               id="tasks-search"
               type="search"
-              placeholder="بحث في عنوان المهمة أو الموظف أو رقم الفاتورة..."
+              placeholder={onUnregisteredTab ? 'بحث برقم البوليصة أو رقم الفاتورة أو اسم الموظف...' : 'بحث في عنوان المهمة أو الموظف أو رقم الفاتورة...'}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pr-12 pl-4 py-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-sm dark:text-white"
@@ -374,6 +442,16 @@ export const TasksPage: React.FC = () => {
                   }`}
                 >
                   {tab.label}
+                  {tab.count ? (
+                    <span
+                      className={`ms-1.5 inline-flex min-w-[1.25rem] h-5 px-1.5 items-center justify-center rounded-full text-[10px] font-black tabular-nums ${
+                        statusFilter === tab.id ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
+                      }`}
+                      aria-label={`${tab.count} بحاجة إلى إجراء`}
+                    >
+                      {tab.count}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -405,7 +483,15 @@ export const TasksPage: React.FC = () => {
       <h2 ref={listHeadingRef} tabIndex={-1} className="sr-only">قائمة المهام</h2>
 
       {/* Task Grid */}
-      {phase === 'initial' ? (
+      {onUnregisteredTab ? (
+        <UnregisteredInvoicesPanel
+          search={search}
+          recordId={recordId}
+          onClearRecord={clearRecordParam}
+          onOpenTask={openTaskWindow}
+          onChanged={loadUnregisteredCount}
+        />
+      ) : phase === 'initial' ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4" role="status">
           <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
           <p className="text-slate-400 font-bold">جاري تحميل المهام...</p>
@@ -451,6 +537,11 @@ export const TasksPage: React.FC = () => {
                       {task.invoice_id && (
                         <div className="px-3 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30">
                           فاتورة #{task.invoice_number || task.invoice_id}
+                        </div>
+                      )}
+                      {task.task_type === 'unregistered_invoice' && (
+                        <div className="px-3 py-1.5 rounded-xl text-[10px] font-black bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400 border border-orange-100 dark:border-orange-900/30 flex items-center gap-1">
+                          <FileWarning size={11} /> فاتورة غير مسجلة
                         </div>
                       )}
                     </div>

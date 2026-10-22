@@ -19,6 +19,9 @@ export interface Task {
   invoice_awb?: string;
   invoice_total?: number;
   invoice_payment_status?: number;
+  /** 'unregistered_invoice' = a "فواتير غير مسجلة" record (its state changes only from that tab). */
+  task_type?: 'general' | 'unregistered_invoice';
+  awb?: string | null;
   messages?: TaskMessage[];
 }
 
