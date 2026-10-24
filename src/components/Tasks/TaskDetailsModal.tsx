@@ -6,10 +6,16 @@ import {
   Loader2, FileText, ArrowDown, Clock, ExternalLink, PencilLine,
 } from 'lucide-react';
 import { tasksService, type Task, type TaskMessage } from '../../services/tasks.service';
+import { unregisteredInvoicesService, type UnregisteredInvoice } from '../../services/unregisteredInvoices.service';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { Dialog } from '../shared/Dialog';
 import { prefersReducedMotion } from '../shared/dialogUtils';
-import { PAYMENT_STATUS, TASK_TEXT_MAX, describeTaskError, formatSar, isAbortError, mergeMessages } from './taskUtils';
+import { TaskForm, type FormHandle } from './CreateTaskModal';
+import { EditUnregisteredForm } from './UnregisteredInvoiceDialogs';
+import { describeUnregisteredError } from './unregisteredInvoiceUtils';
+import {
+  PAYMENT_STATUS, TASK_ALREADY_COMPLETED, TASK_TEXT_MAX, canEditTask, describeTaskError, formatSar, isAbortError, mergeMessages,
+} from './taskUtils';
 
 export type DraftStore = { get: (taskId: number) => string; set: (taskId: number, text: string) => void };
 
@@ -30,6 +36,14 @@ interface TaskDetailsModalProps {
 }
 
 const POLL_MS = 10_000;
+
+/** A task row without its discussion / response flags. */
+function taskFields(t: Task): Task {
+  const copy = { ...t };
+  delete copy.messages;
+  delete copy.changed;
+  return copy;
+}
 const NEAR_BOTTOM_PX = 80;
 
 export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = (props) => {
@@ -37,10 +51,13 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = (props) => {
   // prev/next re-mounts the body; remember which button was used so keyboard
   // focus lands on the same control in the next task instead of <body>.
   const navFocusRef = useRef<'prev' | 'next' | null>(null);
+  // While the task is being edited, Escape/backdrop go to the edit form first
+  // (it asks before discarding changes, then returns to the task view).
+  const editFormRef = useRef<FormHandle>(null);
   return (
     <Dialog
       open={props.open}
-      onRequestClose={props.onClose}
+      onRequestClose={() => (editFormRef.current ? editFormRef.current.requestClose() : props.onClose())}
       onExited={props.onExited}
       labelledBy={headingId}
       returnFocus={props.returnFocus}
@@ -49,7 +66,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = (props) => {
       {props.taskId != null && (
         // Keyed by task: switching tasks starts from a clean state, and the
         // previous task's in-flight requests are aborted with its instance.
-        <TaskDetailsBody key={props.taskId} {...props} taskId={props.taskId} headingId={headingId} navFocusRef={navFocusRef} />
+        <TaskDetailsBody key={props.taskId} {...props} taskId={props.taskId} headingId={headingId} navFocusRef={navFocusRef} editFormRef={editFormRef} />
       )}
     </Dialog>
   );
@@ -59,10 +76,11 @@ type BodyProps = TaskDetailsModalProps & {
   taskId: number;
   headingId: string;
   navFocusRef: React.MutableRefObject<'prev' | 'next' | null>;
+  editFormRef: React.RefObject<FormHandle>;
 };
 
 function TaskDetailsBody({
-  taskId, summary, position, prevId, nextId, onNavigate, onClose, onTaskChanged, drafts, headingId, navFocusRef,
+  taskId, summary, position, prevId, nextId, onNavigate, onClose, onTaskChanged, drafts, headingId, navFocusRef, editFormRef,
 }: BodyProps) {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -272,8 +290,99 @@ function TaskDetailsBody({
     }
   };
 
+  // ── Edit (only while the task is open; the Backend enforces the same rule) ──
+  // A general task opens the task form in edit mode inside this window; an
+  // unregistered-invoice record opens its own edit form (AWB, date, assignee).
+  const [editing, setEditing] = useState<null | { kind: 'general' } | { kind: 'unregistered'; record: UnregisteredInvoice }>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editTitleRef = useRef<HTMLInputElement>(null);
+  const editBtnRef = useRef<HTMLButtonElement>(null);
+  const wasEditingRef = useRef(false);
+  const canEdit = loadState === 'ready' && !!task && !isClosed && canEditTask(user, task);
+
+  useLayoutEffect(() => {
+    if (editing) {
+      wasEditingRef.current = true;
+      editTitleRef.current?.focus({ preventScroll: true });
+    } else if (wasEditingRef.current) {
+      wasEditingRef.current = false;
+      // The discussion box was re-mounted: back to the latest reply.
+      listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'instant' as ScrollBehavior });
+      (editBtnRef.current ?? closeBtnRef.current)?.focus({ preventScroll: true });
+    }
+  }, [editing]);
+
+  /** Re-read the task (after an edit or a 409) without the loading skeleton. */
+  const refreshTask = useCallback(async () => {
+    try {
+      const data = await tasksService.getTask(taskId);
+      if (!aliveRef.current) return;
+      applyServerTask(data, false);
+      onTaskChanged({ ...taskFields(data), id: taskId });
+    } catch { /* the 10s refresh retries */ }
+  }, [taskId, applyServerTask, onTaskChanged]);
+
+  const startEdit = async () => {
+    if (!task || editLoading) return;
+    setEditError(null);
+    if (!isUnregistered) {
+      setEditing({ kind: 'general' });
+      return;
+    }
+    setEditLoading(true);
+    try {
+      const rec = await unregisteredInvoicesService.get(taskId);
+      if (!aliveRef.current) return;
+      if (rec.state !== 'pending') {
+        setEditError(TASK_ALREADY_COMPLETED);
+        void refreshTask();
+        return;
+      }
+      setEditing({ kind: 'unregistered', record: rec });
+    } catch (err) {
+      if (aliveRef.current) setEditError(describeUnregisteredError(err, 'تعذر تحميل السجل للتعديل'));
+    } finally {
+      if (aliveRef.current) setEditLoading(false);
+    }
+  };
+
+  const finishEdit = () => {
+    setEditing(null);
+    toast.success('تم تعديل المهمة بنجاح');
+    setAnnounce('تم تعديل المهمة');
+    void refreshTask();
+  };
+
   const hasDraft = draft.trim().length > 0;
   const payment = view?.invoice_id ? PAYMENT_STATUS[view.invoice_payment_status ?? 0] ?? PAYMENT_STATUS[0] : null;
+
+  if (editing && task) {
+    return editing.kind === 'general' ? (
+      <TaskForm
+        ref={editFormRef}
+        headingId={headingId}
+        titleRef={editTitleRef}
+        task={task}
+        onClose={() => setEditing(null)}
+        onSaved={(saved) => {
+          setTask({ ...task, ...taskFields(saved) });
+          finishEdit();
+        }}
+        onCompleted={() => void refreshTask()}
+      />
+    ) : (
+      <EditUnregisteredForm
+        ref={editFormRef}
+        headingId={headingId}
+        awbRef={editTitleRef}
+        record={editing.record}
+        onClose={() => setEditing(null)}
+        onSaved={finishEdit}
+        onCompleted={() => void refreshTask()}
+      />
+    );
+  }
 
   return (
     <>
@@ -373,8 +482,22 @@ function TaskDetailsBody({
             {view ? (
               <>
                 <div>
-                  <div className="text-[11px] font-bold text-slate-400 mb-1">وصف المهمة</div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="text-[11px] font-bold text-slate-400">وصف المهمة</div>
+                    {canEdit && (
+                      <button
+                        ref={editBtnRef}
+                        type="button"
+                        onClick={() => void startEdit()}
+                        disabled={editLoading}
+                        className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-60"
+                      >
+                        {editLoading ? <Loader2 size={13} className="animate-spin" /> : <PencilLine size={13} />} تعديل
+                      </button>
+                    )}
+                  </div>
                   <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed break-words">{view.description || 'لا يوجد وصف'}</p>
+                  {editError && <p role="alert" className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-400">{editError}</p>}
                 </div>
                 <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <span className="flex items-center gap-1"><Clock size={12} /> أُنشئت {new Date(view.created_at).toLocaleDateString('ar-SA')}</span>

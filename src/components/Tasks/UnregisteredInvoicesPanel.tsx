@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import {
   AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, FilePlus2, FileWarning, Link2, MessageSquare,
-  RotateCcw, User, XCircle,
+  PencilLine, RotateCcw, User, XCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
@@ -14,7 +14,10 @@ import {
   type UnregisteredInvoice,
   type UnregisteredStateFilter,
 } from '../../services/unregisteredInvoices.service';
-import { CancelUnregisteredDialog, CreateUnregisteredInvoiceModal, LinkInvoiceModal } from './UnregisteredInvoiceDialogs';
+import {
+  CancelUnregisteredDialog, CreateUnregisteredInvoiceModal, EditUnregisteredInvoiceModal, LinkInvoiceModal,
+} from './UnregisteredInvoiceDialogs';
+import { canEditTask } from './taskUtils';
 import {
   STATE_BADGE, UNREGISTERED_PAGE_SIZE, describeUnregisteredError, formatAwbDate, formatRiyadhDateTime, invoicePath,
 } from './unregisteredInvoiceUtils';
@@ -50,6 +53,8 @@ export const UnregisteredInvoicesPanel: React.FC<Props> = ({ search, recordId, o
   const canCreate = canManage || role === 'accountant';
   const canComplete = (r: UnregisteredInvoice) =>
     canManage || (role !== 'viewer' && (r.assigned_to === user?.id || (role === 'accountant' && r.assigned_by === user?.id)));
+  // Editable only while pending — same rule as PATCH /tasks/unregistered-invoices/:id.
+  const canEdit = (r: UnregisteredInvoice) => r.state === 'pending' && canEditTask(user, r);
 
   const [state, setState] = useState<UnregisteredStateFilter>('all');
   const [mine, setMine] = useState(false);
@@ -65,6 +70,7 @@ export const UnregisteredInvoicesPanel: React.FC<Props> = ({ search, recordId, o
   const [createOpen, setCreateOpen] = useState(false);
   const [linkTarget, setLinkTarget] = useState<{ record: UnregisteredInvoice; mode: 'complete' | 'relink' } | null>(null);
   const [cancelTarget, setCancelTarget] = useState<UnregisteredInvoice | null>(null);
+  const [editTarget, setEditTarget] = useState<UnregisteredInvoice | null>(null);
 
   const paramsRef = useRef({ state, mine, page, q, recordId });
   useLayoutEffect(() => {
@@ -339,6 +345,16 @@ export const UnregisteredInvoicesPanel: React.FC<Props> = ({ search, recordId, o
                           <Link2 size={14} /> تعديل الربط
                         </button>
                       )}
+                      {canEdit(r) && (
+                        <button
+                          type="button"
+                          onClick={() => setEditTarget(r)}
+                          aria-label={`تعديل سجل البوليصة ${r.awb}`}
+                          className="flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-white dark:hover:bg-slate-700"
+                        >
+                          <PencilLine size={14} /> تعديل
+                        </button>
+                      )}
                       {r.state === 'pending' && canManage && (
                         <button
                           type="button"
@@ -402,6 +418,20 @@ export const UnregisteredInvoicesPanel: React.FC<Props> = ({ search, recordId, o
             ? `تم تغيير الفاتورة المرتبطة إلى ${result.record.linked_invoice_number}`
             : `تم تسجيل الفاتورة ${result.record.linked_invoice_number} للبوليصة ${result.record.awb}`);
         }}
+      />
+      <EditUnregisteredInvoiceModal
+        open={!!editTarget}
+        record={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={(result) => {
+          setEditTarget(null);
+          setItems((list) => list.map((r) => (r.id === result.record.id ? result.record : r)));
+          toast.success('تم تعديل المهمة بنجاح');
+          onChanged();
+          // Re-read: a new assignee / AWB may move the record out of this filter or search.
+          void load('background');
+        }}
+        onCompleted={() => { onChanged(); void load('background'); }}
       />
       <CancelUnregisteredDialog
         open={!!cancelTarget}

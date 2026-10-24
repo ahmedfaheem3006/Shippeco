@@ -57,6 +57,20 @@ export interface CreateUnregisteredInput {
   note?: string | null;
 }
 
+/** Only the fields that changed (the invoice link is never edited here). */
+export interface UpdateUnregisteredInput {
+  awb?: string;
+  awb_date?: string;
+  assigned_to?: number;
+  note?: string | null;
+}
+
+export interface UpdateResult {
+  record: UnregisteredInvoice;
+  /** false when nothing actually changed. */
+  changed: boolean;
+}
+
 export interface LinkResult {
   record: UnregisteredInvoice;
   /** true when the same request had already been applied (double click / retry). */
@@ -86,6 +100,15 @@ export const unregisteredInvoicesService = {
     if (params.page) qp.set('page', String(params.page));
     if (params.limit) qp.set('limit', String(params.limit));
     return api.get<UnregisteredListResponse>(`${BASE}?${qp.toString()}`, { signal });
+  },
+
+  async get(id: number, signal?: AbortSignal): Promise<UnregisteredInvoice> {
+    return api.get<UnregisteredInvoice>(`${BASE}/${id}`, { signal });
+  },
+
+  /** Edit a pending record (409 TASK_COMPLETED once it is done or cancelled). */
+  async update(id: number, patch: UpdateUnregisteredInput): Promise<UpdateResult> {
+    return unifiedService.patch<UpdateResult>(`${BASE}/${id}`, patch);
   },
 
   async create(input: CreateUnregisteredInput): Promise<UnregisteredInvoice> {

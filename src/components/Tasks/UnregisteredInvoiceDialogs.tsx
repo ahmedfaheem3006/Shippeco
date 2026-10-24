@@ -1,14 +1,19 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { AlertCircle, AlertTriangle, CheckCircle2, FilePlus2, FileText, Loader2, Search, User, X, XCircle } from 'lucide-react';
+import React, { useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { AlertCircle, AlertTriangle, CheckCircle2, FilePlus2, FileText, Loader2, PencilLine, Save, Search, User, X, XCircle } from 'lucide-react';
 import { Dialog } from '../shared/Dialog';
 import { TaskPicker, type PickerOption } from './TaskPicker';
-import { ROLE_LABELS, TASK_TEXT_MAX, describeTaskError, isAbortError } from './taskUtils';
+import type { FormHandle } from './CreateTaskModal';
+import {
+  ROLE_LABELS, TASK_ALREADY_COMPLETED, TASK_TEXT_MAX, describeTaskError, isAbortError, isTaskCompletedError,
+} from './taskUtils';
 import { unifiedService } from '../../services/unifiedService';
 import {
   unregisteredInvoicesService,
   type InvoiceCandidate,
   type LinkResult,
   type UnregisteredInvoice,
+  type UpdateResult,
+  type UpdateUnregisteredInput,
 } from '../../services/unregisteredInvoices.service';
 import {
   AWB_CHECK_MESSAGE,
@@ -63,6 +68,49 @@ function ErrorBox({ title, message }: { title: string; message: string }) {
   );
 }
 
+/** The /users/list picker options (same list as the task form). */
+function useUserOptions() {
+  const [users, setUsers] = useState<{ id: number; full_name: string; role: string }[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [usersReload, setUsersReload] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    unifiedService.get<unknown>('/users/list').then(
+      (res) => {
+        if (!alive) return;
+        const list = res && typeof res === 'object' && 'success' in res ? (res as { data?: unknown }).data : res;
+        setUsers(Array.isArray(list) ? list : []);
+        setUsersLoading(false);
+      },
+      (err) => {
+        if (!alive) return;
+        setUsersError(describeTaskError(err, 'تعذر تحميل قائمة الموظفين'));
+        setUsersLoading(false);
+      },
+    );
+    return () => { alive = false; };
+  }, [usersReload]);
+  const userOptions: PickerOption[] = useMemo(
+    () => users.map((u) => ({ value: u.id, label: u.full_name, hint: ROLE_LABELS[u.role] ?? u.role })),
+    [users],
+  );
+  const retryUsers = () => { setUsersLoading(true); setUsersError(null); setUsersReload((n) => n + 1); };
+  return { userOptions, usersLoading, usersError, retryUsers };
+}
+
+const AWB_INVALID = 'رقم البوليصة غير صالح — أرقام وحروف إنجليزية فقط (6 إلى 30 خانة)';
+
+/** Same rules as the Backend validators (create and edit). */
+function recordErrors(normalized: string, awbDate: string, assignedTo: number | null, note: string, today: string) {
+  return {
+    awb: !normalized ? 'رقم البوليصة مطلوب' : !UNREGISTERED_AWB_RE.test(normalized) ? AWB_INVALID : undefined,
+    awb_date: !/^\d{4}-\d{2}-\d{2}$/.test(awbDate) ? 'تاريخ الإنشاء مطلوب' : awbDate > today ? 'تاريخ الإنشاء لا يمكن أن يكون في المستقبل' : undefined,
+    assigned_to: !assignedTo ? 'اختر الموظف المسؤول' : undefined,
+    note: note.trim().length > TASK_TEXT_MAX ? `الملاحظة يجب ألا تزيد عن ${TASK_TEXT_MAX} حرف` : undefined,
+  };
+}
+
 // ═══════════════════════ Add record ═══════════════════════
 
 type CreateProps = {
@@ -95,41 +143,11 @@ function CreateForm({ headingId, awbRef, onClose, onCreated, defaultAssignee }: 
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const [users, setUsers] = useState<{ id: number; full_name: string; role: string }[]>([]);
-  const [usersLoading, setUsersLoading] = useState(true);
-  const [usersError, setUsersError] = useState<string | null>(null);
-  const [usersReload, setUsersReload] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    unifiedService.get<unknown>('/users/list').then(
-      (res) => {
-        if (!alive) return;
-        const list = res && typeof res === 'object' && 'success' in res ? (res as { data?: unknown }).data : res;
-        setUsers(Array.isArray(list) ? list : []);
-        setUsersLoading(false);
-      },
-      (err) => {
-        if (!alive) return;
-        setUsersError(describeTaskError(err, 'تعذر تحميل قائمة الموظفين'));
-        setUsersLoading(false);
-      },
-    );
-    return () => { alive = false; };
-  }, [usersReload]);
-  const userOptions: PickerOption[] = useMemo(
-    () => users.map((u) => ({ value: u.id, label: u.full_name, hint: ROLE_LABELS[u.role] ?? u.role })),
-    [users],
-  );
+  const { userOptions, usersLoading, usersError, retryUsers } = useUserOptions();
 
   const normalized = normalizeAwb(awb);
   const today = riyadhToday();
-  const errors = {
-    awb: !normalized ? 'رقم البوليصة مطلوب' : !UNREGISTERED_AWB_RE.test(normalized) ? 'رقم البوليصة غير صالح — أرقام وحروف إنجليزية فقط (6 إلى 30 خانة)' : undefined,
-    awb_date: !/^\d{4}-\d{2}-\d{2}$/.test(awbDate) ? 'تاريخ الإنشاء مطلوب' : awbDate > today ? 'تاريخ الإنشاء لا يمكن أن يكون في المستقبل' : undefined,
-    assigned_to: !assignedTo ? 'اختر الموظف المسؤول' : undefined,
-    note: note.trim().length > TASK_TEXT_MAX ? `الملاحظة يجب ألا تزيد عن ${TASK_TEXT_MAX} حرف` : undefined,
-  };
+  const errors = recordErrors(normalized, awbDate, assignedTo, note, today);
   const show = (f: keyof typeof errors) => (submitted ? errors[f] : undefined);
 
   const submit = async () => {
@@ -212,7 +230,7 @@ function CreateForm({ headingId, awbRef, onClose, onCreated, defaultAssignee }: 
             emptyText="لا يوجد موظف بهذا الاسم"
             loading={usersLoading}
             loadError={usersError}
-            onRetry={() => { setUsersLoading(true); setUsersError(null); setUsersReload((n) => n + 1); }}
+            onRetry={retryUsers}
             disabled={submitting}
             invalid={!!show('assigned_to')}
             icon={<User size={16} />}
@@ -247,6 +265,243 @@ function CreateForm({ headingId, awbRef, onClose, onCreated, defaultAssignee }: 
     </>
   );
 }
+
+// ═══════════════════════ Edit a pending record ═══════════════════════
+
+type EditProps = {
+  open: boolean;
+  record: UnregisteredInvoice | null;
+  onClose: () => void;
+  onSaved: (result: UpdateResult) => void;
+  /** The record was completed/cancelled meanwhile (409) — the owner re-reads its list. */
+  onCompleted?: () => void;
+};
+
+export const EditUnregisteredInvoiceModal: React.FC<EditProps> = ({ open, record, onClose, onSaved, onCompleted }) => {
+  const headingId = useId();
+  const awbRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<FormHandle>(null);
+  return (
+    <Dialog
+      open={open}
+      onRequestClose={() => (formRef.current ? formRef.current.requestClose() : onClose())}
+      labelledBy={headingId}
+      initialFocusRef={awbRef as React.RefObject<HTMLElement>}
+      panelClassName="sm:max-w-lg"
+    >
+      {record && (
+        <EditUnregisteredForm
+          key={record.id}
+          ref={formRef}
+          headingId={headingId}
+          awbRef={awbRef}
+          record={record}
+          onClose={onClose}
+          onSaved={onSaved}
+          onCompleted={onCompleted}
+        />
+      )}
+    </Dialog>
+  );
+};
+
+type EditFormProps = Omit<EditProps, 'open' | 'record'> & {
+  headingId: string;
+  awbRef: React.RefObject<HTMLInputElement>;
+  record: UnregisteredInvoice;
+};
+
+/** AWB, date, assignee and note of a pending record, prefilled. Only changed
+ *  fields are sent; the invoice link is not editable here (only «تم تسجيل الفاتورة»). */
+export const EditUnregisteredForm = React.forwardRef<FormHandle, EditFormProps>(function EditUnregisteredForm(
+  { headingId, awbRef, record, onClose, onSaved, onCompleted },
+  ref,
+) {
+  const uid = useId();
+  const [awb, setAwb] = useState(record.awb);
+  const [awbDate, setAwbDate] = useState(record.awb_date);
+  const [assignedTo, setAssignedTo] = useState<number | null>(record.assigned_to);
+  const [note, setNote] = useState(record.note ?? '');
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const { userOptions, usersLoading, usersError, retryUsers } = useUserOptions();
+
+  const normalized = normalizeAwb(awb);
+  const today = riyadhToday();
+  // An existing date in the future (should not happen) is not re-validated unless changed.
+  const errors = recordErrors(normalized, awbDate, assignedTo, note, awbDate === record.awb_date ? '9999-12-31' : today);
+  const show = (f: keyof typeof errors) => (submitted ? errors[f] : undefined);
+
+  const changes = (): UpdateUnregisteredInput => {
+    const p: UpdateUnregisteredInput = {};
+    if (normalized !== record.awb) p.awb = normalized;
+    if (awbDate !== record.awb_date) p.awb_date = awbDate;
+    if (assignedTo && assignedTo !== record.assigned_to) p.assigned_to = assignedTo;
+    if ((note.trim() || null) !== (record.note ?? null)) p.note = note.trim() || null;
+    return p;
+  };
+  const dirty = Object.keys(changes()).length > 0;
+
+  const requestClose = () => {
+    if (submittingRef.current) return; // wait for the server's answer
+    if (dirty) setConfirmDiscard(true);
+    else onClose();
+  };
+  useImperativeHandle(ref, () => ({ requestClose }));
+
+  const submit = async () => {
+    if (submittingRef.current) return; // double click / Enter + click
+    setSubmitted(true);
+    setConfirmDiscard(false);
+    if (Object.values(errors).some(Boolean)) {
+      if (errors.awb) awbRef.current?.focus();
+      return;
+    }
+    const patch = changes();
+    if (!Object.keys(patch).length) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const result = await unregisteredInvoicesService.update(record.id, patch);
+      if (!result?.record || typeof result.record.id !== 'number') throw new Error('لم يؤكد الخادم حفظ التعديلات');
+      onSaved(result);
+    } catch (err) {
+      if (isTaskCompletedError(err)) {
+        setSubmitError(TASK_ALREADY_COMPLETED);
+        onCompleted?.();
+      } else {
+        setSubmitError(describeUnregisteredError(err, 'تعذر حفظ التعديلات'));
+      }
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <DialogHeader
+        headingId={headingId}
+        icon={<PencilLine size={20} />}
+        title="تعديل فاتورة غير مسجلة"
+        subtitle={`AWB ${record.awb} — يمكن التعديل طالما لم يتم اتخاذ إجراء`}
+        onClose={requestClose}
+        disabled={submitting}
+      />
+      <form
+        id={`${uid}-form`}
+        noValidate
+        onSubmit={(e) => { e.preventDefault(); void submit(); }}
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 py-5 space-y-5"
+        aria-busy={submitting}
+      >
+        <div>
+          <label htmlFor={`${uid}-awb`} className={labelCls}>رقم البوليصة AWB <span className="text-red-500" aria-hidden="true">*</span></label>
+          <input
+            ref={awbRef}
+            id={`${uid}-awb`}
+            dir="ltr"
+            inputMode="text"
+            autoComplete="off"
+            value={awb}
+            onChange={(e) => { setAwb(e.target.value); setSubmitError(null); }}
+            aria-required="true"
+            aria-invalid={!!show('awb') || undefined}
+            aria-describedby={show('awb') ? `${uid}-awb-err` : undefined}
+            disabled={submitting}
+            className={`${inputCls(!!show('awb'))} font-mono text-left`}
+          />
+          {show('awb') && <p id={`${uid}-awb-err`} className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-400">{show('awb')}</p>}
+        </div>
+
+        <div>
+          <label htmlFor={`${uid}-date`} className={labelCls}>تاريخ الإنشاء <span className="text-red-500" aria-hidden="true">*</span></label>
+          <input
+            id={`${uid}-date`}
+            type="date"
+            value={awbDate}
+            max={today}
+            onChange={(e) => { setAwbDate(e.target.value); setSubmitError(null); }}
+            aria-invalid={!!show('awb_date') || undefined}
+            disabled={submitting}
+            className={inputCls(!!show('awb_date'))}
+          />
+          {show('awb_date') && <p className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-400">{show('awb_date')}</p>}
+        </div>
+
+        <div>
+          <span id={`${uid}-assignee-label`} className={labelCls}>الموظف المسؤول <span className="text-red-500" aria-hidden="true">*</span></span>
+          <TaskPicker
+            id={`${uid}-assignee`}
+            labelId={`${uid}-assignee-label`}
+            options={userOptions}
+            value={assignedTo}
+            valueLabel={assignedTo === record.assigned_to ? record.assigned_to_name ?? undefined : undefined}
+            onChange={(v) => { setAssignedTo(v); setSubmitError(null); }}
+            placeholder="اختر الموظف..."
+            searchPlaceholder="ابحث بالاسم أو الدور..."
+            emptyText="لا يوجد موظف بهذا الاسم"
+            loading={usersLoading}
+            loadError={usersError}
+            onRetry={retryUsers}
+            disabled={submitting}
+            invalid={!!show('assigned_to')}
+            icon={<User size={16} />}
+          />
+          {show('assigned_to') && <p className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-400">{show('assigned_to')}</p>}
+        </div>
+
+        <div>
+          <label htmlFor={`${uid}-note`} className={labelCls}>ملاحظة <span className="font-medium text-slate-400">(اختياري)</span></label>
+          <textarea
+            id={`${uid}-note`}
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            disabled={submitting}
+            className={`${inputCls(!!show('note'))} resize-y min-h-[80px]`}
+          />
+          {show('note') && <p className="mt-1.5 text-xs font-semibold text-red-600 dark:text-red-400">{show('note')}</p>}
+        </div>
+        <p className="text-[11px] text-slate-400">ربط فاتورة المنصة يتم فقط من زر «تم تسجيل الفاتورة».</p>
+      </form>
+      <div className="shrink-0 px-5 sm:px-6 py-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/30 space-y-3">
+        {submitError && <ErrorBox title="لم يتم حفظ التعديلات" message={submitError} />}
+        {confirmDiscard ? (
+          <div role="alertdialog" aria-label="تأكيد الإغلاق" className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40">
+            <p className="flex-1 text-sm font-semibold text-amber-800 dark:text-amber-300">لديك تعديلات لم تُحفظ. هل تريد الإغلاق وتجاهلها؟</p>
+            <div className="flex gap-2">
+              <button type="button" autoFocus onClick={() => setConfirmDiscard(false)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                متابعة التعديل
+              </button>
+              <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold bg-red-600 text-white hover:bg-red-700">
+                تجاهل وإغلاق
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col-reverse sm:flex-row gap-2">
+            <button type="button" onClick={requestClose} disabled={submitting} className="sm:w-32 py-3 rounded-2xl font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              form={`${uid}-form`}
+              disabled={submitting || !dirty}
+              className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/25 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting ? <><Loader2 size={18} className="animate-spin" /> جاري الحفظ...</> : <><Save size={18} /> حفظ التعديلات</>}
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+});
 
 // ═══════════════════════ Link an invoice (complete / relink) ═══════════════════════
 

@@ -45,6 +45,30 @@ export function describeTaskError(err: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Same rule as the Backend (services/taskEditing.ts#canEditTask): admin/manager
+ *  any task, an accountant the tasks they sent or received, nobody else.
+ *  Only an unfinished task is editable — the caller checks that. */
+export function canEditTask(
+  user: { id: number; role: string } | null | undefined,
+  task: { assigned_to: number | null; assigned_by: number | null },
+): boolean {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'manager') return true;
+  return user.role === 'accountant' && (task.assigned_to === user.id || task.assigned_by === user.id);
+}
+
+export const TASK_ALREADY_COMPLETED = 'تم إتمام المهمة بالفعل ولا يمكن تعديلها.';
+
+/** The task was closed/completed while the edit window was open (409 TASK_COMPLETED). */
+export function isTaskCompletedError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409 && err.code === 'TASK_COMPLETED';
+}
+
+/** Arabic reason for a failed edit; the server's own message otherwise. */
+export function describeEditError(err: unknown, fallback: string): string {
+  return isTaskCompletedError(err) ? TASK_ALREADY_COMPLETED : describeTaskError(err, fallback);
+}
+
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError';
 }

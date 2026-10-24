@@ -1,13 +1,13 @@
 import React, { useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { X, ClipboardList, Send, User, FileText, AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
-import { tasksService, type Task } from '../../services/tasks.service';
+import { X, ClipboardList, Send, User, FileText, AlertCircle, RotateCcw, Loader2, PencilLine, Save } from 'lucide-react';
+import { tasksService, type Task, type UpdateTaskInput } from '../../services/tasks.service';
 import { unifiedService } from '../../services/unifiedService';
 import { api } from '../../utils/apiClient';
 import { Dialog } from '../shared/Dialog';
 import { TaskPicker, type PickerOption } from './TaskPicker';
 import {
-  ROLE_LABELS, TASK_TEXT_MAX, TASK_TITLE_MAX, describeTaskError, fieldErrorsFrom, isAbortError, validateTaskForm,
-  type TaskFormErrors, type TaskFormField,
+  ROLE_LABELS, TASK_TEXT_MAX, TASK_TITLE_MAX, describeEditError, describeTaskError, fieldErrorsFrom, isAbortError,
+  isTaskCompletedError, validateTaskForm, type TaskFormErrors, type TaskFormField,
 } from './taskUtils';
 
 interface CreateTaskModalProps {
@@ -17,7 +17,7 @@ interface CreateTaskModalProps {
   onCreated: (task: Task) => void;
 }
 
-type FormHandle = { requestClose: () => void };
+export type FormHandle = { requestClose: () => void };
 
 export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ open, onClose, onCreated }) => {
   const formRef = useRef<FormHandle>(null);
@@ -31,7 +31,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ open, onClose,
       initialFocusRef={titleRef as React.RefObject<HTMLElement>}
       panelClassName="sm:max-w-xl"
     >
-      <CreateTaskForm ref={formRef} headingId={headingId} titleRef={titleRef} onClose={onClose} onCreated={onCreated} />
+      <TaskForm ref={formRef} headingId={headingId} titleRef={titleRef} onClose={onClose} onCreated={onCreated} />
     </Dialog>
   );
 };
@@ -40,20 +40,30 @@ type FormProps = {
   headingId: string;
   titleRef: React.RefObject<HTMLInputElement>;
   onClose: () => void;
-  onCreated: (task: Task) => void;
+  onCreated?: (task: Task) => void;
+  /** Edit mode: the open task, prefilled; only changed fields are sent. */
+  task?: Task;
+  /** Edit mode: called after the API confirmed the save, with the stored task. */
+  onSaved?: (task: Task) => void;
+  /** Edit mode: the task was closed meanwhile (409) — the owner re-reads it. */
+  onCompleted?: () => void;
 };
 
-const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTaskForm(
-  { headingId, titleRef, onClose, onCreated },
+/** "إسناد مهمة جديدة", or with `task` the same form in edit mode ("تعديل المهمة"). */
+export const TaskForm = React.forwardRef<FormHandle, FormProps>(function TaskForm(
+  { headingId, titleRef, onClose, onCreated, task, onSaved, onCompleted },
   ref,
 ) {
   const uid = useId();
   const formId = `${uid}-form`;
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [assignedTo, setAssignedTo] = useState<number | null>(null);
-  const [invoiceId, setInvoiceId] = useState<number | null>(null);
-  const [invoiceLabel, setInvoiceLabel] = useState<string | undefined>();
+  const editing = !!task;
+  const [title, setTitle] = useState(task?.title ?? '');
+  const [description, setDescription] = useState(task?.description ?? '');
+  const [assignedTo, setAssignedTo] = useState<number | null>(task?.assigned_to ?? null);
+  const [invoiceId, setInvoiceId] = useState<number | null>(task?.invoice_id ?? null);
+  const [invoiceLabel, setInvoiceLabel] = useState<string | undefined>(
+    task?.invoice_id ? `#${task.invoice_number || task.invoice_id}` : undefined,
+  );
 
   const [touched, setTouched] = useState<Partial<Record<TaskFormField, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -137,7 +147,18 @@ const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTa
   // ── Validation ──
   const clientErrors = validateTaskForm({ title, description, assignedTo, invoiceId });
   const errorFor = (f: TaskFormField) => serverErrors[f] ?? ((submitted || touched[f]) ? clientErrors[f] : undefined);
-  const dirty = !!(title.trim() || description.trim() || assignedTo || invoiceId);
+  // Edit mode: what differs from the saved task (the only fields sent).
+  const changes = (): UpdateTaskInput => {
+    if (!task) return {};
+    const p: UpdateTaskInput = {};
+    if (title.trim() !== task.title) p.title = title.trim();
+    const desc = description.trim() || null;
+    if (desc !== ((task.description ?? '').trim() || null)) p.description = desc;
+    if (assignedTo !== task.assigned_to && assignedTo) p.assigned_to = assignedTo;
+    if (invoiceId !== (task.invoice_id ?? null)) p.invoice_id = invoiceId;
+    return p;
+  };
+  const dirty = editing ? Object.keys(changes()).length > 0 : !!(title.trim() || description.trim() || assignedTo || invoiceId);
 
   const requestClose = () => {
     if (submittingRef.current) return; // wait for the server's answer
@@ -162,23 +183,32 @@ const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTa
       focusField(first);
       return;
     }
+    const patch = changes();
+    if (editing && !Object.keys(patch).length) return; // nothing to save (the button is disabled too)
     submittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
     setServerErrors({});
     try {
-      const task = await tasksService.createTask({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        assigned_to: assignedTo!,
-        invoice_id: invoiceId,
-      });
-      if (!task || typeof task.id !== 'number') throw new Error('استجابة غير متوقعة من الخادم، لم يتم تأكيد الحفظ');
-      onCreated(task);
+      if (task) {
+        const saved = await tasksService.updateTask(task.id, patch);
+        if (!saved || typeof saved.id !== 'number') throw new Error('استجابة غير متوقعة من الخادم، لم يتم تأكيد الحفظ');
+        onSaved?.(saved);
+      } else {
+        const created = await tasksService.createTask({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          assigned_to: assignedTo!,
+          invoice_id: invoiceId,
+        });
+        if (!created || typeof created.id !== 'number') throw new Error('استجابة غير متوقعة من الخادم، لم يتم تأكيد الحفظ');
+        onCreated?.(created);
+      }
     } catch (err) {
       const fe = fieldErrorsFrom(err);
       setServerErrors(fe);
-      setSubmitError(describeTaskError(err, 'تعذر إنشاء المهمة'));
+      setSubmitError(editing ? describeEditError(err, 'تعذر حفظ التعديلات') : describeTaskError(err, 'تعذر إنشاء المهمة'));
+      if (isTaskCompletedError(err)) onCompleted?.();
       const firstServer = (Object.keys(fe) as TaskFormField[])[0];
       if (firstServer) focusField(firstServer);
     } finally {
@@ -207,11 +237,13 @@ const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTa
       <div className="shrink-0 px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="p-2.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl shrink-0">
-            <ClipboardList size={20} />
+            {editing ? <PencilLine size={20} /> : <ClipboardList size={20} />}
           </div>
           <div className="min-w-0">
-            <h2 id={headingId} className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">إسناد مهمة جديدة</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">ستظهر المهمة للموظف المختار فور حفظها</p>
+            <h2 id={headingId} className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">{editing ? 'تعديل المهمة' : 'إسناد مهمة جديدة'}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {editing ? 'يمكن تعديل المهمة طالما لم تُغلق بعد' : 'ستظهر المهمة للموظف المختار فور حفظها'}
+            </p>
           </div>
         </div>
         <button
@@ -270,6 +302,8 @@ const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTa
             labelId={`${uid}-assigned_to-label`}
             options={userOptions}
             value={assignedTo}
+            // The current assignee may be missing from the list (e.g. a disabled account).
+            valueLabel={task && assignedTo === task.assigned_to ? task.assigned_to_name : undefined}
             onChange={(v) => {
               setAssignedTo(v);
               setTouched((t) => ({ ...t, assigned_to: true }));
@@ -358,8 +392,8 @@ const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTa
           <div role="alert" className="flex items-start gap-2 p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 text-sm text-red-700 dark:text-red-300">
             <AlertCircle size={16} className="shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-bold">لم يتم حفظ المهمة</p>
-              <p className="text-xs mt-0.5">{submitError}. بياناتك محفوظة في النموذج.</p>
+              <p className="font-bold">{editing ? 'لم يتم حفظ التعديلات' : 'لم يتم حفظ المهمة'}</p>
+              <p className="text-xs mt-0.5">{submitError.replace(/\.$/, '')}. بياناتك محفوظة في النموذج.</p>
             </div>
             <button
               type="button"
@@ -396,13 +430,17 @@ const CreateTaskForm = React.forwardRef<FormHandle, FormProps>(function CreateTa
             <button
               type="submit"
               form={formId}
-              disabled={submitting}
-              aria-disabled={submitting}
+              disabled={submitting || (editing && !dirty)}
+              aria-disabled={submitting || (editing && !dirty)}
               className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/25 disabled:opacity-60 disabled:cursor-wait"
             >
               {submitting ? (
                 <>
                   <Loader2 size={18} className="animate-spin" /> جاري الحفظ...
+                </>
+              ) : editing ? (
+                <>
+                  <Save size={18} /> حفظ التعديلات
                 </>
               ) : (
                 <>

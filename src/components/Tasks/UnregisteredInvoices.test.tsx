@@ -10,9 +10,12 @@ const svc = vi.hoisted(() => ({
   complete: vi.fn(),
   relink: vi.fn(),
   cancel: vi.fn(),
+  update: vi.fn(),
   searchInvoices: vi.fn(),
 }))
 vi.mock('../../services/unregisteredInvoices.service', () => ({ unregisteredInvoicesService: svc }))
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+vi.mock('react-hot-toast', () => ({ toast: toastMock, default: toastMock }))
 const auth = vi.hoisted(() => ({ user: { id: 7, role: 'employee' } as { id: number; role: string } }))
 vi.mock('../../hooks/useAuthStore', () => ({
   useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: auth.user }),
@@ -273,5 +276,105 @@ describe('utils', () => {
     expect(checkInvoiceAwb('1234567890', 'AWB 1234567890, 5555555555')).toBe('match')
     expect(checkInvoiceAwb('1234567890', '9999999999')).toBe('mismatch')
     expect(checkInvoiceAwb('1234567890', '')).toBe('missing')
+  })
+})
+
+describe('UnregisteredInvoicesPanel — editing a pending record', () => {
+  const editBtn = (el: HTMLElement) => within(el).queryByRole('button', { name: /تعديل سجل البوليصة/ })
+
+  it.each([
+    ['admin', { id: 1, role: 'admin' }, true],
+    ['manager', { id: 2, role: 'manager' }, true],
+    ['the accountant who assigned it', { id: 1, role: 'accountant' }, true],
+    ['an unrelated accountant', { id: 3, role: 'accountant' }, false],
+    ['the assigned employee', { id: 7, role: 'employee' }, false],
+    ['a viewer', { id: 7, role: 'viewer' }, false],
+  ])('%s → «تعديل» on a pending card: %s; never on a done card', async (_n, user, shown) => {
+    auth.user = user
+    svc.list.mockResolvedValue(response([pending(), done()]))
+    renderPanel()
+    await screen.findByText('1234567890')
+    expect(!!editBtn(card('1234567890'))).toBe(shown)
+    expect(editBtn(card('5555555555'))).toBeNull()
+  })
+
+  it('prefilled; sends only the changed, normalized AWB; the card updates at once with a toast', async () => {
+    auth.user = { id: 1, role: 'admin' }
+    svc.list.mockResolvedValue(response([pending()]))
+    const onChanged = vi.fn()
+    renderPanel({ onChanged })
+    fireEvent.click(editBtn(await screen.findByText('1234567890').then(() => card('1234567890')))!)
+    const dialog = await screen.findByRole('dialog')
+    const awb = within(dialog).getByLabelText(/رقم البوليصة AWB/)
+    expect(awb).toHaveValue('1234567890')
+    expect(within(dialog).getByLabelText(/تاريخ الإنشاء/)).toHaveValue('2026-10-22')
+    expect(within(dialog).getByRole('combobox', { name: /الموظف المسؤول/ })).toHaveTextContent('موظف أول')
+    const save = within(dialog).getByRole('button', { name: /حفظ التعديلات/ })
+    expect(save).toBeDisabled()
+
+    const d = deferred<{ record: UnregisteredInvoice; changed: boolean }>()
+    svc.update.mockReturnValue(d.promise)
+    fireEvent.change(awb, { target: { value: ' awb 111-425-6299 ' } })
+    fireEvent.click(save)
+    fireEvent.click(save)
+    expect(svc.update).toHaveBeenCalledTimes(1)
+    expect(svc.update).toHaveBeenCalledWith(11, { awb: '1114256299' })
+    expect(within(dialog).getByText(/جاري الحفظ/)).toBeInTheDocument()
+
+    svc.list.mockResolvedValue(response([pending({ awb: '1114256299' })]))
+    await act(async () => d.resolve({ record: pending({ awb: '1114256299' }), changed: true }))
+    expect(await screen.findByText('1114256299')).toBeInTheDocument()
+    expect(screen.queryByText('1234567890')).toBeNull()
+    expect(toastMock.success).toHaveBeenCalledWith('تم تعديل المهمة بنجاح')
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('validation: an invalid AWB or a future date is shown and nothing is sent', async () => {
+    auth.user = { id: 1, role: 'admin' }
+    svc.list.mockResolvedValue(response([pending()]))
+    renderPanel()
+    fireEvent.click(editBtn(await screen.findByText('1234567890').then(() => card('1234567890')))!)
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/رقم البوليصة AWB/), { target: { value: '12' } })
+    fireEvent.change(within(dialog).getByLabelText(/تاريخ الإنشاء/), { target: { value: '2999-01-01' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /حفظ التعديلات/ }))
+    expect(await within(dialog).findByText(/رقم البوليصة غير صالح/)).toBeInTheDocument()
+    expect(within(dialog).getByText('تاريخ الإنشاء لا يمكن أن يكون في المستقبل')).toBeInTheDocument()
+    expect(svc.update).not.toHaveBeenCalled()
+  })
+
+  it('reassigning sends only assigned_to', async () => {
+    auth.user = { id: 1, role: 'admin' }
+    svc.list.mockResolvedValue(response([pending({ assigned_to: 9, assigned_to_name: 'أمنية فهيم' })]))
+    svc.update.mockResolvedValue({ record: pending({ assigned_to: 7, assigned_to_name: 'موظف أول' }), changed: true })
+    renderPanel()
+    fireEvent.click(editBtn(await screen.findByText('1234567890').then(() => card('1234567890')))!)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('combobox', { name: /الموظف المسؤول/ })).toHaveTextContent('أمنية فهيم')
+    fireEvent.click(within(dialog).getByRole('combobox', { name: /الموظف المسؤول/ }))
+    fireEvent.click(await screen.findByRole('option', { name: /موظف أول/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: /حفظ التعديلات/ }))
+    await waitFor(() => expect(svc.update).toHaveBeenCalledWith(11, { assigned_to: 7 }))
+  })
+
+  it('completed meanwhile (409 TASK_COMPLETED): explains it and re-reads the list; a duplicate AWB shows the server message', async () => {
+    auth.user = { id: 1, role: 'admin' }
+    svc.list.mockResolvedValue(response([pending()]))
+    const onChanged = vi.fn()
+    renderPanel({ onChanged })
+    fireEvent.click(editBtn(await screen.findByText('1234567890').then(() => card('1234567890')))!)
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/ملاحظة/), { target: { value: 'تعديل متأخر' } })
+
+    svc.update.mockRejectedValueOnce(new ApiError('يوجد بالفعل سجل مفتوح لنفس رقم البوليصة.', 409, 'DUPLICATE_OPEN_AWB'))
+    fireEvent.click(within(dialog).getByRole('button', { name: /حفظ التعديلات/ }))
+    expect(await within(dialog).findByText('يوجد بالفعل سجل مفتوح لنفس رقم البوليصة.')).toBeInTheDocument()
+
+    svc.list.mockClear()
+    svc.update.mockRejectedValueOnce(new ApiError('لا يمكن تعديل المهمة بعد إتمامها.', 409, 'TASK_COMPLETED'))
+    fireEvent.click(within(dialog).getByRole('button', { name: /حفظ التعديلات/ }))
+    expect(await within(dialog).findByText('تم إتمام المهمة بالفعل ولا يمكن تعديلها.')).toBeInTheDocument()
+    await waitFor(() => expect(svc.list).toHaveBeenCalled())
+    expect(onChanged).toHaveBeenCalled()
   })
 })

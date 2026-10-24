@@ -73,6 +73,20 @@ describe('TasksPage — "فواتير غير مسجلة" tab', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: /فواتير غير مسجلة/ })).toHaveTextContent('2'))
   })
 
+  it('a task edited/reassigned elsewhere (tasks:updated) appears in or leaves the list without a refresh', async () => {
+    auth.user = { id: 10, role: 'employee' }
+    tasksSvc.getTasks.mockResolvedValue([task(1, { assigned_to: 10 })])
+    unregSvc.list.mockResolvedValue(counts(0))
+    renderPage()
+    expect(await screen.findByText('المهمة 1')).toBeInTheDocument()
+    // Task 2 was reassigned to this user, task 1 to someone else.
+    tasksSvc.getTasks.mockResolvedValue([task(2, { assigned_to: 10, title: 'مهمة أُسندت إليّ' })])
+    const h = realtime.handlers.filter((x) => x.events.includes('tasks:updated')).at(-1)!
+    act(() => h.fn())
+    expect(await screen.findByText('مهمة أُسندت إليّ')).toBeInTheDocument()
+    expect(screen.queryByText('المهمة 1')).toBeNull()
+  })
+
   it('opening the tab loads its own list and keeps the tab in the URL; employees get it after "الكل"', async () => {
     tasksSvc.getTasks.mockResolvedValue([])
     unregSvc.list.mockResolvedValue(counts(0))

@@ -7,20 +7,27 @@ const svc = vi.hoisted(() => ({
   getTasks: vi.fn(),
   getTask: vi.fn(),
   createTask: vi.fn(),
+  updateTask: vi.fn(),
   updateStatus: vi.fn(),
   addMessage: vi.fn(),
 }))
 vi.mock('../../services/tasks.service', () => ({ tasksService: svc }))
+const unreg = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }))
+vi.mock('../../services/unregisteredInvoices.service', () => ({ unregisteredInvoicesService: unreg }))
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+vi.mock('react-hot-toast', () => ({ toast: toastMock, default: toastMock }))
 vi.mock('../../services/unifiedService', () => ({
   unifiedService: { get: vi.fn().mockResolvedValue([{ id: 7, full_name: 'موظف أول', role: 'employee' }]) },
 }))
 vi.mock('../../utils/apiClient', async (orig) => ({ ...(await orig<object>()), api: { get: vi.fn().mockResolvedValue({ data: [] }) } }))
+const auth = vi.hoisted(() => ({ user: { id: 1, role: 'admin' } as { id: number; role: string } }))
 vi.mock('../../hooks/useAuthStore', () => ({
-  useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { id: 1, role: 'admin' } }),
+  useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: auth.user }),
 }))
 
 import { CreateTaskModal } from './CreateTaskModal'
 import { TaskDetailsModal, type DraftStore } from './TaskDetailsModal'
+import { ApiError } from '../../utils/apiClient'
 
 // jsdom has no layout/scrolling APIs
 Element.prototype.scrollTo = vi.fn() as never
@@ -28,7 +35,10 @@ Element.prototype.scrollBy = vi.fn() as never
 Element.prototype.scrollIntoView = vi.fn()
 
 afterEach(() => cleanup())
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  auth.user = { id: 1, role: 'admin' }
+})
 
 const deferred = <T,>() => {
   let resolve!: (v: T) => void
@@ -184,5 +194,139 @@ describe('TaskDetailsModal', () => {
     expect(screen.getByRole('button', { name: 'المهمة السابقة' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'المهمة التالية' }))
     expect(onNavigate).toHaveBeenCalledWith(2)
+  })
+})
+
+describe('TaskDetailsModal — editing an open task', () => {
+  const base = {
+    open: true, prevId: null, nextId: null, onNavigate: vi.fn(), onClose: vi.fn(), onTaskChanged: vi.fn(),
+  }
+  const open = async (task: Task, props: Partial<React.ComponentProps<typeof TaskDetailsModal>> = {}) => {
+    svc.getTask.mockResolvedValue(task)
+    render(<MemoryRouter><TaskDetailsModal {...base} taskId={task.id} drafts={memDrafts()} {...props} /></MemoryRouter>)
+    await screen.findByText(task.description ?? 'لا يوجد وصف')
+    await waitFor(() => expect(screen.getByLabelText('اكتب ردك')).not.toBeDisabled())
+  }
+  const editButton = () => screen.queryByRole('button', { name: /^تعديل$/ })
+
+  it('admin sees «تعديل» on an open task, never on a closed one', async () => {
+    await open(taskOf(9))
+    expect(editButton()).toBeInTheDocument()
+    cleanup()
+    await open({ ...taskOf(10), status: 'closed' })
+    expect(editButton()).toBeNull()
+  })
+
+  it.each([
+    ['manager, any task', { id: 50, role: 'manager' }, true],
+    ['accountant who received it', { id: 2, role: 'accountant' }, true],
+    ['accountant who sent it', { id: 1, role: 'accountant' }, true],
+    ['unrelated accountant', { id: 3, role: 'accountant' }, false],
+    ['the assigned employee', { id: 2, role: 'employee' }, false],
+    ['viewer', { id: 2, role: 'viewer' }, false],
+  ])('%s → button shown: %s', async (_n, user, shown) => {
+    auth.user = user
+    await open(taskOf(11))
+    expect(!!editButton()).toBe(shown)
+  })
+
+  it('the form is prefilled, saves only what changed (once), and returns to the task with the new values', async () => {
+    const onTaskChanged = vi.fn()
+    await open(taskOf(12), { onTaskChanged })
+    fireEvent.click(editButton()!)
+    const title = await screen.findByLabelText(/عنوان المهمة/)
+    expect(title).toHaveValue('المهمة 12')
+    expect(screen.getByLabelText('التفاصيل')).toHaveValue('وصف 12')
+    expect(screen.getByRole('combobox', { name: /الموظف المسؤول/ })).toHaveTextContent('موظف')
+    const save = screen.getByRole('button', { name: /حفظ التعديلات/ })
+    expect(save).toBeDisabled() // nothing changed yet
+
+    const d = deferred<Task>()
+    svc.updateTask.mockReturnValue(d.promise)
+    fireEvent.change(title, { target: { value: 'المهمة 12 بعد التعديل' } })
+    expect(save).not.toBeDisabled()
+    fireEvent.click(save)
+    fireEvent.click(save)
+    fireEvent.submit(document.querySelector('form')!)
+    expect(svc.updateTask).toHaveBeenCalledTimes(1)
+    expect(svc.updateTask).toHaveBeenCalledWith(12, { title: 'المهمة 12 بعد التعديل' })
+    expect(screen.getByText(/جاري الحفظ/)).toBeInTheDocument()
+
+    const saved = { ...taskOf(12), title: 'المهمة 12 بعد التعديل', changed: true }
+    svc.getTask.mockResolvedValue(saved)
+    await act(async () => d.resolve(saved))
+    expect(await screen.findByRole('heading', { level: 2, name: 'المهمة 12 بعد التعديل' })).toBeInTheDocument()
+    expect(screen.getByLabelText('اكتب ردك')).toBeInTheDocument() // back in the task view
+    await waitFor(() => expect(onTaskChanged).toHaveBeenCalledWith(expect.objectContaining({ id: 12, title: 'المهمة 12 بعد التعديل' })))
+    expect(toastMock.success).toHaveBeenCalledWith('تم تعديل المهمة بنجاح')
+  })
+
+  it('changing the assignee sends only assigned_to', async () => {
+    svc.updateTask.mockResolvedValue({ ...taskOf(13), assigned_to: 7, assigned_to_name: 'موظف أول' })
+    await open(taskOf(13))
+    fireEvent.click(editButton()!)
+    fireEvent.click(await screen.findByRole('combobox', { name: /الموظف المسؤول/ }))
+    fireEvent.click(await screen.findByRole('option', { name: /موظف أول/ }))
+    fireEvent.click(screen.getByRole('button', { name: /حفظ التعديلات/ }))
+    await waitFor(() => expect(svc.updateTask).toHaveBeenCalledWith(13, { assigned_to: 7 }))
+  })
+
+  it('client validation: a too-short title is shown and nothing is sent', async () => {
+    await open(taskOf(14))
+    fireEvent.click(editButton()!)
+    fireEvent.change(await screen.findByLabelText(/عنوان المهمة/), { target: { value: 'اب' } })
+    fireEvent.click(screen.getByRole('button', { name: /حفظ التعديلات/ }))
+    expect(await screen.findByText(/عنوان المهمة يجب ألا يقل عن 3 أحرف/)).toBeInTheDocument()
+    expect(svc.updateTask).not.toHaveBeenCalled()
+  })
+
+  it('a task closed meanwhile (409) shows «تم إتمام المهمة بالفعل» and re-reads the task', async () => {
+    svc.updateTask.mockRejectedValue(new ApiError('لا يمكن تعديل المهمة بعد إتمامها.', 409, 'TASK_COMPLETED'))
+    await open(taskOf(15))
+    fireEvent.click(editButton()!)
+    fireEvent.change(await screen.findByLabelText(/عنوان المهمة/), { target: { value: 'تعديل متأخر' } })
+    svc.getTask.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /حفظ التعديلات/ }))
+    expect(await screen.findByText(/تم إتمام المهمة بالفعل ولا يمكن تعديلها/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/عنوان المهمة/)).toHaveValue('تعديل متأخر') // input kept
+    await waitFor(() => expect(svc.getTask).toHaveBeenCalledWith(15))
+  })
+
+  it('other server errors are shown as sent by the Backend', async () => {
+    svc.updateTask.mockRejectedValue(new ApiError('Validation failed', 400, 'VALIDATION_ERROR', [{ field: 'assigned_to', message: 'الموظف المحدد غير موجود أو غير مفعّل' }]))
+    await open(taskOf(16))
+    fireEvent.click(editButton()!)
+    fireEvent.change(await screen.findByLabelText(/عنوان المهمة/), { target: { value: 'عنوان آخر' } })
+    fireEvent.click(screen.getByRole('button', { name: /حفظ التعديلات/ }))
+    expect((await screen.findAllByText(/الموظف المحدد غير موجود أو غير مفعّل/)).length).toBeGreaterThan(0)
+  })
+
+  it('Escape with unsaved edits asks first and keeps the window; cancel returns to the task', async () => {
+    const onClose = vi.fn()
+    await open(taskOf(17), { onClose })
+    fireEvent.click(editButton()!)
+    const title = await screen.findByLabelText(/عنوان المهمة/)
+    fireEvent.change(title, { target: { value: 'تعديل غير محفوظ' } })
+    fireEvent.keyDown(title, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button', { name: 'تجاهل وإغلاق' }))
+    expect(await screen.findByLabelText('اكتب ردك')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'المهمة 17' })).toBeInTheDocument()
+    expect(svc.updateTask).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('an unregistered-invoice record opens its own edit form (AWB, date, assignee) in the same window', async () => {
+    unreg.get.mockResolvedValue({
+      id: 18, awb: '1114256205', awb_date: '2026-10-20', created_at: '2026-10-20T08:00:00Z', state: 'pending', action_taken: false,
+      note: 'ملاحظة', assigned_to: 2, assigned_to_name: 'موظف', assigned_by: 1, assigned_by_name: 'مدير',
+      linked_invoice_id: null, linked_invoice_number: null, linked_invoice_missing: false, completed_by: null, completed_by_name: null, completed_at: null,
+    })
+    await open({ ...taskOf(18), description: 'ملاحظة', task_type: 'unregistered_invoice', awb: '1114256205' })
+    fireEvent.click(editButton()!)
+    expect(await screen.findByLabelText(/رقم البوليصة AWB/)).toHaveValue('1114256205')
+    expect(screen.getByLabelText(/تاريخ الإنشاء/)).toHaveValue('2026-10-20')
+    expect(unreg.get).toHaveBeenCalledWith(18)
+    expect(svc.updateTask).not.toHaveBeenCalled()
   })
 })

@@ -17,10 +17,11 @@ type FilterTab = 'all' | 'received' | 'unregistered' | 'assigned' | 'open' | 'cl
 /** ?tab=unregistered (+ &record=<id>) opens the "فواتير غير مسجلة" tab — used by its notifications. */
 const UNREGISTERED_TAB = 'unregistered';
 /** Events after which the tab's "pending" counter is re-read from the server
- *  (plus reconnects). Every create/complete/cancel emits it to the assignee,
- *  the sender and admin/manager — everyone whose count can change. Not
- *  nav:badges: support traffic fires it often and each event clears the API cache. */
-const UNREGISTERED_COUNT_EVENTS = ['tasks:updated'] as const;
+ *  (plus reconnects). Every create/edit/complete/cancel emits it to the
+ *  assignee (old and new), the sender and admin/manager — everyone whose count
+ *  can change. Not nav:badges: support traffic fires it often and each event
+ *  clears the API cache. The task list itself is re-read on the same event. */
+const TASKS_UPDATED_EVENTS = ['tasks:updated'] as const;
 
 function paramsFor(tab: FilterTab): { status?: string; view?: string } {
   if (tab === 'received' || tab === 'assigned') return { view: tab };
@@ -197,7 +198,6 @@ export const TasksPage: React.FC = () => {
       .catch(() => undefined);
   }, []);
   useEffect(() => { loadUnregisteredCount(); }, [loadUnregisteredCount]);
-  useRealtimeRefresh(UNREGISTERED_COUNT_EVENTS, loadUnregisteredCount, 400);
   const retryLoad = () => {
     setPhase('initial');
     void fetchTasks('replace');
@@ -206,6 +206,12 @@ export const TasksPage: React.FC = () => {
     setRefreshing(true);
     return fetchTasks('background');
   }, [fetchTasks]);
+  // A task was edited/reassigned elsewhere: a reassigned task appears for its
+  // new assignee and leaves the old one's list without a page refresh.
+  useRealtimeRefresh(TASKS_UPDATED_EVENTS, () => {
+    loadUnregisteredCount();
+    if (filterRef.current !== 'unregistered') void refreshInBackground();
+  }, 400);
 
   const filteredTasks = useMemo(() => filterTasksBySearch(tasks, search), [tasks, search]);
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);

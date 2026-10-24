@@ -23,6 +23,8 @@ export interface Task {
   task_type?: 'general' | 'unregistered_invoice';
   awb?: string | null;
   messages?: TaskMessage[];
+  /** PATCH /tasks/:id only: false when nothing actually changed. */
+  changed?: boolean;
 }
 
 export interface TaskMessage {
@@ -38,6 +40,14 @@ export interface CreateTaskInput {
   title: string;
   description?: string;
   assigned_to: number;
+  invoice_id?: number | null;
+}
+
+/** Only the fields that changed; null clears description / invoice link. */
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string | null;
+  assigned_to?: number;
   invoice_id?: number | null;
 }
 
@@ -65,6 +75,11 @@ export const tasksService = {
 
   async createTask(data: CreateTaskInput): Promise<Task> {
     return unwrap<Task>(await unifiedService.post<unknown>('/tasks', data));
+  },
+
+  /** Edit an open task (the server refuses a closed one with 409 TASK_COMPLETED). */
+  async updateTask(id: number, patch: UpdateTaskInput): Promise<Task> {
+    return unwrap<Task>(await unifiedService.patch<unknown>(`/tasks/${id}`, patch));
   },
 
   async updateStatus(id: number, status: 'open' | 'closed'): Promise<Task> {
