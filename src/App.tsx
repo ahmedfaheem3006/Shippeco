@@ -33,6 +33,7 @@ const CollectionModelPage = lazy(() => import('./pages/CollectionModelPage').the
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage').then((m) => ({ default: m.ExpensesPage })))
 const PublicPayPage = lazy(() => import('./pages/PublicPayPage').then((m) => ({ default: m.PublicPayPage })))
 const QuoteRequestsPage = lazy(() => import('./pages/QuoteRequestsPage').then((m) => ({ default: m.QuoteRequestsPage })))
+const ShipmentTrackingPage = lazy(() => import('./pages/ShipmentTrackingPage').then((m) => ({ default: m.ShipmentTrackingPage })))
 const SupportCenterPage = lazy(() => import('./pages/SupportCenterPage').then((m) => ({ default: m.SupportCenterPage })))
 
 function RouteFallback() {
@@ -174,6 +175,7 @@ function App() {
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/wa-templates" element={<WaTemplatesPage />} />
           <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/shipment-tracking" element={<ShipmentTrackingPage />} />
           <Route
             path="/support"
             element={

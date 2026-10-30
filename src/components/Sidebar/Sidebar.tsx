@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, BarChart3, Users, PlusCircle,
   Calculator, ClipboardCheck, TrendingUp, ClipboardList,
-  FileCode, MessageSquare, CreditCard, Settings, LogOut, Send, Headphones
+  FileCode, MessageSquare, CreditCard, Settings, LogOut, Send, Headphones, PackageSearch
 } from 'lucide-react'
 import { canSupport } from '../../utils/support'
 import shippecLogo from '../../assets/shippec.jpeg'
@@ -65,6 +65,9 @@ export function Sidebar({ onNavigate }: Props) {
         </button>
         <button className={navItemClass('/invoices')} onClick={() => go('/invoices')}>
           <FileText size={20} /> الفواتير
+        </button>
+        <button className={navItemClass('/shipment-tracking')} onClick={() => go('/shipment-tracking')}>
+          <PackageSearch size={20} /> متابعة البوليصة
         </button>
         <button className={navItemClass('/reports')} onClick={() => go('/reports')}>
           <BarChart3 size={20} /> التقارير

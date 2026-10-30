@@ -76,3 +76,17 @@ describe('describeOpenError', () => {
     expect(describeOpenError('invoice', 500)).toBe('تعذّر فتح الفاتورة، حاول مرة أخرى')
   })
 })
+
+describe('shipment tracking notifications', () => {
+  it('open /shipment-tracking?awb=<AWB>', () => {
+    expect(resolveNotificationTarget({ type: 'shipment_tracking', data: { entity_type: 'shipment_tracking', awb: '9988679120', status: 'DELIVERED' } }))
+      .toEqual({ kind: 'page', path: '/shipment-tracking?awb=9988679120' })
+    expect(resolveNotificationTarget({ type: 'shipment_tracking', data: JSON.stringify({ entity_type: 'shipment_tracking', awb: '1111111111' }) }).path)
+      .toBe('/shipment-tracking?awb=1111111111')
+  })
+  it('a malformed AWB never builds a URL from the notification', () => {
+    const t = resolveNotificationTarget({ type: 'shipment_tracking', data: { entity_type: 'shipment_tracking', awb: '/admin?x=1' } })
+    expect(t.path).toBe('/shipment-tracking')
+    expect(t).toHaveProperty('unresolvedMessage')
+  })
+})

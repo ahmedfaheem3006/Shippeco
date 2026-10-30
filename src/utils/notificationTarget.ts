@@ -62,6 +62,12 @@ function idList(v: unknown): number[] {
 export function resolveNotificationTarget(n: NotificationLike): NotificationTarget {
   const data = parseData(n.data);
 
+  // «متابعة البوليصة»: DHL tracking notifications carry the AWB (10 digits).
+  if (data.entity_type === 'shipment_tracking' || n.type === 'shipment_tracking') {
+    const awb = typeof data.awb === 'string' ? data.awb.replace(/\D/g, '') : '';
+    return /^\d{10}$/.test(awb) ? page(`/shipment-tracking?awb=${awb}`) : page('/shipment-tracking', 'تعذّر تحديد الشحنة المرتبطة بهذا الإشعار — هذه قائمة الشحنات');
+  }
+
   // 1. Explicit entity (all notifications created by the current backend).
   const entityId = toId(data.entity_id);
   if (entityId) {
