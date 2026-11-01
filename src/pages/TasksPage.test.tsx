@@ -68,7 +68,7 @@ describe('TasksPage — "فواتير غير مسجلة" tab', () => {
     unregSvc.list.mockResolvedValue(counts(2))
     // The page's counter subscription (the list panel is not mounted on this tab).
     const h = realtime.handlers.filter((x) => x.events.includes('tasks:updated')).at(-1)!
-    expect(h.events).toEqual(['tasks:updated'])
+    expect(h.events).toEqual(['tasks:updated', 'tasks:read'])
     act(() => h.fn())
     await waitFor(() => expect(screen.getByRole('tab', { name: /فواتير غير مسجلة/ })).toHaveTextContent('2'))
   })

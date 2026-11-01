@@ -8,13 +8,15 @@ import {
 import { tasksService, type Task, type TaskMessage } from '../../services/tasks.service';
 import { unregisteredInvoicesService, type UnregisteredInvoice } from '../../services/unregisteredInvoices.service';
 import { useAuthStore } from '../../hooks/useAuthStore';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { Dialog } from '../shared/Dialog';
 import { prefersReducedMotion } from '../shared/dialogUtils';
 import { TaskForm, type FormHandle } from './CreateTaskModal';
 import { EditUnregisteredForm } from './UnregisteredInvoiceDialogs';
 import { describeUnregisteredError } from './unregisteredInvoiceUtils';
 import {
-  PAYMENT_STATUS, TASK_ALREADY_COMPLETED, TASK_TEXT_MAX, canEditTask, describeTaskError, formatSar, isAbortError, mergeMessages,
+  PAYMENT_STATUS, TASK_ALREADY_COMPLETED, TASK_TEXT_MAX, canEditTask, describeTaskError, firstUnreadMessageId, formatSar, isAbortError,
+  mergeMessages,
 } from './taskUtils';
 
 export type DraftStore = { get: (taskId: number) => string; set: (taskId: number, text: string) => void };
@@ -36,6 +38,8 @@ interface TaskDetailsModalProps {
 }
 
 const POLL_MS = 10_000;
+/** A new reply on THIS task (action 'message') or a reconnect: re-read now instead of waiting for the next poll. */
+const TASK_EVENTS = ['tasks:updated'] as const;
 
 /** A task row without its discussion / response flags. */
 function taskFields(t: Task): Task {
@@ -102,6 +106,10 @@ function TaskDetailsBody({
   const listRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const pendingScrollRef = useRef<ScrollBehavior | null>(null);
+  /** On open: scroll to this reply (the first unread) instead of the bottom. */
+  const pendingTargetRef = useRef<number | null>(null);
+  /** «رسائل جديدة» divider: the first reply that was unread when the window opened. */
+  const [dividerId, setDividerId] = useState<number | null>(null);
   const [unseen, setUnseen] = useState(0);
   const [announce, setAnnounce] = useState('');
   const prevBtnRef = useRef<HTMLButtonElement>(null);
@@ -151,6 +159,9 @@ function TaskDetailsBody({
     if (merged === cur) return; // nothing new (also drops a reply we already appended)
     if (initial) {
       pendingScrollRef.current = 'instant' as ScrollBehavior;
+      const first = firstUnreadMessageId(merged, data.viewer_last_read_message_id, user?.id);
+      pendingTargetRef.current = first;
+      setDividerId(first);
     } else {
       const known = new Set(cur.map((m) => m.id));
       const fromOthers = merged.filter((m) => !known.has(m.id) && m.user_id !== user?.id).length;
@@ -178,6 +189,7 @@ function TaskDetailsBody({
     return () => ctrl.abort();
   }, [taskId, reloadKey, applyServerTask]);
 
+  const pollNowRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     if (loadState !== 'ready') return;
     let ctrl: AbortController | null = null;
@@ -192,12 +204,56 @@ function TaskDetailsBody({
     };
     const id = window.setInterval(tick, POLL_MS);
     document.addEventListener('visibilitychange', tick);
+    pollNowRef.current = tick;
     return () => {
+      pollNowRef.current = () => undefined;
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', tick);
       ctrl?.abort();
     };
   }, [loadState, taskId, applyServerTask]);
+
+  useRealtimeRefresh(TASK_EVENTS, (batch) => {
+    const mine = batch.some(({ event, payload }) => event === 'resync' || Number((payload as { id?: unknown } | undefined)?.id) === taskId);
+    if (mine) pollNowRef.current();
+  }, 150);
+
+  // ── Read state: only once the replies are on screen ──
+  // On open: as soon as the discussion has loaded (up to the newest reply
+  // shown). Later replies: when the user is at the bottom of the box and the
+  // tab is visible; otherwise they stay unread (the «رسائل جديدة» button
+  // shows them) until the user scrolls down. Never more than what is shown,
+  // so a reply that arrives meanwhile stays unread.
+  const markedUpToRef = useRef(0);
+  const openMarkedRef = useRef(false);
+  const markReadUpTo = useCallback((upTo: number) => {
+    if (upTo <= markedUpToRef.current || document.visibilityState !== 'visible') return;
+    markedUpToRef.current = upTo;
+    tasksService.markConversationRead(taskId, upTo).then(
+      (state) => {
+        if (!aliveRef.current || typeof state?.unread_message_count !== 'number') return;
+        onTaskChanged({ id: taskId, unread_message_count: state.unread_message_count, has_unread_conversation: state.unread_message_count > 0 });
+      },
+      () => {
+        // Not recorded: try again with the next reply / scroll.
+        if (markedUpToRef.current === upTo) markedUpToRef.current = 0;
+      },
+    );
+  }, [taskId, onTaskChanged]);
+  useEffect(() => {
+    if (loadState !== 'ready' || !messages.length) return;
+    const newest = messages[messages.length - 1].id;
+    if (!openMarkedRef.current) {
+      openMarkedRef.current = true;
+      markReadUpTo(newest);
+    } else if (nearBottomRef.current) {
+      markReadUpTo(newest);
+    }
+  }, [messages, loadState, markReadUpTo]);
+  const markShownIfAtBottom = () => {
+    const list = messagesRef.current;
+    if (nearBottomRef.current && list.length) markReadUpTo(list[list.length - 1].id);
+  };
 
   // Auto-scroll lives INSIDE the discussion box only (scrollTo on the box —
   // never scrollIntoView, which also scrolls every ancestor incl. the page).
@@ -206,8 +262,18 @@ function TaskDetailsBody({
     const behavior = pendingScrollRef.current;
     if (!el || !behavior) return;
     pendingScrollRef.current = null;
-    el.scrollTo({ top: el.scrollHeight, behavior });
-    nearBottomRef.current = true;
+    const target = pendingTargetRef.current;
+    pendingTargetRef.current = null;
+    const targetEl = target != null ? el.querySelector<HTMLElement>(`[data-message-id="${target}"]`) : null;
+    if (targetEl) {
+      // Opened with unread replies: start at the first one (divider just above it).
+      const top = targetEl.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 40;
+      el.scrollTo({ top: Math.max(0, top), behavior });
+      nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      nearBottomRef.current = true;
+    }
     setUnseen(0);
   }, [messages, loadState]);
 
@@ -217,13 +283,16 @@ function TaskDetailsBody({
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
     nearBottomRef.current = near;
     if (near && unseen) setUnseen(0);
+    if (near) markShownIfAtBottom();
   };
 
   const jumpToLatest = () => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    nearBottomRef.current = true;
     setUnseen(0);
+    markShownIfAtBottom();
   };
 
   // ── Permissions (unchanged rules; the Backend enforces the same) ──
@@ -557,7 +626,15 @@ function TaskDetailsBody({
                 messages.map((msg) => {
                   const mine = msg.user_id === user?.id;
                   return (
-                    <div key={msg.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                    <React.Fragment key={msg.id}>
+                    {msg.id === dividerId && (
+                      <div className="flex items-center gap-2 py-1" role="separator" aria-label="الرسائل الجديدة تبدأ من هنا">
+                        <div className="h-px flex-1 bg-rose-300 dark:bg-rose-800" />
+                        <span className="text-[11px] font-black text-rose-600 dark:text-rose-400">رسائل جديدة</span>
+                        <div className="h-px flex-1 bg-rose-300 dark:bg-rose-800" />
+                      </div>
+                    )}
+                    <div data-message-id={msg.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
                       <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm ${
                         mine
                           ? 'bg-indigo-600 text-white rounded-bl-md'
@@ -571,6 +648,7 @@ function TaskDetailsBody({
                         <p className="leading-relaxed font-medium whitespace-pre-wrap break-words">{msg.message}</p>
                       </div>
                     </div>
+                    </React.Fragment>
                   );
                 })
               )}

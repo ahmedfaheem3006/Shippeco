@@ -10,6 +10,7 @@ const svc = vi.hoisted(() => ({
   updateTask: vi.fn(),
   updateStatus: vi.fn(),
   addMessage: vi.fn(),
+  markConversationRead: vi.fn().mockResolvedValue({ task_id: 0, last_read_message_id: 0, last_read_at: '', unread_message_count: 0 }),
 }))
 vi.mock('../../services/tasks.service', () => ({ tasksService: svc }))
 const unreg = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }))

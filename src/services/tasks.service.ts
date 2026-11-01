@@ -25,6 +25,23 @@ export interface Task {
   messages?: TaskMessage[];
   /** PATCH /tasks/:id only: false when nothing actually changed. */
   changed?: boolean;
+  // ── Unread discussion, for the signed-in user (GET /tasks) ──
+  /** Replies from others this user has not read yet (0 when none). */
+  unread_message_count?: number;
+  has_unread_conversation?: boolean;
+  first_unread_message_id?: number | null;
+  last_message_at?: string | null;
+  last_read_at?: string | null;
+  /** GET /tasks/:id only: this user's read position (0 = never read). */
+  viewer_last_read_message_id?: number;
+}
+
+export interface ConversationReadState {
+  task_id: number;
+  last_read_message_id: number;
+  last_read_at: string;
+  /** Replies still unread after this call (one may have arrived meanwhile). */
+  unread_message_count: number;
 }
 
 export interface TaskMessage {
@@ -61,11 +78,12 @@ const unwrap = <T,>(result: unknown): T =>
 // and the list miss a just-created task. Writes still go through
 // unifiedService so its cache is invalidated for other pages.
 export const tasksService = {
-  async getTasks(params: { status?: string; scope?: string; view?: string } = {}, signal?: AbortSignal): Promise<Task[]> {
+  async getTasks(params: { status?: string; scope?: string; view?: string; unread?: boolean } = {}, signal?: AbortSignal): Promise<Task[]> {
     const qp = new URLSearchParams();
     if (params.status) qp.set('status', params.status);
     if (params.scope) qp.set('scope', params.scope);
     if (params.view) qp.set('view', params.view);
+    if (params.unread) qp.set('unread', '1');
     return unwrap<Task[]>(await api.get(`/tasks?${qp.toString()}`, { signal }));
   },
 
@@ -88,5 +106,10 @@ export const tasksService = {
 
   async addMessage(taskId: number, message: string): Promise<TaskMessage> {
     return unwrap<TaskMessage>(await unifiedService.post<unknown>(`/tasks/${taskId}/messages`, { message }));
+  },
+
+  /** The task window has shown the discussion up to this reply (only ever moves forward on the server). */
+  async markConversationRead(taskId: number, lastMessageId: number): Promise<ConversationReadState> {
+    return unwrap<ConversationReadState>(await api.post(`/tasks/${taskId}/conversation/read`, { last_message_id: lastMessageId }));
   },
 };

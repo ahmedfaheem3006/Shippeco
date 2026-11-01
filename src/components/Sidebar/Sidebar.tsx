@@ -83,6 +83,7 @@ export function Sidebar({ onNavigate }: Props) {
         </button>
         <button className={navItemClass('/tasks')} onClick={() => go('/tasks')}>
           <ClipboardList size={20} className="shrink-0" /> <span className="flex flex-1 items-center gap-1.5 min-w-0"><span className="whitespace-nowrap">المهام المسؤول عنها</span>
+            <NavBadge count={badges?.unreadTaskConversations} label="مهام بها رسائل غير مقروءة" variant="chat" />
             <NavBadge count={badges?.assignedTasks} label="مهام مفتوحة مسندة إليك" /></span>
         </button>
         {canSeeSupport && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
-import { Plus, ClipboardList, Clock, CheckCircle2, Search, User, ChevronLeft, RotateCcw, AlertCircle, PencilLine, Loader2, FileWarning } from 'lucide-react';
+import { Plus, ClipboardList, Clock, CheckCircle2, Search, User, ChevronLeft, RotateCcw, AlertCircle, PencilLine, Loader2, FileWarning, MessageCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import { tasksService, type Task } from '../services/tasks.service';
@@ -9,6 +9,7 @@ import { TaskDetailsModal, type DraftStore } from '../components/Tasks/TaskDetai
 import { getScrollParent } from '../components/shared/dialogUtils';
 import { describeTaskError, filterTasksBySearch, formatSar, nearestSurvivingId, neighborIds } from '../components/Tasks/taskUtils';
 import { UnregisteredInvoicesPanel } from '../components/Tasks/UnregisteredInvoicesPanel';
+import { TaskUnreadBadge } from '../components/Tasks/TaskUnreadBadge';
 import { unregisteredInvoicesService } from '../services/unregisteredInvoices.service';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
@@ -21,12 +22,15 @@ const UNREGISTERED_TAB = 'unregistered';
  *  assignee (old and new), the sender and admin/manager — everyone whose count
  *  can change. Not nav:badges: support traffic fires it often and each event
  *  clears the API cache. The task list itself is re-read on the same event. */
-const TASKS_UPDATED_EVENTS = ['tasks:updated'] as const;
+const TASKS_UPDATED_EVENTS = ['tasks:updated', 'tasks:read'] as const;
+// tasks:updated also fires for every new reply (action 'message') — the list
+// re-reads its per-user unread counts; tasks:read = this user read a task
+// elsewhere (another tab/device), so its badge goes away here too.
 
-function paramsFor(tab: FilterTab): { status?: string; view?: string } {
-  if (tab === 'received' || tab === 'assigned') return { view: tab };
-  if (tab === 'open' || tab === 'closed') return { status: tab };
-  return {};
+function paramsFor(tab: FilterTab, unreadOnly = false): { status?: string; view?: string; unread?: boolean } {
+  const base: { status?: string; view?: string } =
+    tab === 'received' || tab === 'assigned' ? { view: tab } : tab === 'open' || tab === 'closed' ? { status: tab } : {};
+  return unreadOnly ? { ...base, unread: true } : base;
 }
 
 const PAYMENT_BADGE: Record<number, { label: string; cls: string }> = {
@@ -70,10 +74,14 @@ export const TasksPage: React.FC = () => {
   const reqSeq = useRef(0);
   const filterRef = useRef(statusFilter);
   const searchRef = useRef(search);
+  // «رسائل غير مقروءة»: same tab, narrowed by the server to tasks with unread replies.
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const unreadOnlyRef = useRef(unreadOnly);
   useLayoutEffect(() => {
     filterRef.current = statusFilter;
     searchRef.current = search;
-  }, [statusFilter, search]);
+    unreadOnlyRef.current = unreadOnly;
+  }, [statusFilter, search, unreadOnly]);
 
   // Same permission the Backend enforces on POST /tasks (see
   // requireRole('admin', 'manager', 'accountant') in tasks.routes.ts) —
@@ -118,7 +126,7 @@ export const TasksPage: React.FC = () => {
     const seq = ++reqSeq.current;
     // (the visible "loading" state is set by whoever triggers the fetch)
     try {
-      const data = await tasksService.getTasks(paramsFor(filterRef.current));
+      const data = await tasksService.getTasks(paramsFor(filterRef.current, unreadOnlyRef.current));
       if (seq !== reqSeq.current) return null; // a newer request (e.g. another tab) won
       const rows = Array.isArray(data) ? data : [];
       if (mode === 'background') captureAnchor();
@@ -148,7 +156,12 @@ export const TasksPage: React.FC = () => {
     // The "فواتير غير مسجلة" tab loads its own (paged, server-searched) list.
     if (statusFilter === 'unregistered') return;
     void fetchTasks('replace');
-  }, [statusFilter, fetchTasks]);
+  }, [statusFilter, unreadOnly, fetchTasks]);
+  const toggleUnreadOnly = () => {
+    unreadOnlyRef.current = !unreadOnly;
+    setPhase((p) => (p === 'initial' || p === 'error' ? 'initial' : 'switching'));
+    setUnreadOnly((v) => !v);
+  };
 
   const changeFilter = (tab: FilterTab) => {
     if (tab === statusFilter) return;
@@ -215,6 +228,7 @@ export const TasksPage: React.FC = () => {
 
   const filteredTasks = useMemo(() => filterTasksBySearch(tasks, search), [tasks, search]);
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const unreadTasks = useMemo(() => tasks.filter((t) => (t.unread_message_count ?? 0) > 0).length, [tasks]);
   const stats = useMemo(() => ({
     total: tasks.length,
     open: tasks.filter((t) => t.status === 'open').length,
@@ -475,6 +489,24 @@ export const TasksPage: React.FC = () => {
             )}
           </div>
         </div>
+        {!onUnregisteredTab && (unreadTasks > 0 || unreadOnly) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleUnreadOnly}
+              aria-pressed={unreadOnly}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors ${
+                unreadOnly
+                  ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                  : 'bg-white dark:bg-slate-800 border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/20'
+              }`}
+            >
+              <MessageCircle size={14} aria-hidden="true" />
+              {unreadOnly ? 'عرض كل المهام' : 'رسائل غير مقروءة'}
+              {!unreadOnly && <span className="tabular-nums" aria-label={`${unreadTasks} مهمة بها رسائل غير مقروءة`}>({unreadTasks})</span>}
+            </button>
+          </div>
+        )}
         {(busy || refreshError) && (
           <div className="mt-2 flex items-center gap-2 text-xs font-semibold" role="status">
             {busy ? (
@@ -523,14 +555,20 @@ export const TasksPage: React.FC = () => {
           {filteredTasks.map((task) => {
             const isActive = detailsOpen && task.id === activeTaskId;
             const payment = PAYMENT_BADGE[task.invoice_payment_status ?? 0] || PAYMENT_BADGE[0];
+            const unread = task.unread_message_count ?? 0;
             return (
               <div
                 key={task.id}
                 data-task-id={task.id}
+                data-unread={unread > 0 ? unread : undefined}
                 data-scroll-anchor=""
                 onClick={() => openTask(task.id)}
-                className={`group bg-white dark:bg-slate-800 rounded-3xl border shadow-sm hover:shadow-xl hover:border-indigo-200 dark:hover:border-indigo-900 transition-[box-shadow,border-color] cursor-pointer overflow-hidden flex flex-col ${
-                  isActive ? 'border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-500/30' : 'border-slate-100 dark:border-slate-700'
+                className={`group rounded-3xl border shadow-sm hover:shadow-xl hover:border-indigo-200 dark:hover:border-indigo-900 transition-[box-shadow,border-color] cursor-pointer overflow-hidden flex flex-col ${
+                  isActive
+                    ? 'bg-white dark:bg-slate-800 border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-500/30'
+                    : unread > 0
+                      ? 'bg-rose-50/40 dark:bg-slate-800 border-rose-300 dark:border-rose-800/70 ring-1 ring-rose-200/70 dark:ring-rose-900/40'
+                      : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700'
                 }`}
               >
                 <div className="p-6 flex-1">
@@ -560,7 +598,10 @@ export const TasksPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 group-hover:text-indigo-600 transition-colors line-clamp-2">{task.title}</h3>
+                  <div className="flex items-start gap-3 mb-2">
+                    <h3 className={`flex-1 min-w-0 text-lg text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors line-clamp-2 break-words ${unread > 0 ? 'font-extrabold' : 'font-bold'}`}>{task.title}</h3>
+                    <TaskUnreadBadge count={unread} onOpen={() => openTask(task.id)} className="mt-0.5" />
+                  </div>
                   <p className="text-slate-500 dark:text-slate-400 text-xs line-clamp-3 leading-relaxed mb-4">{task.description || 'بدون وصف إضافي'}</p>
 
                   {task.invoice_id && (

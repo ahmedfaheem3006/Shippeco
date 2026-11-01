@@ -18,12 +18,13 @@ import {
   CancelUnregisteredDialog, CreateUnregisteredInvoiceModal, EditUnregisteredInvoiceModal, LinkInvoiceModal,
 } from './UnregisteredInvoiceDialogs';
 import { canEditTask } from './taskUtils';
+import { TaskUnreadBadge } from './TaskUnreadBadge';
 import {
   STATE_BADGE, UNREGISTERED_PAGE_SIZE, describeUnregisteredError, formatAwbDate, formatRiyadhDateTime, invoicePath,
 } from './unregisteredInvoiceUtils';
 
 /** Socket events after which the list is re-read from the server. */
-const UNREGISTERED_EVENTS = ['tasks:updated'] as const;
+const UNREGISTERED_EVENTS = ['tasks:updated', 'tasks:read'] as const;
 
 type Props = {
   /** The page's search box (server-side search here: AWB, invoice number, employee). */
@@ -260,11 +261,17 @@ export const UnregisteredInvoicesPanel: React.FC<Props> = ({ search, recordId, o
           >
             {items.map((r) => {
               const badge = STATE_BADGE[r.state];
+              const unread = r.unread_message_count ?? 0;
               return (
                 <article
                   key={r.id}
                   data-unregistered-id={r.id}
-                  className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col min-w-0"
+                  data-unread={unread > 0 ? unread : undefined}
+                  className={`rounded-3xl border shadow-sm overflow-hidden flex flex-col min-w-0 ${
+                    unread > 0
+                      ? 'bg-rose-50/40 dark:bg-slate-800 border-rose-300 dark:border-rose-800/70 ring-1 ring-rose-200/70 dark:ring-rose-900/40'
+                      : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700'
+                  }`}
                 >
                   <div className="p-5 sm:p-6 flex-1 space-y-4 min-w-0">
                     <div className="flex flex-wrap justify-between items-start gap-2">
@@ -364,11 +371,12 @@ export const UnregisteredInvoicesPanel: React.FC<Props> = ({ search, recordId, o
                           <XCircle size={14} /> إلغاء
                         </button>
                       )}
+                      <TaskUnreadBadge count={unread} onOpen={() => onOpenTask(r.id)} className="ms-auto" />
                       <button
                         type="button"
                         onClick={() => onOpenTask(r.id)}
                         aria-haspopup="dialog"
-                        className="ms-auto flex items-center gap-1 px-2 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:underline"
+                        className={`${unread > 0 ? '' : 'ms-auto '}flex items-center gap-1 px-2 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:underline`}
                       >
                         <MessageSquare size={14} /> المناقشة
                       </button>

@@ -158,3 +158,17 @@ export function formatSar(v: unknown): string {
   const n = typeof v === 'number' ? v : parseFloat(String(v));
   return Number.isFinite(n) ? `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAR` : '—';
 }
+
+/** Arabic count of unread replies: «رسالة جديدة», «رسالتان جديدتان», «3 رسائل جديدة», «11 رسالة جديدة». */
+export function unreadRepliesLabel(n: number): string {
+  if (n <= 1) return 'رسالة جديدة';
+  if (n === 2) return 'رسالتان جديدتان';
+  if (n <= 10) return `${n} رسائل جديدة`;
+  return `${n} رسالة جديدة`;
+}
+
+/** The first reply from someone else after the reader's last read position (where the window opens). */
+export function firstUnreadMessageId(messages: TaskMessage[], lastReadId: number | null | undefined, userId: number | null | undefined): number | null {
+  if (lastReadId == null) return null;
+  return messages.find((m) => m.id > lastReadId && m.user_id !== userId)?.id ?? null;
+}

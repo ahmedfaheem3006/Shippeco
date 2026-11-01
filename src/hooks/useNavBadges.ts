@@ -6,6 +6,8 @@ import { useSocket } from '../contexts/SocketContext'
 /** Server-computed sidebar counters (null = the user may not see that section). */
 export type NavBadges = {
   assignedTasks: number
+  /** Tasks (not messages) whose discussion has a reply this user has not read. */
+  unreadTaskConversations?: number
   supportAttention: number | null
   shippingRequests: number | null
 }

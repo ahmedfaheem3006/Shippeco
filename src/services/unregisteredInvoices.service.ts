@@ -26,6 +26,9 @@ export interface UnregisteredInvoice {
   completed_by: number | null;
   completed_by_name: string | null;
   completed_at: string | null;
+  /** List only: replies on its discussion the signed-in user has not read. */
+  unread_message_count?: number;
+  has_unread_conversation?: boolean;
 }
 
 export interface UnregisteredCounts {
