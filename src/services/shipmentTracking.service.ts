@@ -7,7 +7,7 @@ export type NormalizedStatus =
 
 // Keep in sync with Backend src/validators/shipmentTracking.validator.ts
 export type TrackingStatusFilter =
-  | 'all' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'problem' | 'exception' | 'on_hold' | 'customs' | 'pre_transit' | 'not_synced' | 'unknown';
+  | 'all' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'not_delivered' | 'problem' | 'exception' | 'on_hold' | 'customs' | 'pre_transit' | 'not_synced' | 'unknown';
 export type TrackingSyncFilter = 'all' | 'recent_1h' | 'recent_24h' | 'never' | 'stale' | 'failed';
 
 /** One tracked AWB (GET /shipment-tracking). Business fields come from the invoice. */
@@ -56,6 +56,19 @@ export interface TrackingItem {
   consecutive_failures: number;
   last_error_code: string | null;
   last_error_message: string | null;
+  /** First time SHIPPEC saw this AWB. */
+  discovered_at?: string | null;
+  dhl_shipment_id?: number | null;
+  shippec_reference?: string | null;
+  receiver_name?: string | null;
+  sources?: Array<'shippec_created' | 'invoice_awb' | 'manual_lookup' | 'dhl_billing' | 'reference_query'>;
+  /** DHL's actual collection (earliest PU checkpoint). */
+  pickup_at?: string | null;
+  pickup_local?: string | null;
+  pickup_gmt_offset?: string | null;
+  pickup_location?: string | null;
+  /** pending | unknown | stale | current (Backend trackingFreshness). */
+  freshness?: 'pending' | 'unknown' | 'stale' | 'current';
 }
 
 export interface TrackingEvent {
@@ -121,7 +134,10 @@ export interface TrackingSummary {
   counts: TrackingCounts;
   countries: { origin: { code: string; count: number }[]; destination: { code: string; count: number }[] };
   /** Never contains credentials — only whether DHL is usable. */
-  integration: { enabled: boolean; env: 'test' | 'production' | null; usable: boolean; syncEnabled: boolean; syncIntervalMinutes: number };
+  integration: {
+    enabled: boolean; env: 'test' | 'production' | null; usable: boolean; syncEnabled: boolean; syncIntervalMinutes: number;
+    features?: { tracking?: boolean; trackingLookup?: boolean };
+  };
 }
 
 export interface TrackingListParams {
@@ -141,6 +157,14 @@ export interface TrackingListParams {
 export interface TrackingListResponse {
   items: TrackingItem[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+/** GET /shipment-tracking/lookup/:awb — local record, a DHL lookup (staff), or why there is none. */
+export interface LookupResult {
+  result: 'local' | 'remote' | 'not_found' | 'remote_lookup_required';
+  awb: string;
+  record: TrackingDetails | null;
+  remote_lookup_available?: boolean;
 }
 
 export interface RefreshResult {
@@ -169,6 +193,11 @@ export const shipmentTrackingService = {
 
   async details(awb: string, signal?: AbortSignal): Promise<TrackingDetails> {
     return api.get<TrackingDetails>(`${BASE}/${encodeURIComponent(awb)}`, { signal });
+  },
+
+  /** Direct AWB search: local first; for staff the Backend may ask DHL once and register the AWB. */
+  async lookup(awb: string): Promise<LookupResult> {
+    return api.get<LookupResult>(`${BASE}/lookup/${encodeURIComponent(awb)}`);
   },
 
   /** Backend asks MyDHL (the browser never calls DHL). */

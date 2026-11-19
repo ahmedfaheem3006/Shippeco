@@ -10,13 +10,19 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly details: { field: string; message: string }[];
+  /** The server's `error.details` as sent (an object such as { problems } / { issues } is kept here). */
+  readonly rawDetails?: unknown;
+  /** The whole JSON body (e.g. a DHL refusal answers 422 with { success: false, data }). */
+  readonly body?: unknown;
 
-  constructor(message: string, status: number, code?: string, details?: { field: string; message: string }[]) {
+  constructor(message: string, status: number, code?: string, details?: unknown, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
-    this.details = Array.isArray(details) ? details : [];
+    this.details = Array.isArray(details) ? (details as { field: string; message: string }[]) : [];
+    this.rawDetails = details;
+    this.body = body;
   }
 }
 
@@ -97,6 +103,7 @@ class ApiClient {
         res.status,
         json?.error?.code,
         json?.error?.details,
+        json,
       );
     }
     

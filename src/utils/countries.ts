@@ -31,7 +31,21 @@ export const COUNTRIES: CountryInfo[] = [
   { iso: 'GB', nameAr: 'المملكة المتحدة', nameEn: 'United Kingdom', dialCode: '+44' },
 ]
 
-export const countryNameAr = (iso: string) => COUNTRIES.find((c) => c.iso === iso)?.nameAr ?? iso
+let arRegions: Intl.DisplayNames | null | undefined
+/** Arabic country name: the curated list first, then the browser's own Arabic name, else the ISO code. */
+export const countryNameAr = (iso: string) => {
+  const known = COUNTRIES.find((c) => c.iso === iso)?.nameAr
+  if (known) return known
+  if (arRegions === undefined) {
+    try { arRegions = new Intl.DisplayNames(['ar'], { type: 'region' }) } catch { arRegions = null }
+  }
+  try {
+    const name = /^[A-Z]{2}$/.test(iso) ? arRegions?.of(iso) : undefined
+    return name && name !== iso ? name : iso
+  } catch {
+    return iso
+  }
+}
 
 const ARABIC_INDIC_DIGITS: Record<string, string> = {
   '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
