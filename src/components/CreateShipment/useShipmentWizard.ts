@@ -1,0 +1,330 @@
+/**
+ * State + Backend calls of the «إنشاء شحنة» wizard. Every DHL step goes
+ * through the SHIPPEC Backend; nothing here can create a shipment except
+ * `create()`, which runs only from the explicit confirmation on the review step.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'react-hot-toast';
+import { ApiError } from '../../utils/apiClient';
+import { describeApiError } from '../../utils/apiErrors';
+import {
+  dhlShipmentService, type CreateResult, type DhlShipment, type Issue, type ProductOption, type RateQuote, type ValidationResult,
+} from '../../services/dhlShipment.service';
+import {
+  emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, translateIssue, visibleSteps,
+  type FieldErrors, type StepId, type WizardForm,
+} from './wizardModel';
+
+export type CostMode = 'dhl_quote' | 'manual' | 'unknown';
+export interface Pricing { selling_price: string; cost_mode: CostMode; manual_cost: string }
+export type CreatePhase = 'idle' | 'saving' | 'validating' | 'pricing' | 'confirming' | 'sending' | 'done';
+
+/** Problems the Backend sends with a blocked step (409 CONFIRMATION_BLOCKED → details.problems, 422 → details.issues). */
+function issuesOf(err: unknown): Issue[] {
+  if (!(err instanceof ApiError)) return [];
+  if (err.details.length) return err.details;
+  const raw = err.rawDetails as { issues?: Issue[]; problems?: Array<{ code: string; message: string }> } | undefined;
+  if (raw?.issues?.length) return raw.issues;
+  if (raw?.problems?.length) return raw.problems.map((p) => ({ field: problemField(p.code), message: p.message }));
+  return [];
+}
+const problemField = (code: string) => ({
+  PRODUCT_REQUIRED: 'product_code', PRODUCT_NOT_VERIFIED: 'product_code', QUOTE_STALE: 'product_code', PRICE_NOT_APPROVED: 'price',
+  CLIENT_REQUIRED: 'client', DHL_VALIDATION_REQUIRED: 'dhl', VALIDATION_ISSUES: 'dhl', VALIDATION_STALE: 'dhl', CONTENT_CHANGED: 'dhl',
+} as Record<string, string>)[code] ?? 'review';
+
+export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
+  const [form, setForm] = useState<WizardForm>(emptyForm);
+  const [shipment, setShipment] = useState<DhlShipment | null>(null);
+  const [savedJson, setSavedJson] = useState<string | null>(null);
+  const [step, setStep] = useState<StepId>('parties');
+  const [loading, setLoading] = useState<boolean>(!!opts.draftId);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [stepIssues, setStepIssues] = useState<Partial<Record<StepId, number>>>({});
+  const [products, setProducts] = useState<ProductOption[] | null>(null);
+  const [quotes, setQuotes] = useState<RateQuote[] | null>(null);
+  const [servicesSnapshot, setServicesSnapshot] = useState<string | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+  const [selecting, setSelecting] = useState<string | null>(null);
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validatedJson, setValidatedJson] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [pricing, setPricing] = useState<Pricing>({ selling_price: '', cost_mode: 'dhl_quote', manual_cost: '' });
+  const [createPhase, setCreatePhase] = useState<CreatePhase>('idle');
+  const [createError, setCreateError] = useState<{ message: string; issues: Issue[] } | null>(null);
+  const [result, setResult] = useState<CreateResult | null>(null);
+  const inFlight = useRef(false);
+
+  const contentJson = useMemo(() => JSON.stringify(toContent(form)), [form]);
+  const dirty = savedJson !== contentJson;
+  const steps = useMemo(() => visibleSteps(form), [form]);
+  const snapshot = useMemo(() => routeSnapshot(form), [form]);
+  const servicesStale = !!servicesSnapshot && servicesSnapshot !== snapshot;
+
+  const applyShipment = useCallback((sh: DhlShipment, opt: { resetForm?: boolean; clientName?: string } = {}) => {
+    setShipment(sh);
+    if (opt.resetForm) {
+      const f = fromShipment(sh, opt.clientName ?? '');
+      setForm(f);
+      setSavedJson(JSON.stringify(toContent(f)));
+    }
+  }, []);
+
+  // Resume a draft (?draft=ID)
+  useEffect(() => {
+    if (!opts.draftId) return;
+    let alive = true;
+    setLoading(true);
+    dhlShipmentService.get(opts.draftId).then((sh) => {
+      if (!alive) return;
+      applyShipment(sh, { resetForm: true, clientName: String(sh['client_name'] ?? '') });
+      if (sh.available_products) setProducts(sh.available_products);
+      if (sh.rate_quotes) setQuotes(sh.rate_quotes);
+      if (sh.selling_price != null) {
+        setPricing({ selling_price: String(Number(sh.selling_price)), cost_mode: (sh.dhl_cost_source ?? 'dhl_quote') as CostMode, manual_cost: sh.dhl_cost != null ? String(Number(sh.dhl_cost)) : '' });
+      }
+      setLoadError(null);
+      setLoading(false);
+    }, (err) => {
+      if (!alive) return;
+      setLoadError(describeApiError(err, 'تعذر تحميل المسودة'));
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [opts.draftId, applyShipment]);
+
+  // Products / quotes fetched before a reload belong to the stored route.
+  useEffect(() => {
+    if (shipment && products && servicesSnapshot === null && !dirty) setServicesSnapshot(snapshot);
+  }, [shipment, products, servicesSnapshot, dirty, snapshot]);
+
+  // Unsaved changes: the browser asks before leaving the page.
+  useEffect(() => {
+    if (!dirty || result) return;
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [dirty, result]);
+
+  const update = useCallback((fn: (f: WizardForm) => WizardForm) => setForm((f) => fn(f)), []);
+
+  const showIssues = useCallback((issues: Issue[]) => {
+    const { errors: e, byStep } = issuesToErrors(issues);
+    setErrors(e);
+    setStepIssues(byStep);
+  }, []);
+
+  /**
+   * The SHIPPEC price travels with the draft: whoever prepares the shipment prices it, and whoever
+   * creates it (often a manager) finds that price — not an empty field. Quietly skipped while the
+   * DHL quote is stale or the role may not price; create() still sets the price explicitly.
+   */
+  const pricedJson = useRef<string | null>(null);
+  const persistPrice = useCallback(async (sh: DhlShipment) => {
+    const selling = Number(pricing.selling_price);
+    if (!pricing.selling_price.trim() || !Number.isFinite(selling) || selling <= 0 || !form.product_code) return;
+    if (pricing.cost_mode === 'manual' && !pricing.manual_cost.trim()) return;
+    const q = quotes?.find((x) => x.productCode === form.product_code);
+    if (pricing.cost_mode === 'dhl_quote' && (!q || q.amount == null || q.currency !== 'SAR' || servicesStale)) return;
+    const key = JSON.stringify([sh.id, sh.content_fingerprint ?? null, pricing, form.product_code, q?.amount ?? null]);
+    if (pricedJson.current === key) return;
+    try {
+      const r = await dhlShipmentService.setPricing(sh.id, {
+        selling_price: selling, price_currency: 'SAR', dhl_cost_source: pricing.cost_mode,
+        ...(pricing.cost_mode === 'manual' ? { dhl_cost: Number(pricing.manual_cost) } : {}),
+      });
+      pricedJson.current = key;
+      setShipment(r.shipment);
+    } catch { /* not stored now (stale quote / role / locked): the price is approved again at creation */ }
+  }, [pricing, form.product_code, quotes, servicesStale]);
+
+  /** Saves the draft when it changed (create on first save), then its SHIPPEC price. Returns the stored shipment. */
+  const saveContent = useCallback(async (quiet = true): Promise<DhlShipment | null> => {
+    const content = toContent(form);
+    const json = JSON.stringify(content);
+    if (shipment && json === savedJson) return shipment;
+    setSaving(true);
+    try {
+      let sh: DhlShipment;
+      if (!shipment) {
+        sh = await dhlShipmentService.createDraft(content);
+      } else {
+        if (shipment.creation_status === 'ready') await dhlShipmentService.unconfirm(shipment.id);
+        sh = await dhlShipmentService.updateDraft(shipment.id, content);
+      }
+      setShipment(sh);
+      setSavedJson(json);
+      setValidation(null);
+      setErrors({});
+      setStepIssues({});
+      if (!quiet) toast.success('تم حفظ المسودة');
+      if (!shipment) window.history.replaceState(window.history.state, '', `/create-shipment?draft=${sh.id}`);
+      return sh;
+    } catch (err) {
+      const issues = issuesOf(err);
+      if (issues.length) showIssues(issues);
+      toast.error(issues.length ? 'تعذر الحفظ — راجع الحقول المحددة' : describeApiError(err, 'تعذر حفظ المسودة'));
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }, [form, shipment, savedJson, showIssues]);
+
+  const save = useCallback(async (quiet = true): Promise<DhlShipment | null> => {
+    const sh = await saveContent(quiet);
+    if (sh && sh.creation_status !== 'ready') await persistPrice(sh);
+    return sh;
+  }, [saveContent, persistPrice]);
+
+  /** DHL products + quotes for the current route (through the Backend). */
+  const fetchServices = useCallback(async () => {
+    setServicesLoading(true);
+    setServicesError(null);
+    try {
+      const sh = await save();
+      if (!sh) return;
+      const [p, r] = await Promise.allSettled([dhlShipmentService.checkProducts(sh.id), dhlShipmentService.checkRates(sh.id)]);
+      if (p.status === 'rejected') throw p.reason;
+      setProducts(p.value.products);
+      setQuotes(r.status === 'fulfilled' ? r.value.quotes : []);
+      if (r.status === 'rejected') setServicesError(`تعذر جلب الأسعار: ${describeApiError(r.reason, 'أعد المحاولة')}`);
+      setServicesSnapshot(routeSnapshot(form));
+      const still = p.value.products.some((x) => x.productCode === form.product_code);
+      if (form.product_code && !still) setForm((f) => ({ ...f, product_code: '', local_product_code: '' }));
+    } catch (err) {
+      const issues = issuesOf(err);
+      if (issues.length) showIssues(issues);
+      setServicesError(err instanceof ApiError && err.code === 'ROUTE_INCOMPLETE'
+        ? routeIssuesText(issues)
+        : describeApiError(err, 'تعذر جلب خدمات DHL'));
+    } finally {
+      setServicesLoading(false);
+    }
+  }, [save, form, showIssues]);
+
+  const chooseProduct = useCallback(async (code: string) => {
+    setSelecting(code);
+    try {
+      const sh = await save();
+      if (!sh) return;
+      const updated = await dhlShipmentService.selectProduct(sh.id, code);
+      setShipment(updated);
+      const next = { ...form, product_code: updated.product_code ?? code, local_product_code: updated.local_product_code ?? '' };
+      setForm(next);
+      setSavedJson(JSON.stringify(toContent(next)));
+      setPricing((p) => ({ ...p, cost_mode: 'dhl_quote' }));
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'PRODUCTS_STALE') {
+        toast.error('تغيّرت بيانات الشحنة — حدّث قائمة الخدمات');
+        setServicesSnapshot('stale');
+      } else toast.error(describeApiError(err, 'تعذر اختيار الخدمة'));
+    } finally {
+      setSelecting(null);
+    }
+  }, [save, form]);
+
+  /** Local rules + DHL validateDataOnly (nothing is created). */
+  const validate = useCallback(async (): Promise<ValidationResult | null> => {
+    setValidating(true);
+    try {
+      const sh = await save();
+      if (!sh) return null;
+      const r = await dhlShipmentService.validate(sh.id);
+      setShipment(r.shipment);
+      setValidation(r);
+      setValidatedJson(JSON.stringify(toContent(form)));
+      showIssues(r.issues);
+      return r;
+    } catch (err) {
+      toast.error(describeApiError(err, 'تعذر التحقق من البيانات'));
+      return null;
+    } finally {
+      setValidating(false);
+    }
+  }, [save, form, showIssues]);
+
+  const quote = useMemo(() => quotes?.find((q) => q.productCode === form.product_code) ?? null, [quotes, form.product_code]);
+  const dhlCost = pricing.cost_mode === 'dhl_quote' ? quote?.amount ?? null : pricing.cost_mode === 'manual' ? (Number(pricing.manual_cost) || (pricing.manual_cost === '0' ? 0 : null)) : null;
+
+  /**
+   * The ONE creation: save → validate (when needed) → price → confirm → create.
+   * A second click while it runs does nothing; the result decides what is shown.
+   */
+  const create = useCallback(async () => {
+    if (inFlight.current || result) return;
+    inFlight.current = true;
+    setCreateError(null);
+    try {
+      setCreatePhase('saving');
+      let sh = await save();
+      if (!sh) throw new Error('تعذر حفظ المسودة');
+      const json = JSON.stringify(toContent(form));
+      if (sh.creation_status !== 'ready') {
+        if (!(sh.creation_status === 'validated' && validatedJson === json && sh.dhl_validation_status === 'passed')) {
+          setCreatePhase('validating');
+          const v = await dhlShipmentService.validate(sh.id);
+          setValidation(v);
+          setValidatedJson(json);
+          sh = v.shipment;
+          if (!v.ok || v.dhl_validation.status !== 'passed') {
+            showIssues(v.issues);
+            setCreateError({ message: v.ok ? 'لم يكتمل تحقق DHL — أعد المحاولة بعد قليل' : 'البيانات لا تجتاز التحقق — صحّح الحقول المحددة', issues: v.issues });
+            return;
+          }
+        }
+        setCreatePhase('pricing');
+        const selling = Number(pricing.selling_price);
+        await dhlShipmentService.setPricing(sh.id, {
+          selling_price: selling, price_currency: 'SAR', dhl_cost_source: pricing.cost_mode,
+          ...(pricing.cost_mode === 'manual' ? { dhl_cost: Number(pricing.manual_cost) } : {}),
+        });
+        setCreatePhase('confirming');
+        sh = await dhlShipmentService.confirm(sh.id);
+        setShipment(sh);
+      }
+      setCreatePhase('sending');
+      const r = await dhlShipmentService.create(sh.id);
+      setResult(r);
+      setShipment(r.shipment);
+      setCreatePhase('done');
+    } catch (err) {
+      const issues = issuesOf(err);
+      if (issues.length) showIssues(issues);
+      setCreateError({ message: describeApiError(err, 'تعذر إنشاء الشحنة'), issues: issues.map((i) => ({ ...i, message: translateIssue(i.message) })) });
+      setCreatePhase('idle');
+    } finally {
+      inFlight.current = false;
+      setCreatePhase((p) => (p === 'done' ? p : 'idle'));
+    }
+  }, [result, save, form, validatedJson, pricing, showIssues]);
+
+  const reset = useCallback(() => {
+    setForm(emptyForm());
+    setShipment(null);
+    setSavedJson(null);
+    setStep('parties');
+    setErrors({});
+    setStepIssues({});
+    setProducts(null);
+    setQuotes(null);
+    setServicesSnapshot(null);
+    setValidation(null);
+    setValidatedJson(null);
+    setPricing({ selling_price: '', cost_mode: 'dhl_quote', manual_cost: '' });
+    setCreatePhase('idle');
+    setCreateError(null);
+    setResult(null);
+    window.history.replaceState(window.history.state, '', '/create-shipment');
+  }, []);
+
+  return {
+    form, update, shipment, setShipment, step, setStep, steps, loading, loadError, saving, dirty, errors, stepIssues,
+    save, products, quotes, quote, servicesLoading, servicesError, servicesStale, fetchServices, chooseProduct, selecting,
+    validate, validation, validating, validationCurrent: validatedJson === contentJson && !!validation,
+    pricing, setPricing, dhlCost, create, createPhase, createError, result, setResult, reset, customs: needsCustoms(form),
+  };
+}
+export type Wizard = ReturnType<typeof useShipmentWizard>;

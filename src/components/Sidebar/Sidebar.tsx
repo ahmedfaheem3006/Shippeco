@@ -2,9 +2,10 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, BarChart3, Users, PlusCircle,
   Calculator, ClipboardCheck, TrendingUp, ClipboardList,
-  FileCode, MessageSquare, CreditCard, Settings, LogOut, Send, Headphones, PackageSearch
+  FileCode, MessageSquare, CreditCard, Settings, LogOut, Send, Headphones, PackageSearch, PackagePlus
 } from 'lucide-react'
 import { canSupport } from '../../utils/support'
+import { canShipment } from '../../utils/dhlShipmentPermissions'
 import shippecLogo from '../../assets/shippec.jpeg'
 import { useAuthStore } from '../../hooks/useAuthStore'
 import { useNavBadges } from '../../hooks/useNavBadges'
@@ -33,6 +34,8 @@ export function Sidebar({ onNavigate }: Props) {
   // endpoints (requireRole('admin', 'manager')).
   const canReviewQuoteRequests = user?.role === 'admin' || user?.role === 'manager'
   const canSeeSupport = canSupport(user?.role, 'support.view')
+  // Same role map as the Backend's DHL shipment permissions (create_draft).
+  const canCreateShipment = canShipment(user?.role, 'create_draft')
   // Counters computed by the server for this user (see useNavBadges).
   const badges = useNavBadges()
 
@@ -66,6 +69,11 @@ export function Sidebar({ onNavigate }: Props) {
         <button className={navItemClass('/invoices')} onClick={() => go('/invoices')}>
           <FileText size={20} /> الفواتير
         </button>
+        {canCreateShipment && (
+          <button className={navItemClass('/create-shipment')} onClick={() => go('/create-shipment')}>
+            <PackagePlus size={20} /> إنشاء شحنة
+          </button>
+        )}
         <button className={navItemClass('/shipment-tracking')} onClick={() => go('/shipment-tracking')}>
           <PackageSearch size={20} /> متابعة البوليصة
         </button>

@@ -35,6 +35,7 @@ const PublicPayPage = lazy(() => import('./pages/PublicPayPage').then((m) => ({ 
 const QuoteRequestsPage = lazy(() => import('./pages/QuoteRequestsPage').then((m) => ({ default: m.QuoteRequestsPage })))
 const ShipmentTrackingPage = lazy(() => import('./pages/ShipmentTrackingPage').then((m) => ({ default: m.ShipmentTrackingPage })))
 const ShipmentTrackingDetailsPage = lazy(() => import('./pages/ShipmentTrackingDetailsPage').then((m) => ({ default: m.ShipmentTrackingDetailsPage })))
+const CreateShipmentPage = lazy(() => import('./pages/CreateShipmentPage').then((m) => ({ default: m.CreateShipmentPage })))
 const SupportCenterPage = lazy(() => import('./pages/SupportCenterPage').then((m) => ({ default: m.SupportCenterPage })))
 
 function RouteFallback() {
@@ -178,6 +179,7 @@ function App() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/shipment-tracking" element={<ShipmentTrackingPage />} />
           <Route path="/shipment-tracking/:awb" element={<ShipmentTrackingDetailsPage />} />
+          <Route path="/create-shipment" element={<CreateShipmentPage />} />
           <Route
             path="/support"
             element={
