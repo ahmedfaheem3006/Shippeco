@@ -173,6 +173,69 @@ export interface RefreshResult {
   record: TrackingDetails;
 }
 
+/** GET /shipment-tracking/admin/backfill/status — admin only, PostgreSQL only (never calls DHL). */
+export interface BackfillRun {
+  id: number;
+  status: 'running' | 'paused' | 'completed' | 'cancelled';
+  scope: 'unsynced' | 'active';
+  batch_size: number;
+  discovered: number;
+  queued: number;
+  processed: number;
+  successful: number;
+  not_found: number;
+  failed: number;
+  temporary_errors: number;
+  permanent_errors: number;
+  skipped: number;
+  remaining: number;
+  batches_completed: number;
+  api_calls: number;
+  started_at: string;
+  last_activity_at: string | null;
+  paused_at: string | null;
+  finished_at: string | null;
+  last_error_code: string | null;
+  last_error_at: string | null;
+}
+
+export interface TrackingSyncStatus {
+  env: 'test' | 'production' | null;
+  /** Why the worker cannot make progress now (null = it can). */
+  blocked_by: 'not_configured' | 'tracking_disabled' | 'sync_disabled' | 'paused' | null;
+  bulk_batch_size: number;
+  calls_per_cycle: number;
+  daily_call_limit: number;
+  run: BackfillRun | null;
+  registration: {
+    /** Distinct DHL AWBs on SHIPPEC invoices. */
+    invoice_awbs: number;
+    registered_from_invoices: number;
+    tracked: number;
+    synced: number;
+    waiting_first_sync: number;
+    not_found: number;
+    errors: number;
+    polling: number;
+    last_synced_at: string | null;
+  };
+  today: { api_calls: number; errors: number; awbs_requested: number; awbs_found: number; awbs_not_found: number; awbs_failed: number } | null;
+  last_successful_sync_at: string | null;
+}
+
+export interface InvoiceDiscoveryStats {
+  invoices_scanned: number;
+  invoices_with_awb: number;
+  invoices_other_carrier: number;
+  invoices_with_valid_awb: number;
+  invoices_invalid_awb: number;
+  valid_awbs: number;
+  duplicate_awbs: number;
+  tracking_rows_created: number;
+  existing_rows_reused: number;
+  duration_ms: number;
+}
+
 const BASE = '/shipment-tracking';
 
 // Reads straight from the API (no cache: the page re-reads on realtime
@@ -203,5 +266,19 @@ export const shipmentTrackingService = {
   /** Backend asks MyDHL (the browser never calls DHL). */
   async refresh(awb: string): Promise<RefreshResult> {
     return unifiedService.post<RefreshResult>(`${BASE}/${encodeURIComponent(awb)}/refresh`, {});
+  },
+
+  // ── Admin: invoice discovery + initial DHL sync (the Backend's worker does the DHL calls) ──
+  async syncStatus(signal?: AbortSignal): Promise<TrackingSyncStatus> {
+    return api.get<TrackingSyncStatus>(`${BASE}/admin/backfill/status`, { signal });
+  },
+  async discoverInvoices(): Promise<InvoiceDiscoveryStats> {
+    return api.post<InvoiceDiscoveryStats>(`${BASE}/admin/discover-invoices`, {});
+  },
+  async startBackfill(): Promise<{ run_id: number; created: boolean; resumed: boolean; status: TrackingSyncStatus }> {
+    return api.post(`${BASE}/admin/backfill`, {});
+  },
+  async pauseBackfill(): Promise<TrackingSyncStatus> {
+    return api.post<TrackingSyncStatus>(`${BASE}/admin/backfill/pause`, {});
   },
 };

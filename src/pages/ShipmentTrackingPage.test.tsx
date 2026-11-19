@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { TrackingDetails, TrackingItem, TrackingSummary } from '../services/shipmentTracking.service'
 
-const svc = vi.hoisted(() => ({ list: vi.fn(), summary: vi.fn(), details: vi.fn(), refresh: vi.fn(), lookup: vi.fn() }))
+const svc = vi.hoisted(() => ({
+  list: vi.fn(), summary: vi.fn(), details: vi.fn(), refresh: vi.fn(), lookup: vi.fn(),
+  syncStatus: vi.fn(), discoverInvoices: vi.fn(), startBackfill: vi.fn(), pauseBackfill: vi.fn(),
+}))
 vi.mock('../services/shipmentTracking.service', () => ({ shipmentTrackingService: svc }))
 const dhl = vi.hoisted(() => ({ get: vi.fn(), getPickup: vi.fn(), downloadDocument: vi.fn() }))
 vi.mock('../services/dhlShipment.service', () => ({ dhlShipmentService: dhl }))
@@ -74,10 +77,63 @@ describe('«متابعة البوليصة» — list', () => {
     expect(within(r1).getByText(/استلام DHL: 28\/10\/2026/)).toBeTruthy()
     expect(within(r1).getByRole('link', { name: 'تفاصيل' }).getAttribute('href')).toBe('/shipment-tracking/9988679120')
     const r2 = rows.find((r) => r.getAttribute('data-tracking-awb') === '1234567890')!
-    expect(within(r2).getByText('لم تتم المزامنة')).toBeTruthy()
+    expect(within(r2).getByText('بانتظار أول مزامنة')).toBeTruthy() // visible before DHL ever answered
     expect(within(r2).getByText('لا توجد نقاط تتبع بعد')).toBeTruthy()
     expect(within(r2).getByText('Gulf Retail')).toBeTruthy()
     expect(screen.getAllByRole('article')).toHaveLength(2) // mobile cards carry the same shipments
+  })
+
+  it('a shipment DHL has no data for / whose sync failed stays listed with an honest state', async () => {
+    svc.list.mockResolvedValue(page([
+      item('1111111111', { normalized_status: null, last_synced_at: null, sync_status: 'not_found', freshness: 'unknown' }),
+      item('2222222222', { normalized_status: null, last_synced_at: null, sync_status: 'error', freshness: 'unknown' }),
+    ]))
+    renderApp()
+    const rows = await screen.findAllByRole('row')
+    expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '1111111111')!).getByText('غير موجودة لدى DHL')).toBeTruthy()
+    expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '2222222222')!).getByText('غير متاحة مؤقتًا')).toBeTruthy()
+  })
+
+  it('admin sees the DHL sync status (registered / synced / remaining) and can start the backfill; other roles do not', async () => {
+    const status = {
+      env: 'production', blocked_by: null, bulk_batch_size: 100, calls_per_cycle: 2, daily_call_limit: 300,
+      run: { id: 1, status: 'running', scope: 'unsynced', batch_size: 100, discovered: 14271, queued: 5971, processed: 8300, successful: 8000, not_found: 280, failed: 20,
+        temporary_errors: 20, permanent_errors: 0, skipped: 0, remaining: 5971, batches_completed: 83, api_calls: 84, started_at: new Date().toISOString(),
+        last_activity_at: new Date().toISOString(), paused_at: null, finished_at: null, last_error_code: null, last_error_at: null },
+      registration: { invoice_awbs: 14271, registered_from_invoices: 12840, tracked: 12850, synced: 8300, waiting_first_sync: 4000, not_found: 280, errors: 20, polling: 900, last_synced_at: new Date().toISOString() },
+      today: { api_calls: 84, errors: 0, awbs_requested: 8300, awbs_found: 8000, awbs_not_found: 280, awbs_failed: 20 },
+      last_successful_sync_at: new Date().toISOString(),
+    }
+    svc.syncStatus.mockResolvedValue(status)
+    renderApp()
+    await screen.findAllByRole('row')
+    expect(screen.queryByTestId('tracking-sync-status')).toBeNull() // employee: nothing
+    expect(svc.syncStatus).not.toHaveBeenCalled()
+    cleanup()
+
+    auth.role = 'admin'
+    renderApp()
+    const bar = await screen.findByTestId('tracking-sync-status')
+    expect(within(bar).getByText('تم تسجيل 12,840 من 14,271 بوليصة — تمت مزامنة 8,300')).toBeTruthy()
+    expect(within(bar).getByText(/المتبقي/).textContent).toContain('5,971')
+    expect(within(bar).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('58')
+    // running → pause is offered; the list stays usable meanwhile
+    svc.pauseBackfill.mockResolvedValue({ ...status, run: { ...status.run, status: 'paused' } })
+    fireEvent.click(within(bar).getByRole('button', { name: /إيقاف مؤقت/ }))
+    await waitFor(() => expect(svc.pauseBackfill).toHaveBeenCalledTimes(1))
+    expect(screen.getAllByRole('row').length).toBeGreaterThan(1)
+
+    // nothing running → start (after confirmation)
+    cleanup()
+    svc.syncStatus.mockResolvedValue({ ...status, run: null, blocked_by: 'sync_disabled' })
+    svc.startBackfill.mockResolvedValue({ run_id: 2, created: true, resumed: false, status })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderApp()
+    const bar2 = await screen.findByTestId('tracking-sync-status')
+    fireEvent.click(within(bar2).getByRole('button', { name: /بدء المزامنة الأولية/ }))
+    await waitFor(() => expect(svc.startBackfill).toHaveBeenCalledTimes(1))
+    expect(confirm).toHaveBeenCalled()
+    confirm.mockRestore()
   })
 
   it('filters: year → date range, not delivered, freshness, client; pagination preserved', async () => {

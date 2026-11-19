@@ -14,9 +14,10 @@ import {
   shipmentTrackingService, type LookupResult, type TrackingItem, type TrackingStatusFilter, type TrackingSummary, type TrackingSyncFilter,
 } from '../services/shipmentTracking.service';
 import { Freshness } from '../components/ShipmentTracking/TrackingParts';
+import { TrackingSyncStatusBar } from '../components/ShipmentTracking/TrackingSyncStatus';
 import {
   TRACKING_EVENTS, TRACKING_PAGE_SIZE, canRefreshTracking, describeTrackingError, formatAwb, formatEstimated, formatLocal, formatRiyadh,
-  formatYmd, isDhlAwb, needsAction, normalizeAwb, placeLabel, statusBadge, timeAgo,
+  formatYmd, isDhlAwb, needsAction, normalizeAwb, placeLabel, rowBadge, timeAgo,
 } from '../components/ShipmentTracking/trackingUtils';
 import { describeLookupError } from './ShipmentTrackingDetailsPage';
 import { countryNameAr } from '../utils/countries';
@@ -63,7 +64,7 @@ function Checkpoint({ t }: { t: TrackingItem }) {
 }
 
 function Row({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem) => void }) {
-  const badge = statusBadge(t.normalized_status);
+  const badge = rowBadge(t);
   const action = needsAction(t);
   return (
     <tr data-tracking-awb={t.awb} className={`border-b border-slate-100 dark:border-slate-700/60 align-top ${action ? 'bg-red-50/40 dark:bg-red-900/10' : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/20'}`}>
@@ -87,7 +88,7 @@ function Row({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem)
 }
 
 function Card({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem) => void }) {
-  const badge = statusBadge(t.normalized_status);
+  const badge = rowBadge(t);
   return (
     <article data-tracking-awb={t.awb} className={`bg-white dark:bg-slate-800 rounded-2xl border p-4 space-y-3 ${needsAction(t) ? 'border-red-200 dark:border-red-900/50' : 'border-slate-200 dark:border-slate-700'}`}>
       <div className="flex items-start justify-between gap-2">
@@ -174,6 +175,7 @@ export const ShipmentTrackingPage: React.FC = () => {
   const [phase, setPhase] = useState<'initial' | 'switching' | 'ready' | 'error'>('initial');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [clientLabel, setClientLabel] = useState<string | null>(null);
+  const [syncKey, setSyncKey] = useState(0);
 
   // Old notification links (?awb=) open the details page.
   useEffect(() => { if (isDhlAwb(deepLinkAwb)) navigate(`/shipment-tracking/${deepLinkAwb}`, { replace: true }); }, [deepLinkAwb, navigate]);
@@ -217,7 +219,7 @@ export const ShipmentTrackingPage: React.FC = () => {
 
   useEffect(() => { void load('replace'); }, [q, filters, page, load]);
   useEffect(() => { void loadSummary(); }, [loadSummary]);
-  useRealtimeRefresh(TRACKING_EVENTS, () => { void load('background'); void loadSummary(); }, 600);
+  useRealtimeRefresh(TRACKING_EVENTS, () => { void load('background'); void loadSummary(); setSyncKey((k) => k + 1); }, 600);
 
   const switching = () => setPhase((ph) => (ph === 'initial' || ph === 'error' ? 'initial' : 'switching'));
   const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => { switching(); setFilters((f) => ({ ...f, [k]: v })); setPage(1); };
@@ -250,6 +252,8 @@ export const ShipmentTrackingPage: React.FC = () => {
       {integration?.usable && integration.env === 'test' && (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 dark:border-sky-900/40 dark:bg-sky-900/15 px-4 py-2 text-xs font-semibold text-sky-800 dark:text-sky-300" role="status">ربط DHL يعمل على بيئة الاختبار (Test).</div>
       )}
+
+      {role === 'admin' && <TrackingSyncStatusBar refreshKey={syncKey} />}
 
       <AwbSearch canLookup={canRefreshTracking(role)} lookupEnabled={integration?.features?.trackingLookup} />
 

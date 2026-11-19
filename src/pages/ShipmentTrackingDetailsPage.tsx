@@ -18,7 +18,7 @@ import { dhlShipmentService, type DhlShipment, type PickupRecord } from '../serv
 import { EventRow, Field, Freshness, Journey } from '../components/ShipmentTracking/TrackingParts';
 import {
   TRACKING_EVENTS, canRefreshTracking, describeTrackingError, formatAwb, formatEstimated, formatLocal, formatRiyadh, formatYmd,
-  isDhlAwb, needsAction, normalizeAwb, placeLabel, statusBadge, syncProblemText, timeAgo,
+  isDhlAwb, needsAction, normalizeAwb, placeLabel, rowBadge, syncProblemText, timeAgo,
 } from '../components/ShipmentTracking/trackingUtils';
 import { canShipment } from '../utils/dhlShipmentPermissions';
 
@@ -144,7 +144,7 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
   }
   if (!d) return null;
 
-  const badge = statusBadge(d.normalized_status);
+  const badge = rowBadge(d);
   const lastEvent = formatLocal(d.last_event_local, d.last_event_gmt_offset);
   const delivered = formatLocal(d.delivered_local, d.delivered_gmt_offset);
   const picked = formatLocal(d.pickup_local, d.pickup_gmt_offset);

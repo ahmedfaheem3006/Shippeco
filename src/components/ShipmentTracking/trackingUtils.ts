@@ -34,6 +34,23 @@ export const STATUS_BADGE: Record<NormalizedStatus | 'NOT_SYNCED', Badge> = {
 };
 export const statusBadge = (s: NormalizedStatus | null) => STATUS_BADGE[s ?? 'NOT_SYNCED'];
 
+const NO_DHL_DATA: Record<'WAITING' | 'NOT_FOUND' | 'UNAVAILABLE', Badge> = {
+  WAITING: B('بانتظار أول مزامنة', 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700/40 dark:text-slate-300 dark:border-slate-600', 'bg-slate-400'),
+  NOT_FOUND: B('غير موجودة لدى DHL', 'bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-900/40', 'bg-orange-400'),
+  UNAVAILABLE: B('غير متاحة مؤقتًا', 'bg-amber-50 text-amber-800 border-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-900/40', 'bg-amber-400'),
+};
+/**
+ * The list badge: DHL's status once known; before DHL ever answered, why there
+ * is none yet — waiting for the first sync, DHL has no data for it, or the
+ * last attempt failed. A shipment is never hidden for lack of DHL data.
+ */
+export function rowBadge(t: Pick<TrackingItem, 'normalized_status' | 'sync_status'>): Badge {
+  if (t.normalized_status) return statusBadge(t.normalized_status);
+  if (t.sync_status === 'not_found') return NO_DHL_DATA.NOT_FOUND;
+  if (t.sync_status === 'error') return NO_DHL_DATA.UNAVAILABLE;
+  return NO_DHL_DATA.WAITING;
+}
+
 /** Same rule as the Backend's «يوجد مشكلة» card (trackingStatus.isProblem). */
 export function needsAction(t: Pick<TrackingItem, 'normalized_status' | 'requires_action'>): boolean {
   const s = t.normalized_status;

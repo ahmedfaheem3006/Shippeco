@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ApiError } from '../../utils/apiClient'
 import {
   canRefreshTracking, describeTrackingError, formatAwb, formatLocal, formatRiyadh, formatYmd, isDhlAwb, journeyStage, needsAction,
-  normalizeAwb, placeLabel, statusBadge, syncProblemText, timeAgo,
+  normalizeAwb, placeLabel, rowBadge, statusBadge, syncProblemText, timeAgo,
 } from './trackingUtils'
 
 describe('AWB normalization', () => {
@@ -24,6 +24,13 @@ describe('status presentation', () => {
     expect(statusBadge(null).label).toBe('لم تتم المزامنة')
     expect(statusBadge('DELIVERED').label).toBe('✓ تم التسليم')
     expect(statusBadge('EXCEPTION').label).toBe('يوجد مشكلة')
+  })
+  it('list badge before DHL ever answered: waiting / not at DHL / temporarily unavailable — then the real status', () => {
+    expect(rowBadge({ normalized_status: null, sync_status: 'pending' }).label).toBe('بانتظار أول مزامنة')
+    expect(rowBadge({ normalized_status: null, sync_status: 'not_found' }).label).toBe('غير موجودة لدى DHL')
+    expect(rowBadge({ normalized_status: null, sync_status: 'error' }).label).toBe('غير متاحة مؤقتًا')
+    expect(rowBadge({ normalized_status: 'PRE_TRANSIT', sync_status: 'ok' }).label).toBe('بانتظار الاستلام')
+    expect(rowBadge({ normalized_status: 'IN_TRANSIT', sync_status: 'error' }).label).toBe('قيد النقل') // last known status kept
   })
   it('«يوجد إجراء مطلوب» follows the Backend rule', () => {
     expect(needsAction({ normalized_status: 'EXCEPTION', requires_action: false })).toBe(true)
