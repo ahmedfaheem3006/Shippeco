@@ -90,6 +90,63 @@ for (const vp of VIEWPORTS) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
     })
 
+    test('the Arabic header title is never clipped vertically and stays centred', async ({ page }) => {
+      await base(page)
+      await page.route(new RegExp(`/api/shipment-tracking/${AWB}$`), (r) => r.fulfill(json({ success: true, data: details() })))
+      const banner = page.getByRole('banner')
+      const title = banner.locator('h1:visible')
+      const heights = new Set<number>()
+      for (const [url, name] of [
+        ['/dashboard', 'الرئيسية'], // '/' is the public landing page; the signed-in home is /dashboard
+        ['/create-shipment', 'إنشاء شحنة'],
+        ['/shipment-tracking', 'متابعة البوليصة'],
+        [`/shipment-tracking/${AWB}`, 'تفاصيل البوليصة'],
+      ] as const) {
+        await page.goto(url)
+        await expect(title).toHaveText(name)
+        await page.evaluate(() => document.fonts.ready)
+        const h = (await title.boundingBox())!
+        const b = (await banner.boundingBox())!
+        heights.add(Math.round(h.height))
+        expect(Math.abs((h.y + h.height / 2) - (b.y + b.height / 2))).toBeLessThanOrEqual(2) // vertically centred
+        expect(h.y).toBeGreaterThanOrEqual(b.y)
+        expect(h.y + h.height).toBeLessThanOrEqual(b.y + b.height)
+        // Vertical clipping = ink that would be painted above/below the title box but is cut by its
+        // overflow. Render the strip around the box with and without the title's overflow rule and
+        // compare only the rows outside the box (horizontal truncation stays allowed).
+        const M = 10
+        const clip = { x: Math.floor(h.x), y: Math.floor(h.y) - M, width: Math.floor(h.width), height: Math.ceil(h.height) + 2 * M }
+        const clipped = (await page.screenshot({ clip, animations: 'disabled' })).toString('base64')
+        await title.evaluate((el) => { (el as HTMLElement).style.overflow = 'visible' })
+        const unclipped = (await page.screenshot({ clip, animations: 'disabled' })).toString('base64')
+        await title.evaluate((el) => { (el as HTMLElement).style.overflow = '' })
+        const top = Math.floor(h.y) - clip.y // first row of the box
+        const bottom = Math.ceil(h.y + h.height) - clip.y // first row below the box
+        const cut = await page.evaluate(async ({ a, b, top, bottom }) => {
+          const pixels = async (b64: string) => {
+            const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob())
+            const c = new OffscreenCanvas(img.width, img.height)
+            const ctx = c.getContext('2d')!
+            ctx.drawImage(img, 0, 0)
+            return ctx.getImageData(0, 0, img.width, img.height)
+          }
+          const [p, q] = [await pixels(a), await pixels(b)]
+          let n = 0
+          for (let y = 0; y < p.height; y++) {
+            if (y >= top && y < bottom) continue
+            for (let x = 0; x < p.width; x++) {
+              const i = (y * p.width + x) * 4
+              if (Math.abs(p.data[i] - q.data[i]) + Math.abs(p.data[i + 1] - q.data[i + 1]) + Math.abs(p.data[i + 2] - q.data[i + 2]) > 24) n++
+            }
+          }
+          return n
+        }, { a: clipped, b: unclipped, top, bottom })
+        expect(cut, `${url}: ${cut} glyph pixels are clipped above/below the title`).toBe(0)
+        await shot(page, `header-title-${vp.name}-${url.split('/').filter(Boolean).join('-')}`)
+      }
+      expect(heights.size).toBe(1) // no vertical jump between routes
+    })
+
     test('«تنزيل البوليصة» downloads DHL-AWB-<AWB>.pdf from the SHIPPEC Backend, once, next to «طباعة البوليصة»', async ({ page }) => {
       await base(page)
       let downloads = 0

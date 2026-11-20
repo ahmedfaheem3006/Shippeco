@@ -137,10 +137,10 @@ export function AppLayout() {
             <div className="flex items-center gap-2 lg:hidden">
               <img src={shippecLogo} alt="Shippec" className="h-9 w-auto max-w-[120px] object-contain rounded-lg p-0.5 bg-white shadow-sm" />
             </div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-none hidden sm:block truncate" title={pageTitle} data-testid="app-page-title">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-[1.4] py-0.5 hidden sm:block truncate" title={pageTitle} data-testid="app-page-title">
               {pageTitle}
             </h1>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white sm:hidden truncate" title={pageTitle}>{pageTitle}</h1>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-[1.4] py-0.5 sm:hidden truncate" title={pageTitle} data-testid="app-page-title-mobile">{pageTitle}</h1>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
