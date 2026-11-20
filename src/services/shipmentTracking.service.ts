@@ -1,4 +1,6 @@
-import { api } from '../utils/apiClient';
+import { api, ApiError } from '../utils/apiClient';
+import { useAuthStore } from '../hooks/useAuthStore';
+import { env } from '../utils/env';
 import { unifiedService } from './unifiedService';
 
 /** Backend src/services/mydhl/trackingStatus.ts — never compared to raw DHL codes here. */
@@ -111,6 +113,8 @@ export interface TrackingDetails extends TrackingItem {
   /** Newest first. */
   events: TrackingEvent[];
   refresh_cooldown_seconds: number;
+  /** A stored AWB / waybill document SHIPPEC can hand out (never fetched from DHL by the page). */
+  awb_document?: { available: boolean; type: 'waybill' | 'shipping_label' | null; content_type: string | null };
 }
 
 export interface TrackingCounts {
@@ -197,6 +201,21 @@ export interface BackfillRun {
   finished_at: string | null;
   last_error_code: string | null;
   last_error_at: string | null;
+  // A refused multi-AWB request is ONE batch_rejected — never N "not found" AWBs.
+  awb_attempted?: number;
+  awb_successful?: number;
+  /** Proven by a request carrying that AWB alone. */
+  individually_verified_not_found?: number;
+  /** not_found from a multi-AWB batch (before the fix) — to repair. */
+  unverified_not_found?: number;
+  batch_rejected?: number;
+  temporary_failed?: number;
+  permanent_failed?: number;
+  awaiting_single_check?: number;
+  /** AWBs per DHL request the run actually uses (halves on a batch-level refusal). */
+  effective_batch_size?: number;
+  pause_reason?: 'admin' | 'budget_exhausted' | 'repair' | null;
+  repaired_total?: number;
 }
 
 export interface TrackingSyncStatus {
@@ -206,6 +225,9 @@ export interface TrackingSyncStatus {
   bulk_batch_size: number;
   calls_per_cycle: number;
   daily_call_limit: number;
+  /** The backfill stops here; the rest of the day is kept for refreshes / lookups. */
+  backfill_daily_call_limit?: number;
+  verify_max_awbs?: number;
   run: BackfillRun | null;
   registration: {
     /** Distinct DHL AWBs on SHIPPEC invoices. */
@@ -234,6 +256,26 @@ export interface InvoiceDiscoveryStats {
   tracking_rows_created: number;
   existing_rows_reused: number;
   duration_ms: number;
+}
+
+export interface RepairFalseNotFoundResult {
+  examined: number;
+  repaired: number;
+  skipped_success: number;
+  skipped_individual_not_found: number;
+  remaining_pending: number;
+  tracking_rows_reset: number;
+  runs: Array<{ id: number; repaired: number; status: string }>;
+}
+
+export interface VerifyAwbResult {
+  input: string;
+  awb: string | null;
+  result: 'success' | 'not_found' | 'temporary_error' | 'rejected' | 'skipped';
+  registered: boolean;
+  normalized_status: NormalizedStatus | null;
+  error_code: string | null;
+  detail: string | null;
 }
 
 const BASE = '/shipment-tracking';
@@ -275,10 +317,36 @@ export const shipmentTrackingService = {
   async discoverInvoices(): Promise<InvoiceDiscoveryStats> {
     return api.post<InvoiceDiscoveryStats>(`${BASE}/admin/discover-invoices`, {});
   },
-  async startBackfill(): Promise<{ run_id: number; created: boolean; resumed: boolean; status: TrackingSyncStatus }> {
-    return api.post(`${BASE}/admin/backfill`, {});
+  /** batchSize: AWBs per DHL request for this run (a small one after a verification). */
+  async startBackfill(batchSize?: number): Promise<{ run_id: number; created: boolean; resumed: boolean; status: TrackingSyncStatus }> {
+    return api.post(`${BASE}/admin/backfill`, batchSize ? { batch_size: batchSize } : {});
+  },
+  /** DB only: false "not found" from a batch-level DHL 404 → pending again. */
+  async repairFalseNotFound(): Promise<RepairFalseNotFoundResult> {
+    return api.post<RepairFalseNotFoundResult>(`${BASE}/admin/backfill/repair-false-not-found`, {});
+  },
+  /** ≤ 5 AWBs, one DHL request each (asked by the Backend). */
+  async verifyAwbs(awbs: string[]): Promise<{ api_calls: number; stopped_by: string | null; results: VerifyAwbResult[] }> {
+    return api.post(`${BASE}/admin/backfill/verify`, { awbs });
   },
   async pauseBackfill(): Promise<TrackingSyncStatus> {
     return api.post<TrackingSyncStatus>(`${BASE}/admin/backfill/pause`, {});
+  },
+
+  /**
+   * The stored AWB / waybill PDF, through the authenticated SHIPPEC Backend
+   * (GET /shipment-tracking/:awb/waybill). The browser never calls DHL; the
+   * Backend never asks DHL either (stored document only).
+   */
+  async downloadAwbDocument(awb: string): Promise<{ blob: Blob; filename: string }> {
+    const token = useAuthStore.getState().token;
+    const res = await fetch(`${env.apiUrl}${BASE}/${encodeURIComponent(awb)}/waybill`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new ApiError(json?.error?.message || 'تعذر تنزيل البوليصة', res.status, json?.error?.code);
+    }
+    const cd = res.headers.get('content-disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `DHL-AWB-${awb}.pdf`;
+    return { blob: await res.blob(), filename };
   },
 };

@@ -7,11 +7,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { AlertTriangle, ArrowRight, Copy, Download, ExternalLink, FileText, Loader2, Package, PackageSearch, RefreshCw, Search, ShieldAlert, Truck } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Copy, Download, ExternalLink, FileText, Loader2, Package, PackageSearch, Printer, RefreshCw, Search, ShieldAlert, Truck } from 'lucide-react';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { ApiError } from '../utils/apiClient';
-import { downloadBlob } from '../utils/download';
+import { downloadBlob, printBlob } from '../utils/download';
 import { describeApiError } from '../utils/apiErrors';
 import { shipmentTrackingService, type TrackingDetails } from '../services/shipmentTracking.service';
 import { dhlShipmentService, type DhlShipment, type PickupRecord } from '../services/dhlShipment.service';
@@ -21,6 +21,8 @@ import {
   isDhlAwb, needsAction, normalizeAwb, placeLabel, rowBadge, syncProblemText, timeAgo,
 } from '../components/ShipmentTracking/trackingUtils';
 import { canShipment } from '../utils/dhlShipmentPermissions';
+
+export const AWB_DOC_UNAVAILABLE = 'مستند البوليصة غير متاح — لا يوجد مستند محفوظ لهذه الشحنة في SHIPPEC';
 
 const DOC_LABEL: Record<string, string> = { shipping_label: 'ملصق الشحن', waybill: 'بوليصة الشحن', commercial_invoice: 'الفاتورة التجارية', proforma_invoice: 'الفاتورة المبدئية', other: 'مستند DHL' };
 
@@ -40,6 +42,8 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
   const [shipment, setShipment] = useState<DhlShipment | null>(null);
   const [pickup, setPickup] = useState<PickupRecord | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [docBusy, setDocBusy] = useState<null | 'download' | 'print'>(null);
+  const docBusyRef = useRef(false); // a double click never starts a second download
   const seq = useRef(0);
 
   const load = useCallback(async (mode: 'replace' | 'background') => {
@@ -102,6 +106,28 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
     }
   };
 
+  // The stored AWB / waybill (SHIPPEC Backend only — the browser never calls DHL).
+  const awbDocument = async (kind: 'download' | 'print') => {
+    if (docBusyRef.current || !d) return;
+    if (!d.awb_document?.available) { toast.error(AWB_DOC_UNAVAILABLE, { id: 'awb-doc-unavailable' }); return; }
+    docBusyRef.current = true;
+    setDocBusy(kind);
+    try {
+      const { blob, filename } = await shipmentTrackingService.downloadAwbDocument(d.awb);
+      if (kind === 'download') {
+        downloadBlob(filename, blob);
+        toast.success('تم تنزيل البوليصة');
+      } else {
+        printBlob(blob);
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiError && err.code === 'AWB_DOCUMENT_UNAVAILABLE' ? AWB_DOC_UNAVAILABLE : describeApiError(err, 'تعذر تجهيز البوليصة'));
+    } finally {
+      docBusyRef.current = false;
+      setDocBusy(null);
+    }
+  };
+
   const lookup = async () => {
     setLookingUp(true);
     try {
@@ -151,6 +177,8 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
   const problem = syncProblemText(d);
   const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const latest = d.events[0];
+  const canDocs = canShipment(role, 'download_documents');
+  const docAvailable = !!d.awb_document?.available;
 
   return (
     <div className="space-y-4 sm:space-y-5 min-w-0" dir="rtl">
@@ -168,12 +196,32 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
               <Freshness t={d} />
             </div>
           </div>
-          {canRefresh && (
-            <button type="button" onClick={() => void refresh()} disabled={refreshing || cooldownLeft > 0}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold min-h-[44px]">
-              {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {refreshing ? 'جاري التحديث…' : cooldownLeft > 0 ? `تحديث الحالة (${cooldownLeft})` : 'تحديث الحالة من DHL'}
-            </button>
+          {(canRefresh || canDocs) && (
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto" data-testid="awb-actions">
+              {canDocs && (
+                <>
+                  <button type="button" onClick={() => void awbDocument('print')} disabled={!!docBusy}
+                    title={docAvailable ? 'طباعة مستند البوليصة' : AWB_DOC_UNAVAILABLE}
+                    className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-indigo-300 disabled:opacity-50 text-xs font-bold min-h-[44px] whitespace-nowrap ${docAvailable ? '' : 'opacity-60'}`}>
+                    {docBusy === 'print' ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                    {docBusy === 'print' ? 'جاري التجهيز…' : 'طباعة البوليصة'}
+                  </button>
+                  <button type="button" onClick={() => void awbDocument('download')} disabled={!!docBusy}
+                    title={docAvailable ? `تنزيل DHL-AWB-${d.awb}.pdf` : AWB_DOC_UNAVAILABLE}
+                    className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 hover:border-indigo-400 disabled:opacity-50 text-xs font-bold min-h-[44px] whitespace-nowrap ${docAvailable ? '' : 'opacity-60'}`}>
+                    {docBusy === 'download' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                    {docBusy === 'download' ? 'جاري التنزيل…' : 'تنزيل البوليصة'}
+                  </button>
+                </>
+              )}
+              {canRefresh && (
+                <button type="button" onClick={() => void refresh()} disabled={refreshing || cooldownLeft > 0}
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold min-h-[44px] whitespace-nowrap">
+                  {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  {refreshing ? 'جاري التحديث…' : cooldownLeft > 0 ? `تحديث الحالة (${cooldownLeft})` : 'تحديث الحالة من DHL'}
+                </button>
+              )}
+            </div>
           )}
         </div>
         {(problem || refreshError) && <p className="text-xs font-semibold text-amber-700 dark:text-amber-400" role="status">{refreshError || problem}</p>}

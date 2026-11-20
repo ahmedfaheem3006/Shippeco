@@ -12,6 +12,7 @@ import { useAuthStore } from '../../hooks/useAuthStore';
 import shippecLogo from '../../assets/shippec.jpeg';
 import { useNotifications } from '../../hooks/useNotifications';
 import { resolveNotificationTarget } from '../../utils/notificationTarget';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 /* ═══ Notification type → icon (destination: utils/notificationTarget) ═══ */
 const NOTIF_CONFIG: Record<string, {
@@ -69,28 +70,8 @@ export function AppLayout() {
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
 
-  const getPageTitle = (path: string) => {
-    if (path.includes('/dashboard')) return 'لوحة التحكم';
-    if (path.includes('/new-invoice')) return 'إنشاء فاتورة جديدة';
-    if (path.includes('/invoices')) return 'إدارة الفواتير';
-    if (path.includes('/reports')) return 'التقارير الشاملة';
-    if (path.includes('/clients')) return 'إدارة العملاء';
-    if (path.includes('/calculator')) return 'حاسبة الشحن';
-    if (path.includes('/reconcile')) return 'مطابقة الفواتير';
-    if (path.includes('/profit-report')) return 'تقرير الربحية';
-    if (path.includes('/audit-log')) return 'سجل العمليات';
-    if (path.includes('/settings')) return 'إعدادات النظام';
-    if (path.includes('/log')) return 'سجل العمليات';
-    if (path.includes('/wa')) return 'قوالب واتساب';
-    if (path.includes('/paymob')) return 'روابط Paymob';
-    if (path.includes('/template')) return 'قالب الفاتورة';
-    if (path.includes('/quote-requests')) return 'طلبات الشحن والتواصل';
-    if (path.includes('/support')) return 'مركز خدمة العملاء';
-    if (path.includes('/tasks')) return 'المهام';
-    return 'الرئيسية';
-  };
-
-  const pageTitle = getPageTitle(location.pathname);
+  // Header + browser tab title: one central route → title map (config/pageTitles.ts).
+  const pageTitle = usePageTitle();
 
   /* ── Handle notification click ──
      Close first, navigate straight away (works from any page), and mark as
@@ -145,7 +126,7 @@ export function AppLayout() {
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden relative">
         {/* ═══ Top Navbar ═══ */}
         <header className="h-16 flex items-center justify-between px-4 lg:px-6 bg-white dark:bg-slate-800 shadow shadow-gray-200/50 dark:shadow-slate-900/50 sticky top-0 z-30 transition-colors">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               title="القائمة"
               onClick={() => setSidebarOpen(true)}
@@ -156,13 +137,13 @@ export function AppLayout() {
             <div className="flex items-center gap-2 lg:hidden">
               <img src={shippecLogo} alt="Shippec" className="h-9 w-auto max-w-[120px] object-contain rounded-lg p-0.5 bg-white shadow-sm" />
             </div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-none hidden sm:block">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-none hidden sm:block truncate" title={pageTitle} data-testid="app-page-title">
               {pageTitle}
             </h1>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white sm:hidden">{pageTitle}</h1>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white sm:hidden truncate" title={pageTitle}>{pageTitle}</h1>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             {/* Theme Toggle */}
             <button
               onClick={() => toggleTheme()}

@@ -6,6 +6,7 @@ import type { TrackingDetails, TrackingItem, TrackingSummary } from '../services
 const svc = vi.hoisted(() => ({
   list: vi.fn(), summary: vi.fn(), details: vi.fn(), refresh: vi.fn(), lookup: vi.fn(),
   syncStatus: vi.fn(), discoverInvoices: vi.fn(), startBackfill: vi.fn(), pauseBackfill: vi.fn(),
+  repairFalseNotFound: vi.fn(), verifyAwbs: vi.fn(), downloadAwbDocument: vi.fn(),
 }))
 vi.mock('../services/shipmentTracking.service', () => ({ shipmentTrackingService: svc }))
 const dhl = vi.hoisted(() => ({ get: vi.fn(), getPickup: vi.fn(), downloadDocument: vi.fn() }))
@@ -14,9 +15,11 @@ const auth = vi.hoisted(() => ({ role: 'employee' }))
 vi.mock('../hooks/useAuthStore', () => ({ useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { id: 1, role: auth.role } }) }))
 vi.mock('../hooks/useRealtimeRefresh', () => ({ useRealtimeRefresh: () => undefined }))
 vi.mock('react-hot-toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+const files = vi.hoisted(() => ({ downloadBlob: vi.fn(), printBlob: vi.fn() }))
+vi.mock('../utils/download', () => files)
 
 import { ShipmentTrackingPage } from './ShipmentTrackingPage'
-import { ShipmentTrackingDetailsPage } from './ShipmentTrackingDetailsPage'
+import { AWB_DOC_UNAVAILABLE, ShipmentTrackingDetailsPage } from './ShipmentTrackingDetailsPage'
 import { ApiError } from '../utils/apiClient'
 
 const item = (awb: string, over: Partial<TrackingItem> = {}): TrackingItem => ({
@@ -243,5 +246,150 @@ describe('/shipment-tracking/:awb — details', () => {
     renderApp('/shipment-tracking/5550000777')
     expect(await screen.findByText(/غير مسجلة في SHIPPEC بعد/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /البحث لدى DHL/ })).toBeNull()
+  })
+})
+
+describe('/shipment-tracking/:awb — AWB / waybill download & print', () => {
+  const withDoc = (awb: string) => details(awb, { awb_document: { available: true, type: 'waybill', content_type: 'application/pdf' } })
+
+  it('«تنزيل البوليصة» next to «طباعة البوليصة»: one authenticated Backend download, DHL-AWB-<AWB>.pdf, loading state, double click ignored', async () => {
+    svc.details.mockResolvedValue(withDoc('6606077671'))
+    let resolve!: (v: { blob: Blob; filename: string }) => void
+    svc.downloadAwbDocument.mockReturnValue(new Promise((r) => { resolve = r }))
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    renderApp('/shipment-tracking/6606077671')
+    await screen.findByRole('heading', { name: /660 607 7671/ })
+    const actions = screen.getByTestId('awb-actions')
+    const print = within(actions).getByRole('button', { name: /طباعة البوليصة/ })
+    const download = within(actions).getByRole('button', { name: /تنزيل البوليصة/ })
+    // side by side, in the same action group as the DHL refresh
+    expect(print.nextElementSibling).toBe(download)
+    expect(within(actions).getByRole('button', { name: /تحديث الحالة من DHL/ })).toBeTruthy()
+
+    fireEvent.click(download)
+    fireEvent.click(download)
+    fireEvent.click(print)
+    expect(await within(actions).findByText('جاري التنزيل…')).toBeTruthy()
+    expect((within(actions).getByRole('button', { name: /جاري التنزيل/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(svc.downloadAwbDocument).toHaveBeenCalledTimes(1)
+    expect(svc.downloadAwbDocument).toHaveBeenCalledWith('6606077671')
+
+    const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
+    resolve({ blob, filename: 'DHL-AWB-6606077671.pdf' })
+    await waitFor(() => expect(files.downloadBlob).toHaveBeenCalledWith('DHL-AWB-6606077671.pdf', blob))
+    expect(files.printBlob).not.toHaveBeenCalled()
+    expect(await within(actions).findByRole('button', { name: /تنزيل البوليصة/ })).toBeTruthy()
+    // the page itself never contacted DHL (the service talks to the SHIPPEC Backend)
+    expect(fetchSpy.mock.calls.some(([u]) => /dhl\.com/i.test(String(u)))).toBe(false)
+    fetchSpy.mockRestore()
+  })
+
+  it('print uses the same stored document (no new tab, no base64)', async () => {
+    svc.details.mockResolvedValue(withDoc('6606077671'))
+    const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
+    svc.downloadAwbDocument.mockResolvedValue({ blob, filename: 'DHL-AWB-6606077671.pdf' })
+    renderApp('/shipment-tracking/6606077671')
+    fireEvent.click(await screen.findByRole('button', { name: /طباعة البوليصة/ }))
+    await waitFor(() => expect(files.printBlob).toHaveBeenCalledWith(blob))
+    expect(files.downloadBlob).not.toHaveBeenCalled()
+  })
+
+  it('no stored document: Arabic "unavailable" toast, no request; a Backend 404 is explained the same way', async () => {
+    const { toast } = await import('react-hot-toast')
+    svc.details.mockResolvedValue(details('6606077671', { awb_document: { available: false, type: null, content_type: null } }))
+    renderApp('/shipment-tracking/6606077671')
+    fireEvent.click(await screen.findByRole('button', { name: /تنزيل البوليصة/ }))
+    expect(svc.downloadAwbDocument).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith(AWB_DOC_UNAVAILABLE, expect.anything())
+    cleanup()
+
+    svc.details.mockResolvedValue(withDoc('6606077671'))
+    svc.downloadAwbDocument.mockRejectedValue(new ApiError('مستند البوليصة غير متاح', 404, 'AWB_DOCUMENT_UNAVAILABLE'))
+    renderApp('/shipment-tracking/6606077671')
+    fireEvent.click(await screen.findByRole('button', { name: /تنزيل البوليصة/ }))
+    await waitFor(() => expect(toast.error).toHaveBeenLastCalledWith(AWB_DOC_UNAVAILABLE))
+    expect(files.downloadBlob).not.toHaveBeenCalled()
+  })
+
+  it('a role without the document right (viewer) sees no print / download', async () => {
+    auth.role = 'viewer'
+    svc.details.mockResolvedValue(withDoc('6606077671'))
+    renderApp('/shipment-tracking/6606077671')
+    await screen.findByRole('heading', { name: /660 607 7671/ })
+    expect(screen.queryByRole('button', { name: /تنزيل البوليصة/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /طباعة البوليصة/ })).toBeNull()
+  })
+})
+
+describe('«متابعة البوليصة» — backfill accounting, repair, verification', () => {
+  const baseRun = {
+    id: 2, status: 'paused', scope: 'unsynced', batch_size: 100, discovered: 12996, queued: 8796, processed: 4200, successful: 0, not_found: 4200, failed: 0,
+    temporary_errors: 0, permanent_errors: 0, skipped: 0, remaining: 8796, batches_completed: 42, api_calls: 42, started_at: new Date().toISOString(),
+    last_activity_at: new Date().toISOString(), paused_at: new Date().toISOString(), finished_at: null, last_error_code: null, last_error_at: null,
+    awb_attempted: 4200, awb_successful: 0, individually_verified_not_found: 0, unverified_not_found: 4200, batch_rejected: 0,
+    temporary_failed: 0, permanent_failed: 0, effective_batch_size: 100, pause_reason: 'admin', repaired_total: 0,
+  }
+  const status = (run: Record<string, unknown> = baseRun) => ({
+    env: 'production', blocked_by: null, bulk_batch_size: 100, calls_per_cycle: 2, daily_call_limit: 300, backfill_daily_call_limit: 240, verify_max_awbs: 5,
+    run,
+    registration: { invoice_awbs: 14276, registered_from_invoices: 14276, tracked: 14280, synced: 1281, waiting_first_sync: 8796, not_found: 4200, errors: 0, polling: 900, last_synced_at: new Date().toISOString() },
+    today: { api_calls: 242, errors: 0, awbs_requested: 19026, awbs_found: 1281, awbs_not_found: 4200, awbs_failed: 0 },
+    last_successful_sync_at: new Date().toISOString(),
+  })
+
+  it('false not_found from a batch-level 404 is flagged; «إصلاح» repairs (after confirmation); accounting separates batch rejections', async () => {
+    auth.role = 'admin'
+    svc.syncStatus.mockResolvedValue(status())
+    svc.repairFalseNotFound.mockResolvedValue({ examined: 4200, repaired: 4200, skipped_success: 0, skipped_individual_not_found: 0, remaining_pending: 12996, tracking_rows_reset: 4200, runs: [] })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderApp()
+    const bar = await screen.findByTestId('tracking-sync-status')
+    expect(within(bar).getByRole('alert').textContent).toContain('4,200')
+    const acc = within(bar).getByTestId('backfill-accounting')
+    expect(acc.textContent).toContain('دفعات رفضتها DHL')
+    expect(acc.textContent).toContain('غير موجودة (مؤكدة فرديًا): 0')
+    expect(acc.textContent).toContain('حجم الدفعة الفعلي: 100')
+    fireEvent.click(within(bar).getByRole('button', { name: /إصلاح «غير موجودة» الخاطئة/ }))
+    await waitFor(() => expect(svc.repairFalseNotFound).toHaveBeenCalledTimes(1))
+    expect(confirm).toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('no false not_found → no repair button; budget pause explained; resume with a small batch size', async () => {
+    auth.role = 'admin'
+    svc.syncStatus.mockResolvedValue(status({ ...baseRun, not_found: 3, unverified_not_found: 0, individually_verified_not_found: 3, batch_rejected: 7, effective_batch_size: 12, pause_reason: 'budget_exhausted' }))
+    svc.startBackfill.mockResolvedValue({ run_id: 2, created: false, resumed: true, status: status() })
+    renderApp()
+    const bar = await screen.findByTestId('tracking-sync-status')
+    expect(within(bar).queryByRole('button', { name: /إصلاح/ })).toBeNull()
+    expect(within(bar).getByText(/نفدت حصة اليوم/)).toBeTruthy()
+    expect(within(bar).getByTestId('backfill-accounting').textContent).toContain('دفعات رفضتها DHL: 7')
+    fireEvent.change(within(bar).getByLabelText('عدد البوالص في كل طلب DHL'), { target: { value: '5' } })
+    fireEvent.click(within(bar).getByRole('button', { name: /استئناف المزامنة/ }))
+    await waitFor(() => expect(svc.startBackfill).toHaveBeenCalledWith(5))
+  })
+
+  it('controlled verification: up to 5 AWBs, results per AWB', async () => {
+    auth.role = 'admin'
+    svc.syncStatus.mockResolvedValue(status())
+    svc.verifyAwbs.mockResolvedValue({
+      api_calls: 2, stopped_by: null,
+      results: [
+        { input: '6606077671', awb: '6606077671', result: 'success', registered: true, normalized_status: 'IN_TRANSIT', error_code: null, detail: '12 نقطة تتبع' },
+        { input: '1000000004', awb: '1000000004', result: 'not_found', registered: true, normalized_status: null, error_code: 'DHL_NOT_FOUND', detail: null },
+        { input: 'ABC', awb: null, result: 'skipped', registered: false, normalized_status: null, error_code: 'INVALID_AWB', detail: 'ليس رقم DHL' },
+      ],
+    })
+    renderApp()
+    const bar = await screen.findByTestId('tracking-sync-status')
+    fireEvent.click(within(bar).getByRole('button', { name: /تحقق تجريبي/ }))
+    const panel = within(bar).getByTestId('verify-panel')
+    fireEvent.change(within(panel).getByLabelText('أرقام البوالص للتحقق'), { target: { value: '6606077671, 1000000004\nABC 1 2 3 4' } })
+    fireEvent.click(within(panel).getByRole('button', { name: /^تحقق$/ }))
+    await waitFor(() => expect(svc.verifyAwbs).toHaveBeenCalledWith(['6606077671', '1000000004', 'ABC', '1', '2']))
+    const list = await within(panel).findByRole('list', { name: 'نتائج التحقق' })
+    expect(list.textContent).toContain('نجحت')
+    expect(list.textContent).toContain('غير موجودة لدى DHL (طلب منفرد)')
+    expect(list.textContent).toContain('لم تُرسل')
   })
 })
