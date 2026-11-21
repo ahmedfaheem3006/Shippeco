@@ -28,7 +28,7 @@ describe('status presentation', () => {
   })
   it('list badge before DHL ever answered: waiting / not at DHL / temporarily unavailable — then the real status', () => {
     expect(rowBadge({ normalized_status: null, sync_status: 'pending' }).label).toBe('بانتظار أول مزامنة')
-    expect(rowBadge({ normalized_status: null, sync_status: 'not_found' }).label).toBe('غير موجودة لدى DHL')
+    expect(rowBadge({ normalized_status: null, sync_status: 'not_found' }).label).toBe('لا تتوفر بيانات تتبع من DHL')
     expect(rowBadge({ normalized_status: null, sync_status: 'error' }).label).toBe('غير متاحة مؤقتًا')
     expect(rowBadge({ normalized_status: 'PRE_TRANSIT', sync_status: 'ok' }).label).toBe('بانتظار الاستلام')
     expect(rowBadge({ normalized_status: 'IN_TRANSIT', sync_status: 'error' }).label).toBe('قيد النقل') // last known status kept

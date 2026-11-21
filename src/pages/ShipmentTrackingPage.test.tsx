@@ -190,7 +190,7 @@ describe('«متابعة البوليصة» — list', () => {
     ]))
     renderApp()
     const rows = await screen.findAllByRole('row')
-    expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '1111111111')!).getByText('غير موجودة لدى DHL')).toBeTruthy()
+    expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '1111111111')!).getByText('لا تتوفر بيانات تتبع من DHL')).toBeTruthy()
     expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '2222222222')!).getByText('غير متاحة مؤقتًا')).toBeTruthy()
   })
 

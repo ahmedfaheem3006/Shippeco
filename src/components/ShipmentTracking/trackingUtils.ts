@@ -37,7 +37,7 @@ export const statusBadge = (s: NormalizedStatus | null) => STATUS_BADGE[s ?? 'NO
 
 const NO_DHL_DATA: Record<'WAITING' | 'NOT_FOUND' | 'UNAVAILABLE', Badge> = {
   WAITING: B('بانتظار أول مزامنة', 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700/40 dark:text-slate-300 dark:border-slate-600', 'bg-slate-400'),
-  NOT_FOUND: B('غير موجودة لدى DHL', 'bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-900/40', 'bg-orange-400'),
+  NOT_FOUND: B('لا تتوفر بيانات تتبع من DHL', 'bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-900/40', 'bg-orange-400'),
   UNAVAILABLE: B('غير متاحة مؤقتًا', 'bg-amber-50 text-amber-800 border-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-900/40', 'bg-amber-400'),
 };
 /**
