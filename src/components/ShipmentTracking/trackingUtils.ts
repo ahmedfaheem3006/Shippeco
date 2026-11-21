@@ -1,6 +1,7 @@
 import { ApiError } from '../../utils/apiClient';
 import { describeApiError } from '../../utils/apiErrors';
 import { countryNameAr } from '../../utils/countries';
+import { displayAwb } from '../../utils/awb';
 import type { NormalizedStatus, TrackingItem, TrackingStatusFilter } from '../../services/shipmentTracking.service';
 
 export const TRACKING_PAGE_SIZE = 20;
@@ -14,8 +15,8 @@ export function normalizeAwb(raw: unknown): string {
   return String(raw ?? '').trim().replace(/[^a-zA-Z0-9]/g, '').replace(/^AWB/i, '').toUpperCase();
 }
 export const isDhlAwb = (s: string) => /^\d{10}$/.test(s);
-/** "9988679120" → "998 867 9120" for reading (search/copy use the plain number). */
-export const formatAwb = (awb: string) => (/^\d{10}$/.test(awb) ? `${awb.slice(0, 3)} ${awb.slice(3, 6)} ${awb.slice(6)}` : awb);
+/** "6606077671" stays "6606077671" — never split into digit groups (utils/awb.ts). */
+export const formatAwb = (awb: string) => displayAwb(awb);
 
 type Badge = { label: string; cls: string; dot: string };
 const B = (label: string, cls: string, dot: string): Badge => ({ label, cls, dot });

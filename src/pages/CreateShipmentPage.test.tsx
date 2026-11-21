@@ -230,7 +230,7 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(await screen.findByText(/إرسال طلب الإنشاء إلى DHL/)).toBeTruthy()
     await act(async () => { release() })
     expect(await screen.findByText('تم إنشاء الشحنة لدى DHL')).toBeTruthy()
-    expect(screen.getByText('461 496 1120')).toBeTruthy()
+    expect(screen.getByText('4614961120')).toBeTruthy() // the AWB exactly as DHL issued it, never split
     expect(screen.getByText('DH2601')).toBeTruthy()
     expect(screen.getByRole('button', { name: /ملصق الشحن/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /بوليصة الشحن/ })).toBeTruthy()

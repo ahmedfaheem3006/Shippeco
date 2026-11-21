@@ -170,7 +170,7 @@ for (const vp of VIEWPORTS) {
       expect(calls.create).toBe(0) // nothing is sent before the explicit confirmation
       await yes.click()
       await expect(page.getByText('تم إنشاء الشحنة لدى DHL')).toBeVisible()
-      await expect(page.getByText('461 496 1175')).toBeVisible()
+      await expect(page.getByText('4614961175', { exact: true })).toBeVisible()
       await expect(page.getByText('DH2601')).toBeVisible()
       await expect(page.getByRole('button', { name: /ملصق الشحن/ })).toBeVisible()
       await expect(page.getByRole('button', { name: /الفاتورة التجارية/ })).toBeVisible()
@@ -247,16 +247,16 @@ for (const vp of VIEWPORTS) {
       await page.route(/\/api\/dhl\/pickups\/7$/, (r) => r.fulfill(json({ success: true, data: { id: 7, status: 'booked', dispatch_confirmation_number: 'CBJ261119000561', pickup_date: '2026-11-16', earliest_time: '10:00', latest_time: '16:00' } })))
 
       await page.goto('/shipment-tracking')
-      const container = vp.name === 'desktop' ? page.locator('[data-tracking-awb="9988679120"]').first() : page.getByRole('article').filter({ hasText: '998 867 9120' })
+      const container = vp.name === 'desktop' ? page.locator('[data-tracking-awb="9988679120"]').first() : page.getByRole('article').filter({ hasText: '9988679120' })
       await expect(container).toBeVisible()
-      await expect(page.getByText('لم تتم المزامنة').first()).toBeVisible()
+      await expect(page.getByTestId('tracking-counters').getByText(/بانتظار المزامنة/)).toBeVisible()
       await shot(page, `09-tracking-main-${vp.name}`)
 
       await page.getByPlaceholder('1234567890').fill('4614961175')
       await page.getByRole('button', { name: 'بحث', exact: true }).click()
       await expect(page).toHaveURL(/\/shipment-tracking\/4614961175$/)
       expect(lookups).toBe(1)
-      await expect(page.getByRole('heading', { name: /461 496 1175/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: /4614961175/ })).toBeVisible()
       await expect(page.getByRole('heading', { name: /رحلة الشحنة \(4\)/ })).toBeVisible()
       await expect(page.getByText('SHIPPEC-7Q2K9D')).toBeVisible()
       await expect(page.getByText(/^\s*\{/)).toHaveCount(0) // no raw JSON anywhere

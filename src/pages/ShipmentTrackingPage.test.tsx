@@ -6,7 +6,7 @@ import type { TrackingDetails, TrackingItem, TrackingSummary } from '../services
 const svc = vi.hoisted(() => ({
   list: vi.fn(), summary: vi.fn(), details: vi.fn(), refresh: vi.fn(), lookup: vi.fn(),
   syncStatus: vi.fn(), discoverInvoices: vi.fn(), startBackfill: vi.fn(), pauseBackfill: vi.fn(),
-  repairFalseNotFound: vi.fn(), verifyAwbs: vi.fn(), downloadAwbDocument: vi.fn(),
+  repairFalseNotFound: vi.fn(), verifyAwbs: vi.fn(), downloadAwbDocument: vi.fn(), resumeSync: vi.fn(),
 }))
 vi.mock('../services/shipmentTracking.service', () => ({ shipmentTrackingService: svc }))
 const dhl = vi.hoisted(() => ({ get: vi.fn(), getPickup: vi.fn(), downloadDocument: vi.fn() }))
@@ -68,16 +68,113 @@ beforeEach(() => {
   svc.list.mockResolvedValue(page([item('9988679120'), item('1234567890', { normalized_status: null, last_synced_at: null, current_description: null, last_event_local: null, pickup_local: null, freshness: 'pending', invoice_id: null, invoice_number: null, client_id: null, customer_name: null, receiver_name: 'Gulf Retail' })]))
 })
 
+describe('«متابعة البوليصة» — one shipment per row, AWB never split, active / archived dataset', () => {
+  it('cards: ONE full-width card per row at every width (single column, never a 2-column grid); the AWB is shown and linked unspaced', async () => {
+    renderApp()
+    const list = await screen.findByTestId('tracking-card-list')
+    const cls = list.className.split(/\s+/)
+    expect(cls).toContain('grid-cols-1')
+    // no breakpoint may turn the list into several columns (md:grid-cols-2 was the mobile/tablet bug)
+    expect(cls.filter((c) => /(^|:)grid-cols-(?!1$)\d+$/.test(c) || /(^|:)columns-/.test(c) || /(^|:)flex-row$/.test(c))).toEqual([])
+    const cards = within(list).getAllByTestId('tracking-card')
+    expect(cards).toHaveLength(2)
+    for (const c of cards) expect(c.className.split(/\s+/)).toContain('w-full')
+    const awb = within(cards[0]).getByTestId('tracking-awb')
+    expect(awb.textContent).toBe('9988679120')
+    expect(awb.getAttribute('href')).toBe('/shipment-tracking/9988679120')
+    expect(screen.queryByText('998 867 9120')).toBeNull()
+    // the same compact order on the card: AWB, status, customer, invoice, route, created/pickup, ETA, last sync, checkpoint, details
+    const text = cards[0].textContent!
+    const at = (x: string) => text.indexOf(x)
+    for (const [a, b] of [['9988679120', 'قيد النقل'], ['قيد النقل', 'العميل'], ['العميل', 'الفاتورة'], ['الفاتورة', 'المسار'], ['المسار', 'الإنشاء / استلام DHL'],
+      ['الإنشاء / استلام DHL', 'التسليم المتوقع'], ['التسليم المتوقع', 'آخر تحديث'], ['آخر تحديث', 'Arrived at DHL Sort Facility'], ['Arrived at DHL Sort Facility', 'تفاصيل الشحنة']]) {
+      expect(at(a)).toBeGreaterThanOrEqual(0)
+      expect(at(a)).toBeLessThan(at(b))
+    }
+    // desktop: one full-width table row per shipment, same order of columns
+    const heads = within(screen.getByTestId('tracking-table')).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(heads.slice(0, 8)).toEqual(['البوليصة', 'الحالة', 'العميل / الفاتورة', 'المنشأ ← الوجهة', 'الإنشاء / استلام DHL', 'التسليم', 'آخر نقطة تتبع', 'آخر تحديث'])
+  })
+
+  it('a leading zero survives (string rendering, never a number)', async () => {
+    svc.list.mockResolvedValue(page([item('0012345678')]))
+    renderApp()
+    const cards = await screen.findAllByTestId('tracking-card')
+    expect(within(cards[0]).getByTestId('tracking-awb').textContent).toBe('0012345678')
+  })
+
+  it('default = active dataset; counters distinguish active / in transit / delivered (12 months) / problems / waiting / archived; «المسلّمة القديمة» asks for view=archived', async () => {
+    svc.summary.mockResolvedValue({ ...summary(), counts: { ...summary().counts, total: 900, active: 900, delivered: 300, delivered_recent: 300, waiting_sync: 450, not_synced: 450, archived_delivered: 1200, all_total: 2100 } })
+    renderApp()
+    await waitFor(() => expect(svc.list).toHaveBeenCalled())
+    expect(svc.list.mock.calls[0][0]).toMatchObject({ view: 'active', page: 1 })
+    const counters = await screen.findByTestId('tracking-counters')
+    await waitFor(() => expect(within(counters).getByRole('radio', { name: /النشطة\s*·\s*900/ })).toBeTruthy())
+    expect(within(counters).getByRole('radio', { name: /سُلّمت \(آخر 12 شهرًا\)\s*·\s*300/ })).toBeTruthy()
+    expect(within(counters).getByRole('radio', { name: /بانتظار المزامنة\s*·\s*450/ })).toBeTruthy()
+    expect(within(counters).getByRole('radio', { name: /قيد النقل\s*·\s*5/ })).toBeTruthy()
+    expect(within(counters).getByRole('radio', { name: /يوجد مشكلة\s*·\s*2/ })).toBeTruthy()
+    const archived = within(counters).getByRole('radio', { name: /المسلّمة القديمة\s*·\s*1200/ })
+    fireEvent.click(archived)
+    await waitFor(() => expect(svc.list).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'archived', status: 'all', page: 1 })))
+    expect(within(counters).getByRole('radio', { name: /المسلّمة القديمة/ }).getAttribute('aria-checked')).toBe('true')
+    expect(await screen.findByText(/سُلّمت قبل أكثر من 12 شهرًا — محفوظة كاملة/)).toBeTruthy()
+    fireEvent.click(within(counters).getByRole('radio', { name: /قيد النقل/ }))
+    await waitFor(() => expect(svc.list).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'active', status: 'in_transit' })))
+  })
+
+  it('details: the heading and the copy button use the exact AWB', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    svc.details.mockResolvedValue(details('6606077671'))
+    renderApp('/shipment-tracking/6606077671')
+    expect(await screen.findByRole('heading', { name: '6606077671' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'نسخ رقم البوليصة' }))
+    expect(writeText).toHaveBeenCalledWith('6606077671')
+    expect(document.body.textContent).not.toContain('660 607 7671')
+  })
+
+  it('admin: the DHL quota as learnt (adaptive, last 429 + Retry-After, pause) and a resume after a 401/403 stop', async () => {
+    auth.role = 'admin'
+    const base = {
+      env: 'production', blocked_by: 'auth_stopped', bulk_batch_size: 100, calls_per_cycle: 2, daily_call_limit: 0, backfill_daily_call_limit: 0, verify_max_awbs: 5, run: null,
+      registration: { invoice_awbs: 10, registered_from_invoices: 10, tracked: 10, synced: 4, waiting_first_sync: 6, not_found: 0, errors: 0, polling: 6, last_synced_at: null },
+      today: { api_calls: 1500, errors: 1, awbs_requested: 1500, awbs_found: 1400, awbs_not_found: 99, awbs_failed: 1 }, last_successful_sync_at: null,
+      quota: {
+        mode: 'adaptive', daily_call_limit: 0, calls_today: 1500, state: 'stopped', pause_reason: 'auth_stopped', paused_until: null,
+        last_429_at: new Date(Date.now() - 3600_000).toISOString(), last_retry_after_seconds: 600, consecutive_429: 0, total_429: 2, consecutive_failures: 0,
+        last_failure_at: null, last_failure_code: null, last_auth_error_at: new Date().toISOString(), last_auth_error_code: 'DHL_UNAUTHORIZED', last_dhl_answer_at: null,
+        last_paused_at: null, last_resumed_at: null, resume_reason: null,
+        pacing: { min_request_interval_ms: 1500, max_concurrency: 1, in_flight: 0, last_request_at: null, backfill_calls_per_minute: 2 },
+        batch: { backfill_effective_size: 1, sync_effective_size: 100, max_size: 100 },
+      },
+    }
+    svc.syncStatus.mockResolvedValue(base)
+    svc.resumeSync.mockResolvedValue({ ...base, blocked_by: null, quota: { ...base.quota, state: 'running', pause_reason: null } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderApp()
+    const bar = await screen.findByTestId('tracking-sync-status')
+    const q = within(bar).getByTestId('quota-status').textContent!
+    expect(q).toContain('الحصة: تكيّفية')
+    expect(q).toContain('Retry-After 600')
+    expect(q).toContain('فاصل الطلبات: 1.5 ث')
+    expect(within(bar).getByText(/رفضت DHL بيانات الربط \(401\/403\)/)).toBeTruthy()
+    expect(within(bar).getByText(/طلبات DHL اليوم/).textContent).not.toContain('/ 0')
+    fireEvent.click(within(bar).getByTestId('quota-resume'))
+    await waitFor(() => expect(svc.resumeSync).toHaveBeenCalledTimes(1))
+  })
+})
+
 describe('«متابعة البوليصة» — list', () => {
   it('one full-width row per shipment (cards on small screens); a shipment without DHL data stays visible', async () => {
     renderApp()
     const rows = await screen.findAllByRole('row')
     expect(rows.length).toBe(3) // header + 2
     const r1 = rows.find((r) => r.getAttribute('data-tracking-awb') === '9988679120')!
-    expect(within(r1).getByText('998 867 9120')).toBeTruthy()
+    expect(within(r1).getByText('9988679120')).toBeTruthy()
     expect(within(r1).getByText('DH2580')).toBeTruthy()
     expect(within(r1).getByText('قيد النقل')).toBeTruthy()
-    expect(within(r1).getByText(/استلام DHL: 28\/10\/2026/)).toBeTruthy()
+    expect(within(r1).getByText(/استلام: 28\/10\/2026/)).toBeTruthy()
     expect(within(r1).getByRole('link', { name: 'تفاصيل' }).getAttribute('href')).toBe('/shipment-tracking/9988679120')
     const r2 = rows.find((r) => r.getAttribute('data-tracking-awb') === '1234567890')!
     expect(within(r2).getByText('بانتظار أول مزامنة')).toBeTruthy() // visible before DHL ever answered
@@ -201,7 +298,7 @@ describe('/shipment-tracking/:awb — details', () => {
     dhl.get.mockResolvedValue({ id: 4, shippec_reference: 'SHIPPEC-ABC', product_name: 'EXPRESS WORLDWIDE', pickup_option: 'none', pickup_id: null, service_point_name: null,
       documents: [{ id: 1, document_type: 'shipping_label', content_type: 'application/pdf', size_bytes: 1, sha256: 'x' }] })
     renderApp('/shipment-tracking/9988679120')
-    expect(await screen.findByRole('heading', { name: /998 867 9120/ })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: /9988679120/ })).toBeTruthy()
     const timeline = screen.getByRole('heading', { name: /رحلة الشحنة \(3\)/ }).parentElement!
     const events = within(timeline).getAllByRole('listitem')
     expect(events.map((e) => e.getAttribute('data-event-code'))).toEqual(['OK', 'AF', 'PU'])
@@ -219,13 +316,13 @@ describe('/shipment-tracking/:awb — details', () => {
   it('QA 3D.1: no DHL pickup event — "not picked up yet" only before transit; otherwise "not available from DHL"', async () => {
     svc.details.mockResolvedValue(details('9356579890', { normalized_status: 'DELIVERED', pickup_local: null, pickup_gmt_offset: null }))
     renderApp('/shipment-tracking/9356579890')
-    await screen.findByRole('heading', { name: /935 657 9890/ })
+    await screen.findByRole('heading', { name: /9356579890/ })
     expect(screen.getByText('الاستلام من DHL').parentElement!.textContent).toContain('غير متاح من DHL')
     expect(screen.queryByText('لم تستلمها DHL بعد')).toBeNull()
     cleanup()
     svc.details.mockResolvedValue(details('4623576403', { normalized_status: 'PRE_TRANSIT', pickup_local: null, pickup_gmt_offset: null, events: [] }))
     renderApp('/shipment-tracking/4623576403')
-    await screen.findByRole('heading', { name: /462 357 6403/ })
+    await screen.findByRole('heading', { name: /4623576403/ })
     expect(screen.getByText('الاستلام من DHL').parentElement!.textContent).toContain('لم تستلمها DHL بعد')
   })
 
@@ -234,12 +331,12 @@ describe('/shipment-tracking/:awb — details', () => {
     svc.lookup.mockResolvedValue({ result: 'remote', awb: '5550000777', record: details('5550000777') })
     renderApp('/shipment-tracking/5550000777')
     fireEvent.click(await screen.findByRole('button', { name: /البحث لدى DHL/ }))
-    expect(await screen.findByRole('heading', { name: /555 000 0777/ })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: /5550000777/ })).toBeTruthy()
     cleanup()
     auth.role = 'viewer'
     svc.details.mockResolvedValue(details('9988679120'))
     renderApp('/shipment-tracking/9988679120')
-    await screen.findByRole('heading', { name: /998 867 9120/ })
+    await screen.findByRole('heading', { name: /9988679120/ })
     expect(screen.queryByRole('button', { name: /تحديث الحالة/ })).toBeNull()
     cleanup()
     svc.details.mockRejectedValue(new ApiError('not found', 404, 'TRACKING_NOT_FOUND'))
@@ -258,7 +355,7 @@ describe('/shipment-tracking/:awb — AWB / waybill download & print', () => {
     svc.downloadAwbDocument.mockReturnValue(new Promise((r) => { resolve = r }))
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     renderApp('/shipment-tracking/6606077671')
-    await screen.findByRole('heading', { name: /660 607 7671/ })
+    await screen.findByRole('heading', { name: /6606077671/ })
     const actions = screen.getByTestId('awb-actions')
     const print = within(actions).getByRole('button', { name: /طباعة البوليصة/ })
     const download = within(actions).getByRole('button', { name: /تنزيل البوليصة/ })
@@ -315,7 +412,7 @@ describe('/shipment-tracking/:awb — AWB / waybill download & print', () => {
     auth.role = 'viewer'
     svc.details.mockResolvedValue(withDoc('6606077671'))
     renderApp('/shipment-tracking/6606077671')
-    await screen.findByRole('heading', { name: /660 607 7671/ })
+    await screen.findByRole('heading', { name: /6606077671/ })
     expect(screen.queryByRole('button', { name: /تنزيل البوليصة/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /طباعة البوليصة/ })).toBeNull()
   })

@@ -7,6 +7,7 @@ import { Dialog } from '../shared/Dialog';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { dhlShipmentService, type CreateResult, type ShipmentDocument } from '../../services/dhlShipment.service';
 import { downloadBlob } from '../../utils/download';
+import { displayAwb } from '../../utils/awb';
 import { describeApiError } from '../../utils/apiErrors';
 import { Button, Field, Note, Section, Stat, TextInput } from './ui';
 import { canShipment, money } from './wizardModel';
@@ -14,7 +15,8 @@ import { canShipment, money } from './wizardModel';
 const DOC_LABEL: Record<string, string> = {
   shipping_label: 'ملصق الشحن', waybill: 'بوليصة الشحن (Waybill)', commercial_invoice: 'الفاتورة التجارية', proforma_invoice: 'الفاتورة المبدئية', other: 'مستند DHL',
 };
-const formatAwb = (a: string) => (/^\d{10}$/.test(a) ? `${a.slice(0, 3)} ${a.slice(3, 6)} ${a.slice(6)}` : a);
+/** The AWB exactly as DHL issued it — never split into digit groups. */
+const formatAwb = (a: string) => displayAwb(a);
 
 function DocumentButton({ shipmentId, d }: { shipmentId: number; d: ShipmentDocument }) {
   const [busy, setBusy] = useState(false);

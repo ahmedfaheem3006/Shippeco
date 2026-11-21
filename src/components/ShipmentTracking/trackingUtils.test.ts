@@ -14,7 +14,8 @@ describe('AWB normalization', () => {
     expect(isDhlAwb('12345')).toBe(false)
   })
   it('formats for reading', () => {
-    expect(formatAwb('9988679120')).toBe('998 867 9120')
+    expect(formatAwb('9988679120')).toBe('9988679120') // never split into digit groups
+    expect(formatAwb('0012345678')).toBe('0012345678')
     expect(formatAwb('ABC')).toBe('ABC')
   })
 })

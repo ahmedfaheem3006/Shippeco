@@ -11,9 +11,9 @@
  * large backfill is resumed, with a small batch size.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, FlaskConical, Loader2, Pause, Play, ScanSearch, Wrench } from 'lucide-react';
+import { CheckCircle2, FlaskConical, Loader2, Pause, Play, RotateCcw, ScanSearch, Wrench } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { shipmentTrackingService, type TrackingSyncStatus, type VerifyAwbResult } from '../../services/shipmentTracking.service';
+import { shipmentTrackingService, type TrackingQuota, type TrackingSyncStatus, type VerifyAwbResult } from '../../services/shipmentTracking.service';
 import { describeApiError } from '../../utils/apiErrors';
 import { timeAgo } from './trackingUtils';
 
@@ -24,7 +24,26 @@ export const BLOCKED_TEXT: Record<NonNullable<TrackingSyncStatus['blocked_by']>,
   tracking_disabled: 'تحديث التتبع من DHL غير مفعّل على الخادم',
   sync_disabled: 'المزامنة التلقائية متوقفة على الخادم',
   paused: 'المزامنة متوقفة مؤقتًا بعد رد من DHL — تُستأنف تلقائيًا',
+  rate_limited: 'DHL طلبت التمهّل (429) — كل طلبات التتبع متوقفة حتى الوقت الذي تسمح به DHL، ثم تُستأنف تلقائيًا',
+  circuit_open: 'أخطاء متتالية من خوادم DHL — التتبع متوقف مؤقتًا ويُستأنف تلقائيًا',
+  auth_stopped: 'رفضت DHL بيانات الربط (401/403) — المزامنة التلقائية متوقفة حتى يصحّح المسؤول الإعدادات ويستأنفها',
 };
+
+/** "2026-11-21T10:05:00Z" → "13:05" (Riyadh), for a pause end the same day. */
+const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Riyadh' }) : '—');
+
+/** One line: the DHL quota as SHIPPEC has learnt it (adaptive mode: no SHIPPEC cap). */
+function quotaLine(q: TrackingQuota): string[] {
+  const parts = [
+    q.mode === 'adaptive' ? 'الحصة: تكيّفية (بلا حد يومي من SHIPPEC — حدود DHL الفعلية تُحترم)' : `الحصة اليومية من SHIPPEC: ${n(q.daily_call_limit)}`,
+    `فاصل الطلبات: ${(q.pacing.min_request_interval_ms / 1000).toLocaleString('en-US')} ث · طلب واحد في كل مرة${q.pacing.max_concurrency > 1 ? ` (حتى ${q.pacing.max_concurrency})` : ''}`,
+  ];
+  if (q.batch.backfill_effective_size) parts.push(`بوالص في كل طلب: ${n(q.batch.backfill_effective_size)}`);
+  if (q.last_429_at) parts.push(`آخر 429: ${timeAgo(q.last_429_at)}${q.last_retry_after_seconds != null ? ` (Retry-After ${n(q.last_retry_after_seconds)} ث)` : ''} · إجمالي ${n(q.total_429)}`);
+  if (q.state === 'paused' && q.paused_until) parts.push(`متوقف حتى ${clock(q.paused_until)}`);
+  if (q.state === 'running' && q.last_resumed_at) parts.push(`استُؤنف ${timeAgo(q.last_resumed_at)}${q.resume_reason === 'admin' ? ' (المسؤول)' : ' (تلقائيًا)'}`);
+  return parts;
+}
 const RUN_TEXT: Record<string, string> = { running: 'قيد التشغيل', paused: 'موقوفة مؤقتًا', completed: 'اكتملت', cancelled: 'أُلغيت' };
 const PAUSE_TEXT: Record<string, string> = {
   admin: 'أوقفها المسؤول',
@@ -52,7 +71,7 @@ function parseAwbList(text: string, max = 5): string[] {
 
 export const TrackingSyncStatusBar: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }) => {
   const [st, setSt] = useState<TrackingSyncStatus | null>(null);
-  const [busy, setBusy] = useState<null | 'discover' | 'start' | 'pause' | 'repair' | 'verify'>(null);
+  const [busy, setBusy] = useState<null | 'discover' | 'start' | 'pause' | 'repair' | 'verify' | 'resume'>(null);
   const [batch, setBatch] = useState('');
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyText, setVerifyText] = useState('');
@@ -77,8 +96,11 @@ export const TrackingSyncStatusBar: React.FC<{ refreshKey?: number }> = ({ refre
   const batchValue = batch.trim() ? Math.floor(Number(batch)) : undefined;
   const batchInvalid = batchValue !== undefined && (!Number.isFinite(batchValue) || batchValue < 1 || batchValue > st.bulk_batch_size);
 
-  const act = async (kind: 'discover' | 'start' | 'pause' | 'repair') => {
+  const act = async (kind: 'discover' | 'start' | 'pause' | 'repair' | 'resume') => {
     if (busy) return;
+    if (kind === 'resume' && !window.confirm(st.quota?.state === 'stopped'
+      ? 'استئناف مزامنة DHL بعد رفض بيانات الربط؟ تأكد أولًا من تصحيح بيانات MyDHL على الخادم.'
+      : 'إنهاء التوقف المؤقت الآن؟ احترم وقت Retry-After من DHL ما أمكن.')) return;
     if (kind === 'start' && !open && !window.confirm('بدء المزامنة الأولية: يسأل الخادم DHL عن كل بوالص الفواتير التي لم تُزامن بعد، على دفعات في الخلفية. متابعة؟')) return;
     if (kind === 'repair' && !window.confirm('إعادة البوالص التي سُجلت «غير موجودة» بسبب رفض دفعة كاملة إلى قائمة الانتظار؟ لا يُحذف أي سجل أو حدث، ولا يُرسل أي طلب إلى DHL.')) return;
     if (kind === 'start' && batchInvalid) { toast.error(`حجم الدفعة من 1 إلى ${st.bulk_batch_size}`); return; }
@@ -90,6 +112,9 @@ export const TrackingSyncStatusBar: React.FC<{ refreshKey?: number }> = ({ refre
       } else if (kind === 'start') {
         const r = await shipmentTrackingService.startBackfill(batchValue);
         toast.success(r.resumed ? 'تم استئناف المزامنة الأولية' : r.created ? 'بدأت المزامنة الأولية في الخلفية' : 'المزامنة الأولية تعمل بالفعل');
+      } else if (kind === 'resume') {
+        await shipmentTrackingService.resumeSync();
+        toast.success('استُؤنفت مزامنة DHL');
       } else if (kind === 'repair') {
         const r = await shipmentTrackingService.repairFalseNotFound();
         toast.success(`أُعيدت ${n(r.repaired)} بوليصة إلى الانتظار — بقيت ${n(r.skipped_individual_not_found)} مؤكدة فرديًا`);
@@ -137,6 +162,12 @@ export const TrackingSyncStatusBar: React.FC<{ refreshKey?: number }> = ({ refre
             className={`${btn} border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800`}>
             <FlaskConical size={13} /> تحقق تجريبي
           </button>
+          {st.quota && st.quota.state !== 'running' && (
+            <button type="button" onClick={() => void act('resume')} disabled={!!busy} data-testid="quota-resume"
+              className={`${btn} border-red-200 text-red-700 bg-white dark:bg-slate-800`}>
+              {busy === 'resume' ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} استئناف مزامنة DHL
+            </button>
+          )}
           {unverified > 0 && (
             <button type="button" onClick={() => void act('repair')} disabled={!!busy}
               className={`${btn} border-orange-200 text-orange-700 bg-white dark:bg-slate-800`}>
@@ -169,7 +200,7 @@ export const TrackingSyncStatusBar: React.FC<{ refreshKey?: number }> = ({ refre
         <span>آخر مزامنة ناجحة: <span className="font-bold">{st.last_successful_sync_at ? timeAgo(st.last_successful_sync_at) : '—'}</span></span>
         <span>المتبقي: <span className="font-bold">{n(remaining)}</span></span>
         {reg.not_found > 0 && <span>لا بيانات لدى DHL: <span className="font-bold">{n(reg.not_found)}</span></span>}
-        {st.today && <span>طلبات DHL اليوم: <span className="font-bold">{n(st.today.api_calls)}</span> / {n(st.daily_call_limit)} ({n(st.today.awbs_requested)} بوليصة)</span>}
+        {st.today && <span>طلبات DHL اليوم: <span className="font-bold">{n(st.today.api_calls)}</span>{st.daily_call_limit > 0 ? ` / ${n(st.daily_call_limit)}` : ''} ({n(st.today.awbs_requested)} بوليصة)</span>}
         {run && <span>المزامنة الأولية: <span className="font-bold">{RUN_TEXT[run.status] ?? run.status}</span>{open ? ` · ${n(run.processed)} من ${n(run.discovered)}` : ''}</span>}
       </div>
       {run && (
@@ -182,6 +213,11 @@ export const TrackingSyncStatusBar: React.FC<{ refreshKey?: number }> = ({ refre
           <span>فشل مؤقت: <span className="font-bold">{n(run.temporary_failed ?? run.temporary_errors)}</span></span>
           <span>فشل دائم: <span className="font-bold">{n(run.permanent_failed ?? run.permanent_errors)}</span></span>
           {run.effective_batch_size != null && <span>حجم الدفعة الفعلي: <span className="font-bold">{n(run.effective_batch_size)}</span></span>}
+        </div>
+      )}
+      {st.quota && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums" data-testid="quota-status">
+          {quotaLine(st.quota).map((x) => <span key={x}>{x}</span>)}
         </div>
       )}
       {open && (

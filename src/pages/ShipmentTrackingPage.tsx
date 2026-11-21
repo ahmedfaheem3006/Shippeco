@@ -1,7 +1,16 @@
 /**
- * «متابعة البوليصة» — (A) direct DHL AWB search, (B) every SHIPPEC shipment,
- * one row each (cards on small screens). Data from the SHIPPEC Backend; DHL
- * is asked only by the Backend (manual search for staff, background sync).
+ * «متابعة البوليصة» — (A) direct DHL AWB search, (B) SHIPPEC shipments.
+ *
+ * Layout rule (final): EXACTLY ONE shipment per row at every width — a
+ * full-width table row on wide screens, one full-width card per row below
+ * (single column, never a 2-column grid). Same compact order everywhere:
+ * AWB · status · customer · invoice · origin → destination · created / pickup
+ * · ETA · latest checkpoint · last sync · details.
+ *
+ * Dataset (server-side, paginated): the ACTIVE page = every undelivered
+ * shipment whatever its age + deliveries of the last 12 months; older
+ * deliveries are in «المسلّمة القديمة» (hidden, never deleted). Data from the
+ * SHIPPEC Backend; DHL is asked only by the Backend.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,7 +20,7 @@ import {
 import { useAuthStore } from '../hooks/useAuthStore';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import {
-  shipmentTrackingService, type LookupResult, type TrackingItem, type TrackingStatusFilter, type TrackingSummary, type TrackingSyncFilter,
+  shipmentTrackingService, type LookupResult, type TrackingItem, type TrackingStatusFilter, type TrackingSummary, type TrackingSyncFilter, type TrackingView,
 } from '../services/shipmentTracking.service';
 import { Freshness } from '../components/ShipmentTracking/TrackingParts';
 import { TrackingSyncStatusBar } from '../components/ShipmentTracking/TrackingSyncStatus';
@@ -43,8 +52,13 @@ const SYNC_FILTERS: { id: TrackingSyncFilter; label: string }[] = [
   { id: 'never', label: 'لم تتم المزامنة' },
   { id: 'failed', label: 'فشلت آخر محاولة' },
 ];
-type Filters = { status: TrackingStatusFilter; sync: TrackingSyncFilter; year: string; from: string; to: string; origin: string; destination: string; client_id: number | '' };
-const EMPTY: Filters = { status: 'all', sync: 'all', year: '', from: '', to: '', origin: '', destination: '', client_id: '' };
+const VIEW_OPTIONS: { id: TrackingView; label: string }[] = [
+  { id: 'active', label: 'الشحنات النشطة' },
+  { id: 'archived', label: 'المسلّمة القديمة (أكثر من 12 شهرًا)' },
+  { id: 'all', label: 'الكل (النشطة + المسلّمة القديمة)' },
+];
+type Filters = { view: TrackingView; status: TrackingStatusFilter; sync: TrackingSyncFilter; year: string; from: string; to: string; origin: string; destination: string; client_id: number | '' };
+const EMPTY: Filters = { view: 'active', status: 'all', sync: 'all', year: '', from: '', to: '', origin: '', destination: '', client_id: '' };
 const selectCls = 'w-full min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200';
 const YEARS = (() => { const y = new Date().getFullYear(); return [y, y - 1, y - 2, y - 3].map(String); })();
 
@@ -63,45 +77,69 @@ function Checkpoint({ t }: { t: TrackingItem }) {
   );
 }
 
+const routeOf = (t: TrackingItem) =>
+  `${placeLabel(t.origin, t.origin_city, t.origin_country_code)} ← ${t.destination || t.destination_country_code ? placeLabel(t.destination, t.destination_city, t.destination_country_code) : t.invoice_destination || '—'}`;
+const isDelivered = (t: TrackingItem) => t.normalized_status === 'DELIVERED';
+
+function AwbLink({ t, size }: { t: TrackingItem; size: 'sm' | 'lg' }) {
+  return (
+    <Link to={`/shipment-tracking/${t.awb}`} data-testid="tracking-awb" dir="ltr"
+      className={`font-mono font-extrabold text-indigo-700 dark:text-indigo-300 hover:underline whitespace-nowrap ${size === 'lg' ? 'text-lg' : 'text-sm'}`}>{formatAwb(t.awb)}</Link>
+  );
+}
+function Customer({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem) => void }) {
+  return t.client_id
+    ? <button type="button" onClick={() => onCustomer(t)} className="block max-w-full text-start text-xs font-bold text-slate-800 dark:text-slate-100 truncate hover:text-indigo-600 hover:underline" title="عرض شحنات هذا العميل فقط">{t.customer_name || '—'}</button>
+    : <span className="block text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{t.customer_name || t.receiver_name || '—'}</span>;
+}
+function Invoice({ t }: { t: TrackingItem }) {
+  return t.invoice_id
+    ? <Link to={`/invoices?invoice=${t.invoice_id}`} className="text-[11px] font-bold text-indigo-600 hover:underline">{t.invoice_number}</Link>
+    : <span className="text-[11px] text-slate-400">بدون فاتورة</span>;
+}
+
+/** Table cells: fixed layout (column widths in the header), content truncated — never clipped off the row. */
+const TD = 'py-3 px-2 min-w-0 overflow-hidden';
+const TH = 'py-2.5 px-2 text-start';
+
+/** Wide screens: ONE full-width table row per shipment. */
 function Row({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem) => void }) {
   const badge = rowBadge(t);
   const action = needsAction(t);
   return (
     <tr data-tracking-awb={t.awb} className={`border-b border-slate-100 dark:border-slate-700/60 align-top ${action ? 'bg-red-50/40 dark:bg-red-900/10' : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/20'}`}>
-      <td className="py-3 px-3">
-        <Link to={`/shipment-tracking/${t.awb}`} className="font-mono text-sm font-extrabold text-indigo-700 dark:text-indigo-300 hover:underline whitespace-nowrap" dir="ltr">{formatAwb(t.awb)}</Link>
-        <div className="text-[11px] text-slate-500 truncate max-w-[12rem]" dir="auto">{placeLabel(t.origin, t.origin_city, t.origin_country_code)} ← {t.destination || t.destination_country_code ? placeLabel(t.destination, t.destination_city, t.destination_country_code) : t.invoice_destination || '—'}</div>
-      </td>
-      <td className="py-3 px-3 max-w-[11rem]">
-        {t.client_id ? <button type="button" onClick={() => onCustomer(t)} className="block max-w-full text-start text-xs font-bold text-slate-800 dark:text-slate-100 truncate hover:text-indigo-600 hover:underline" title="عرض شحنات هذا العميل فقط">{t.customer_name || '—'}</button>
-          : <span className="block text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{t.customer_name || t.receiver_name || '—'}</span>}
-        {t.invoice_id ? <Link to={`/invoices?invoice=${t.invoice_id}`} className="text-[11px] font-bold text-indigo-600 hover:underline">{t.invoice_number}</Link> : <span className="text-[11px] text-slate-400">بدون فاتورة</span>}
-      </td>
-      <td className="py-3 px-3"><span className={`inline-block px-2.5 py-1 rounded-xl text-[11px] font-black border whitespace-nowrap ${badge.cls}`}>{badge.label}</span></td>
-      <td className="py-3 px-3 text-xs tabular-nums whitespace-nowrap">{dateOf(t)}<div className="text-[11px] text-slate-500">استلام DHL: {pickupOf(t)}</div></td>
-      <td className="py-3 px-3 text-xs tabular-nums whitespace-nowrap">{t.normalized_status === 'DELIVERED' ? <span className="font-bold text-green-700 dark:text-green-400">{deliveredOf(t)}</span> : formatEstimated(t.estimated_delivery)}<div className="text-[11px] text-slate-500">{t.normalized_status === 'DELIVERED' ? 'تم التسليم' : 'متوقع'}</div></td>
-      <td className="py-3 px-3 text-xs max-w-[16rem]"><Checkpoint t={t} /></td>
-      <td className="py-3 px-3"><Freshness t={t} /></td>
-      <td className="py-3 px-3 text-end"><Link to={`/shipment-tracking/${t.awb}`} className="inline-flex px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-indigo-600 hover:border-indigo-300 whitespace-nowrap">تفاصيل</Link></td>
+      <td className={TD}><AwbLink t={t} size="sm" /></td>
+      <td className={TD}><span className={`inline-block max-w-full truncate px-2 py-1 rounded-xl text-[11px] font-black border whitespace-nowrap ${badge.cls}`} title={badge.label}>{badge.label}</span></td>
+      <td className={TD}><Customer t={t} onCustomer={onCustomer} /><Invoice t={t} /></td>
+      <td className={`${TD} text-[11px] text-slate-600 dark:text-slate-300`}><span className="block truncate" dir="auto" title={routeOf(t)}>{routeOf(t)}</span></td>
+      <td className={`${TD} text-xs tabular-nums`}><span className="block truncate">{dateOf(t)}</span><div className="text-[11px] text-slate-500 truncate">استلام: {pickupOf(t)}</div></td>
+      <td className={`${TD} text-xs tabular-nums`}>{isDelivered(t) ? <span className="font-bold text-green-700 dark:text-green-400">{deliveredOf(t)}</span> : formatEstimated(t.estimated_delivery)}<div className="text-[11px] text-slate-500">{isDelivered(t) ? 'تم التسليم' : 'متوقع'}</div></td>
+      <td className={`${TD} text-xs`}><Checkpoint t={t} /></td>
+      <td className={TD}><Freshness t={t} /></td>
+      <td className={`${TD} text-end`}><Link to={`/shipment-tracking/${t.awb}`} className="inline-flex px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-indigo-600 hover:border-indigo-300 whitespace-nowrap">تفاصيل</Link></td>
     </tr>
   );
 }
 
+/** Below the table breakpoint: ONE full-width card per row (the list is a single column). */
 function Card({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem) => void }) {
   const badge = rowBadge(t);
+  const field = 'min-w-0';
+  const label = 'text-slate-400 font-bold';
   return (
-    <article data-tracking-awb={t.awb} className={`bg-white dark:bg-slate-800 rounded-2xl border p-4 space-y-3 ${needsAction(t) ? 'border-red-200 dark:border-red-900/50' : 'border-slate-200 dark:border-slate-700'}`}>
+    <article data-tracking-awb={t.awb} data-testid="tracking-card"
+      className={`w-full min-w-0 bg-white dark:bg-slate-800 rounded-2xl border p-4 space-y-3 ${needsAction(t) ? 'border-red-200 dark:border-red-900/50' : 'border-slate-200 dark:border-slate-700'}`}>
       <div className="flex items-start justify-between gap-2">
-        <Link to={`/shipment-tracking/${t.awb}`} className="font-mono text-lg font-extrabold text-indigo-700 dark:text-indigo-300" dir="ltr">{formatAwb(t.awb)}</Link>
+        <AwbLink t={t} size="lg" />
         <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black border shrink-0 ${badge.cls}`}>{badge.label}</span>
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
-        <div className="min-w-0"><div className="text-slate-400 font-bold">العميل</div>{t.client_id ? <button type="button" onClick={() => onCustomer(t)} className="font-bold truncate block max-w-full text-start">{t.customer_name || '—'}</button> : <div className="font-bold truncate">{t.customer_name || t.receiver_name || '—'}</div>}</div>
-        <div className="min-w-0"><div className="text-slate-400 font-bold">الفاتورة</div>{t.invoice_id ? <Link to={`/invoices?invoice=${t.invoice_id}`} className="font-bold text-indigo-600">{t.invoice_number}</Link> : '—'}</div>
-        <div><div className="text-slate-400 font-bold">تاريخ الإنشاء</div><div className="font-bold tabular-nums">{dateOf(t)}</div></div>
-        <div><div className="text-slate-400 font-bold">استلام DHL</div><div className="font-bold tabular-nums">{pickupOf(t)}</div></div>
-        <div><div className="text-slate-400 font-bold">{t.normalized_status === 'DELIVERED' ? 'التسليم الفعلي' : 'التسليم المتوقع'}</div><div className="font-bold tabular-nums">{t.normalized_status === 'DELIVERED' ? deliveredOf(t) : formatEstimated(t.estimated_delivery)}</div></div>
-        <div><div className="text-slate-400 font-bold">آخر تحديث</div><Freshness t={t} /></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2 text-[11px]">
+        <div className={field}><div className={label}>العميل</div><Customer t={t} onCustomer={onCustomer} /></div>
+        <div className={field}><div className={label}>الفاتورة</div><Invoice t={t} /></div>
+        <div className={`${field} col-span-2 sm:col-span-1 lg:col-span-1`}><div className={label}>المسار</div><div className="font-bold truncate" dir="auto" title={routeOf(t)}>{routeOf(t)}</div></div>
+        <div className={field}><div className={label}>الإنشاء / استلام DHL</div><div className="font-bold tabular-nums">{dateOf(t)}</div><div className="text-slate-500 tabular-nums">{pickupOf(t)}</div></div>
+        <div className={field}><div className={label}>{isDelivered(t) ? 'التسليم الفعلي' : 'التسليم المتوقع'}</div><div className="font-bold tabular-nums">{isDelivered(t) ? deliveredOf(t) : formatEstimated(t.estimated_delivery)}</div></div>
+        <div className={field}><div className={label}>آخر تحديث</div><Freshness t={t} /></div>
       </div>
       <div className="rounded-xl bg-slate-50 dark:bg-slate-900/40 p-2.5 text-xs"><Checkpoint t={t} /></div>
       <Link to={`/shipment-tracking/${t.awb}`} className="block text-center px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-indigo-600 min-h-[44px]">تفاصيل الشحنة</Link>
@@ -228,11 +266,18 @@ export const ShipmentTrackingPage: React.FC = () => {
   const counts = summary?.counts;
   const integration = summary?.integration;
   const onCustomer = (t: TrackingItem) => { setClientLabel(t.customer_name); setFilter('client_id', t.client_id ?? ''); };
-  const chips: { id: TrackingStatusFilter; label: string; n?: number }[] = [
-    { id: 'all', label: 'الكل', n: counts?.total }, { id: 'in_transit', label: 'قيد النقل', n: counts?.in_transit },
-    { id: 'out_for_delivery', label: 'خرجت للتسليم', n: counts?.out_for_delivery }, { id: 'delivered', label: 'تم التسليم', n: counts?.delivered },
-    { id: 'problem', label: 'يوجد مشكلة', n: counts?.problem }, { id: 'not_synced', label: 'لم تتم المزامنة', n: counts?.not_synced },
+  // Counters: the ACTIVE dataset per status, and the archive apart («المسلّمة القديمة» switches the view).
+  const chips: { id: string; label: string; n?: number; view: TrackingView; status: TrackingStatusFilter }[] = [
+    { id: 'active', label: 'النشطة', n: counts?.active ?? counts?.total, view: 'active', status: 'all' },
+    { id: 'in_transit', label: 'قيد النقل', n: counts?.in_transit, view: 'active', status: 'in_transit' },
+    { id: 'out_for_delivery', label: 'خرجت للتسليم', n: counts?.out_for_delivery, view: 'active', status: 'out_for_delivery' },
+    { id: 'delivered', label: 'سُلّمت (آخر 12 شهرًا)', n: counts?.delivered_recent ?? counts?.delivered, view: 'active', status: 'delivered' },
+    { id: 'problem', label: 'يوجد مشكلة', n: counts?.problem, view: 'active', status: 'problem' },
+    { id: 'not_synced', label: 'بانتظار المزامنة', n: counts?.waiting_sync ?? counts?.not_synced, view: 'active', status: 'not_synced' },
+    { id: 'archived', label: 'المسلّمة القديمة', n: counts?.archived_delivered, view: 'archived', status: 'all' },
   ];
+  const chipOn = (c: (typeof chips)[number]) => filters.view === c.view && filters.status === c.status;
+  const pickChip = (c: (typeof chips)[number]) => { switching(); setFilters((f) => ({ ...f, view: c.view, status: c.status })); setPage(1); };
 
   return (
     <div className="space-y-5 min-w-0" dir="rtl">
@@ -273,16 +318,21 @@ export const ShipmentTrackingPage: React.FC = () => {
             <Filter size={16} /> <span className="hidden sm:inline">الفلاتر</span>{activeFilters ? <span className="tabular-nums">({activeFilters})</span> : null}
           </button>
         </div>
-        <div role="radiogroup" aria-label="حالة الشحنة" className="flex flex-wrap gap-1.5">
+        <div role="radiogroup" aria-label="حالة الشحنة" className="flex flex-wrap gap-1.5" data-testid="tracking-counters">
           {chips.map((c) => (
-            <button key={c.id} type="button" role="radio" aria-checked={filters.status === c.id} onClick={() => setFilter('status', c.id)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap ${filters.status === c.id ? 'bg-indigo-600 text-white' : 'bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-300 hover:bg-slate-100'}`}>
+            <button key={c.id} type="button" role="radio" aria-checked={chipOn(c)} onClick={() => pickChip(c)} data-chip={c.id}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap ${chipOn(c) ? 'bg-indigo-600 text-white' : c.view === 'archived' ? 'bg-slate-100 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 hover:bg-slate-200' : 'bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-300 hover:bg-slate-100'}`}>
               {c.label}{c.n != null ? <span className="tabular-nums opacity-80"> · {c.n}</span> : null}
             </button>
           ))}
         </div>
+        {filters.view === 'archived' && (
+          <p className="text-[11px] font-semibold text-slate-500" role="status">شحنات سُلّمت قبل أكثر من 12 شهرًا — محفوظة كاملة (الأحداث والفاتورة والسجل)، ولا تُستهلك عليها طلبات DHL.</p>
+        )}
         {showFilters && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9 gap-2 pt-1">
+            <label className="text-[10px] font-bold text-slate-400 space-y-1 min-w-0"><span>مجموعة الشحنات</span>
+              <select value={filters.view} onChange={(e) => setFilter('view', e.target.value as TrackingView)} className={selectCls}>{VIEW_OPTIONS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select></label>
             <label className="text-[10px] font-bold text-slate-400 space-y-1 min-w-0"><span>السنة</span>
               <select value={filters.year} onChange={(e) => setFilter('year', e.target.value)} className={selectCls}><option value="">كل السنوات</option>{YEARS.map((y) => <option key={y} value={y}>{y}</option>)}</select></label>
             <label className="text-[10px] font-bold text-slate-400 space-y-1 min-w-0"><span>من تاريخ</span><input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} className={selectCls} /></label>
@@ -325,24 +375,33 @@ export const ShipmentTrackingPage: React.FC = () => {
       ) : items.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 flex flex-col items-center text-center">
           <PackageSearch size={44} className="text-slate-300 mb-3" />
-          <h3 className="text-lg font-bold">{q || activeFilters ? 'لا توجد نتائج مطابقة للبحث أو الفلتر' : 'لا توجد شحنات DHL للمتابعة حاليًا'}</h3>
+          <h3 className="text-lg font-bold">{filters.view === 'archived' && !q ? 'لا توجد شحنات مسلّمة قبل أكثر من 12 شهرًا' : q || activeFilters ? 'لا توجد نتائج مطابقة للبحث أو الفلتر' : 'لا توجد شحنات DHL للمتابعة حاليًا'}</h3>
           {!q && !activeFilters && <p className="text-slate-500 mt-2 text-sm">تظهر هنا تلقائيًا كل شحنة أُنشئت من SHIPPEC وكل فاتورة DHL تحمل رقم بوليصة.</p>}
+          {filters.view === 'active' && (q || activeFilters > 0) && (counts?.archived_delivered ?? 0) > 0 && (
+            <button type="button" onClick={() => setFilter('view', 'all')} className="mt-3 text-xs font-bold text-indigo-600 hover:underline">ابحث أيضًا في «المسلّمة القديمة»</button>
+          )}
         </div>
       ) : (
         <>
-          <div className={`hidden xl:block bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden transition-opacity ${phase === 'switching' ? 'opacity-60' : ''}`} aria-busy={phase === 'switching'}>
-            <table className="w-full text-start">
+          <div data-testid="tracking-table" className={`hidden xl:block bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-x-auto transition-opacity ${phase === 'switching' ? 'opacity-60' : ''}`} aria-busy={phase === 'switching'}>
+            <table className="w-full table-fixed text-start">
               <thead className="bg-slate-50 dark:bg-slate-900/40 text-[11px] font-bold text-slate-500">
                 <tr>
-                  <th className="py-2.5 px-3 text-start">البوليصة / المسار</th><th className="py-2.5 px-3 text-start">العميل / الفاتورة</th><th className="py-2.5 px-3 text-start">الحالة</th>
-                  <th className="py-2.5 px-3 text-start">الإنشاء / استلام DHL</th><th className="py-2.5 px-3 text-start">التسليم</th><th className="py-2.5 px-3 text-start">آخر نقطة تتبع</th>
-                  <th className="py-2.5 px-3 text-start">آخر تحديث</th><th className="py-2.5 px-3" />
+                  <th className={`${TH} w-[7.5rem]`}>البوليصة</th>
+                  <th className={`${TH} w-[8rem]`}>الحالة</th>
+                  <th className={`${TH} w-[12%]`}>العميل / الفاتورة</th>
+                  <th className={`${TH} w-[12%]`}>المنشأ ← الوجهة</th>
+                  <th className={`${TH} w-[7.5rem]`}>الإنشاء / استلام DHL</th>
+                  <th className={`${TH} w-[6rem]`}>التسليم</th>
+                  <th className={TH}>آخر نقطة تتبع</th>
+                  <th className={`${TH} w-[6.5rem]`}>آخر تحديث</th>
+                  <th className={`${TH} w-[5rem]`}><span className="sr-only">تفاصيل</span></th>
                 </tr>
               </thead>
               <tbody>{items.map((t) => <Row key={t.id} t={t} onCustomer={onCustomer} />)}</tbody>
             </table>
           </div>
-          <div className={`xl:hidden grid grid-cols-1 md:grid-cols-2 gap-3 transition-opacity ${phase === 'switching' ? 'opacity-60' : ''}`}>
+          <div data-testid="tracking-card-list" className={`xl:hidden grid grid-cols-1 gap-3 transition-opacity ${phase === 'switching' ? 'opacity-60' : ''}`}>
             {items.map((t) => <Card key={t.id} t={t} onCustomer={onCustomer} />)}
           </div>
           {totalPages > 1 && (

@@ -11,6 +11,11 @@ export type NormalizedStatus =
 export type TrackingStatusFilter =
   | 'all' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'not_delivered' | 'problem' | 'exception' | 'on_hold' | 'customs' | 'pre_transit' | 'not_synced' | 'unknown';
 export type TrackingSyncFilter = 'all' | 'recent_1h' | 'recent_24h' | 'never' | 'stale' | 'failed';
+/**
+ * active (default): every undelivered shipment whatever its age + deliveries of the last 12 months;
+ * archived: «المسلّمة القديمة» (delivered more than 12 months ago — hidden, never deleted); all: both.
+ */
+export type TrackingView = 'active' | 'archived' | 'all';
 
 /** One tracked AWB (GET /shipment-tracking). Business fields come from the invoice. */
 export interface TrackingItem {
@@ -117,8 +122,19 @@ export interface TrackingDetails extends TrackingItem {
   awb_document?: { available: boolean; type: 'waybill' | 'shipping_label' | null; content_type: string | null };
 }
 
+/** Every status count is over the ACTIVE dataset; the archive is counted apart. */
 export interface TrackingCounts {
+  /** Active dataset (= `active`). */
   total: number;
+  active?: number;
+  /** Delivered within the last 12 months (= `delivered`). */
+  delivered_recent?: number;
+  /** Never answered by DHL yet. */
+  waiting_sync?: number;
+  /** «المسلّمة القديمة»: delivered more than 12 months ago. */
+  archived_delivered?: number;
+  /** Active + archived. */
+  all_total?: number;
   in_transit: number;
   out_for_delivery: number;
   delivered: number;
@@ -148,6 +164,7 @@ export interface TrackingListParams {
   q?: string;
   status?: TrackingStatusFilter;
   sync?: TrackingSyncFilter;
+  view?: TrackingView;
   from?: string;
   to?: string;
   origin?: string;
@@ -221,7 +238,7 @@ export interface BackfillRun {
 export interface TrackingSyncStatus {
   env: 'test' | 'production' | null;
   /** Why the worker cannot make progress now (null = it can). */
-  blocked_by: 'not_configured' | 'tracking_disabled' | 'sync_disabled' | 'paused' | null;
+  blocked_by: 'not_configured' | 'tracking_disabled' | 'sync_disabled' | 'paused' | 'rate_limited' | 'circuit_open' | 'auth_stopped' | null;
   bulk_batch_size: number;
   calls_per_cycle: number;
   daily_call_limit: number;
@@ -243,6 +260,33 @@ export interface TrackingSyncStatus {
   };
   today: { api_calls: number; errors: number; awbs_requested: number; awbs_found: number; awbs_not_found: number; awbs_failed: number } | null;
   last_successful_sync_at: string | null;
+  /** What SHIPPEC knows about DHL's real limits (adaptive quota mode). */
+  quota?: TrackingQuota;
+}
+
+export interface TrackingQuota {
+  /** adaptive = DHL_TRACKING_DAILY_CALL_LIMIT=0: no SHIPPEC daily cap, DHL's own limits learnt safely. */
+  mode: 'adaptive' | 'capped';
+  daily_call_limit: number;
+  calls_today: number;
+  state: 'running' | 'paused' | 'stopped';
+  pause_reason: 'rate_limited' | 'circuit_open' | 'auth_stopped' | null;
+  paused_until: string | null;
+  last_429_at: string | null;
+  last_retry_after_seconds: number | null;
+  consecutive_429: number;
+  total_429: number;
+  consecutive_failures: number;
+  last_failure_at: string | null;
+  last_failure_code: string | null;
+  last_auth_error_at: string | null;
+  last_auth_error_code: string | null;
+  last_dhl_answer_at: string | null;
+  last_paused_at: string | null;
+  last_resumed_at: string | null;
+  resume_reason: string | null;
+  pacing: { min_request_interval_ms: number; max_concurrency: number; in_flight: number; last_request_at: string | null; backfill_calls_per_minute: number };
+  batch: { backfill_effective_size: number | null; sync_effective_size: number; max_size: number };
 }
 
 export interface InvoiceDiscoveryStats {
@@ -286,7 +330,8 @@ export const shipmentTrackingService = {
   async list(params: TrackingListParams = {}, signal?: AbortSignal): Promise<TrackingListResponse> {
     const qp = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
-      if (v === undefined || v === null || v === '' || v === 'all') continue;
+      // 'all' is the Backend default for every filter except the view (whose default is 'active').
+      if (v === undefined || v === null || v === '' || (v === 'all' && k !== 'view')) continue;
       qp.set(k, String(v));
     }
     return api.get<TrackingListResponse>(`${BASE}?${qp.toString()}`, { signal });
@@ -331,6 +376,10 @@ export const shipmentTrackingService = {
   },
   async pauseBackfill(): Promise<TrackingSyncStatus> {
     return api.post<TrackingSyncStatus>(`${BASE}/admin/backfill/pause`, {});
+  },
+  /** After a 401/403 stop (credentials fixed) or to end a 429 / circuit pause: the Backend resumes. Sends nothing to DHL. */
+  async resumeSync(): Promise<TrackingSyncStatus> {
+    return api.post<TrackingSyncStatus>(`${BASE}/admin/sync/resume`, {});
   },
 
   /**
