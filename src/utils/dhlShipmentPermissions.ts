@@ -3,13 +3,17 @@
  * Only hides what a role cannot do — the Backend re-checks every call.
  * Kept dependency-free so the sidebar can use it without the wizard code.
  */
+const ALL = ['view', 'create_draft', 'edit_draft', 'validate', 'price', 'confirm', 'create', 'download_documents', 'resolve_uncertain', 'retry_invoice', 'pickup',
+  'contacts_read', 'contacts_write', 'contacts_manage'];
 const ROLE_PERMS: Record<string, string[]> = {
-  admin: ['view', 'create_draft', 'edit_draft', 'validate', 'price', 'confirm', 'create', 'download_documents', 'resolve_uncertain', 'retry_invoice', 'pickup'],
-  manager: ['view', 'create_draft', 'edit_draft', 'validate', 'price', 'confirm', 'create', 'download_documents', 'resolve_uncertain', 'retry_invoice', 'pickup'],
-  employee: ['view', 'create_draft', 'edit_draft', 'validate', 'price', 'confirm', 'download_documents', 'pickup'],
+  admin: ALL,
+  manager: ALL,
+  // saved contacts: read + add (an employee edits only the contacts they saved)
+  employee: ['view', 'create_draft', 'edit_draft', 'validate', 'price', 'confirm', 'download_documents', 'pickup', 'contacts_read', 'contacts_write'],
   accountant: ['view', 'price', 'download_documents', 'retry_invoice'],
   viewer: ['view'],
 };
 export type ShipmentPermission =
-  | 'view' | 'create_draft' | 'edit_draft' | 'validate' | 'price' | 'confirm' | 'create' | 'download_documents' | 'resolve_uncertain' | 'retry_invoice' | 'pickup';
+  | 'view' | 'create_draft' | 'edit_draft' | 'validate' | 'price' | 'confirm' | 'create' | 'download_documents' | 'resolve_uncertain' | 'retry_invoice' | 'pickup'
+  | 'contacts_read' | 'contacts_write' | 'contacts_manage';
 export const canShipment = (role: string | undefined | null, p: ShipmentPermission) => (ROLE_PERMS[String(role ?? '').toLowerCase()] ?? []).includes(p);

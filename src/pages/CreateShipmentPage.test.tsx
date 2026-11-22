@@ -10,9 +10,14 @@ const svc = vi.hoisted(() => ({
 }))
 const clients = vi.hoisted(() => ({ searchClients: vi.fn() }))
 vi.mock('../services/dhlShipment.service', () => ({ dhlShipmentService: svc, searchClients: clients.searchClients }))
+const contacts = vi.hoisted(() => ({ search: vi.fn(), create: vi.fn(), update: vi.fn() }))
+const lookup = vi.hoisted(() => ({ autocomplete: vi.fn(), details: vi.fn(), shortAddress: vi.fn() }))
+vi.mock('../services/shippingContacts.service', async (orig) => ({
+  ...(await orig<typeof import('../services/shippingContacts.service')>()), shippingContactsService: contacts, addressLookupService: lookup,
+}))
 const auth = vi.hoisted(() => ({ role: 'manager' }))
 vi.mock('../hooks/useAuthStore', () => ({
-  useAuthStore: Object.assign((sel: (s: unknown) => unknown) => sel({ user: { id: 1, role: auth.role }, token: 't' }), { getState: () => ({ token: 't' }) }),
+  useAuthStore: Object.assign((sel: (s: unknown) => unknown) => sel({ user: { id: 1, role: auth.role }, token: 't' }), { getState: () => ({ token: 't', user: { id: 1, role: auth.role } }) }),
 }))
 vi.mock('react-hot-toast', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 
@@ -65,6 +70,13 @@ const created = (over: Record<string, unknown> = {}) => ({
   shipment: shipment({ creation_status: 'created', awb: '4614961120', invoice_id: 91 }), ...over,
 })
 
+/** Country/Territory combobox of From (0) / To (1): search, Enter picks the first match. */
+const pickCountry = (side: 0 | 1, q: string) => {
+  const box = screen.getAllByLabelText(/^(البلد\/الإقليم|Country\/Territory)/)[side]
+  fireEvent.focus(box)
+  fireEvent.change(box, { target: { value: q } })
+  fireEvent.keyDown(box, { key: 'Enter' })
+}
 const renderAt = (url = '/create-shipment') => render(<MemoryRouter initialEntries={[url]}><CreateShipmentPage /></MemoryRouter>)
 const next = () => fireEvent.click(screen.getByRole('button', { name: /التالي/ }))
 const goStep = (label: RegExp) => fireEvent.click(screen.getAllByRole('button', { name: label })[0])
@@ -72,7 +84,11 @@ const goStep = (label: RegExp) => fireEvent.click(screen.getAllByRole('button', 
 afterEach(() => cleanup())
 beforeEach(() => {
   vi.clearAllMocks()
+  try { window.localStorage.clear() } catch { /* jsdom */ }
   auth.role = 'manager'
+  contacts.search.mockResolvedValue([])
+  lookup.autocomplete.mockResolvedValue([])
+  lookup.shortAddress.mockResolvedValue([])
   svc.listDrafts.mockResolvedValue({ data: [], pagination: { total: 0 } })
   svc.get.mockResolvedValue(shipment())
   svc.incoterms.mockResolvedValue({ source: 'dhl', items: [{ code: 'DAP', name: 'Delivered At Place' }, { code: 'DDP', name: 'Delivered Duty Paid' }] })
@@ -83,16 +99,17 @@ beforeEach(() => {
 
 describe('«إنشاء شحنة» wizard', () => {
   it('moves forward and back without losing data; customs appears only for international goods', async () => {
-    renderAt()
-    const contact = (await screen.findAllByLabelText(/اسم جهة الاتصال/))[1]
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    const contact = screen.getAllByLabelText(/^الاسم/)[1]
     fireEvent.change(contact, { target: { value: 'Omar Receiver' } })
     next()
     expect(await screen.findByText('نوع المحتوى')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /السابق/ }))
-    expect(((await screen.findAllByLabelText(/اسم جهة الاتصال/))[1] as HTMLInputElement).value).toBe('Omar Receiver')
+    expect(((await screen.findAllByLabelText(/^الاسم/))[1] as HTMLInputElement).value).toBe('Omar Receiver')
     expect(screen.queryByRole('button', { name: /الجمارك/ })).toBeNull()
     // international goods → «الجمارك» step
-    fireEvent.change(screen.getAllByLabelText(/^الدولة/)[1], { target: { value: 'AE' } })
+    pickCountry(1, 'AE')
     next()
     fireEvent.click(screen.getByRole('radio', { name: /طرود \/ بضائع/ }))
     expect(screen.getByRole('button', { name: /3\. الجمارك/ })).toBeTruthy()
@@ -102,7 +119,7 @@ describe('«إنشاء شحنة» wizard', () => {
   it('saves a draft (create, then update) and a Backend field error lands on its field', async () => {
     svc.createDraft.mockResolvedValue(shipment({ id: 9 }))
     renderAt()
-    fireEvent.change((await screen.findAllByLabelText(/اسم جهة الاتصال/))[1], { target: { value: 'Omar' } })
+    fireEvent.change((await screen.findAllByLabelText(/^الاسم/))[1], { target: { value: 'Omar' } })
     fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
     await waitFor(() => expect(svc.createDraft).toHaveBeenCalledTimes(1))
     expect(svc.createDraft.mock.calls[0][0]).toMatchObject({ receiver: { contact: 'Omar' }, customs_required: false })
@@ -112,13 +129,18 @@ describe('«إنشاء شحنة» wizard', () => {
     fireEvent.click(await screen.findByRole('button', { name: /حفظ المسودة/ }))
     await waitFor(() => expect(svc.updateDraft).toHaveBeenCalledWith(9, expect.objectContaining({ receiver: expect.objectContaining({ city: 'Khobar' }) })))
     expect(await screen.findByText('حقل مطلوب')).toBeTruthy()
+    // the error sits under «إلى» → Phone
+    const toPanel = document.querySelector('[data-party="receiver"]') as HTMLElement
+    expect(within(toPanel).getByText('حقل مطلوب')).toBeTruthy()
   })
 
   it('resumes a saved draft with its data', async () => {
     renderAt('/create-shipment?draft=5')
     await waitFor(() => expect(svc.get).toHaveBeenCalledWith(5))
     expect(await screen.findByText('عميل الاختبار')).toBeTruthy()
-    expect((screen.getAllByLabelText(/^رقم المبنى/)[0] as HTMLInputElement).value).toBe('3456')
+    expect((screen.getAllByLabelText(/^العنوان 1/)[0] as HTMLInputElement).value).toBe('3456, Prince Sultan Road')
+    expect((screen.getAllByLabelText(/^العنوان المختصر/)[0] as HTMLInputElement).value).toBe('ROLA3456')
+    expect((screen.getAllByLabelText(/^الهاتف/)[1] as HTMLInputElement).value).toBe('552222222')
     expect(screen.getByText('SHIPPEC-ABC123')).toBeTruthy()
   })
 
@@ -152,7 +174,7 @@ describe('«إنشاء شحنة» wizard', () => {
   it('customs items: repeatable cards for international goods', async () => {
     renderAt('/create-shipment?draft=5')
     await screen.findByText('عميل الاختبار')
-    fireEvent.change(screen.getAllByLabelText(/^الدولة/)[1], { target: { value: 'AE' } })
+    pickCountry(1, 'AE')
     goStep(/تفاصيل الشحنة/)
     fireEvent.click(await screen.findByRole('radio', { name: /طرود \/ بضائع/ }))
     goStep(/الجمارك/)
@@ -292,4 +314,318 @@ describe('«إنشاء شحنة» wizard', () => {
     renderAt()
     expect(await screen.findByText(/إنشاء الشحنات متاح للموظفين والمدراء/)).toBeTruthy()
   })
+
+
+  // ═════════ Step 1 «الأطراف / Parties» (DHL-like From | Switch | To) ═════════
+  const toPanel = () => document.querySelector('[data-party="receiver"]') as HTMLElement
+  const fromPanel = () => document.querySelector('[data-party="shipper"]') as HTMLElement
+  const fillReceiverSA = () => {
+    const p = within(toPanel())
+    fireEvent.change(p.getByLabelText(/^الاسم/), { target: { value: 'Omar Receiver' } })
+    fireEvent.change(p.getByLabelText(/^الشركة/), { target: { value: 'Omar Co' } })
+    pickCountry(1, 'SA')
+    fireEvent.change(p.getByLabelText(/^العنوان 1/), { target: { value: '2121 Test Street' } })
+    fireEvent.change(p.getByLabelText(/^عنوان 2/), { target: { value: '3434 Al Olaya' } })
+    fireEvent.change(p.getByLabelText(/^المدينة/), { target: { value: 'Khobar' } })
+    fireEvent.change(p.getByLabelText(/^الرمز البريدي/), { target: { value: '34421' } })
+    fireEvent.change(p.getByLabelText(/^الهاتف/), { target: { value: '55 222 2222' } })
+  }
+  const chooseClient = async () => {
+    clients.searchClients.mockResolvedValue([{ id: 3, name: 'عميل الاختبار', phone: '0550000000', email: null, city: 'Dammam' }])
+    fireEvent.change(screen.getByLabelText(/عميل SHIPPEC \(صاحب الفاتورة\)/), { target: { value: 'عميل' } })
+    fireEvent.click(await screen.findByRole('option', { name: /عميل الاختبار/ }))
+  }
+
+  it('Parties: From prefilled with SHIPPEC Operations, To empty; From | Switch | To on one surface; Saudi notice only for Saudi Arabia', async () => {
+    renderAt()
+    const from = within(await screen.findByTestId('parties-surface'))
+    expect(from.getByRole('heading', { name: /^من$/ })).toBeTruthy()
+    expect(from.getByRole('heading', { name: /^إلى$/ })).toBeTruthy()
+    expect(screen.getByTestId('parties-switch').textContent).toContain('التبديل')
+    const f = within(fromPanel())
+    expect((f.getByLabelText(/^الاسم/) as HTMLInputElement).value).toBe('Operations Management - SHIPPEC')
+    expect((f.getByLabelText(/^الشركة/) as HTMLInputElement).value).toBe('SHIPPEC EXPRESS')
+    expect((f.getByLabelText(/^البلد\/الإقليم/) as HTMLInputElement).value).toMatch(/السعودية/)
+    expect((f.getByLabelText(/^العنوان 1/) as HTMLInputElement).value).toBe('7540 Prince Mutaib bin Abdulaziz')
+    expect((f.getByLabelText(/^عنوان 2/) as HTMLInputElement).value).toBe('3538 Al Rawdah Dist')
+    expect((f.getByLabelText(/^العنوان المختصر/) as HTMLInputElement).value).toBe('EDMA7540')
+    expect((f.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('DAMMAM')
+    expect((f.getByLabelText(/^الولاية/) as HTMLInputElement).value).toBe('EASTERN PROVINCE')
+    expect((f.getByLabelText(/^عنوان البريد الإلكتروني/) as HTMLInputElement).value).toBe('info@altakamullog.com')
+    expect((f.getByLabelText(/^الرمز\*?$/) as HTMLInputElement).value).toBe('966')
+    expect((f.getByLabelText(/^الهاتف/) as HTMLInputElement).value).toBe('53 729 9636')
+    expect((f.getByLabelText(/بيانات الشركة/) as HTMLInputElement).checked).toBe(true)
+    expect(within(fromPanel()).getByTestId('sa-national-address-notice')).toBeTruthy()
+    // To: empty, no country → no Saudi notice; office phone by default
+    const t = within(toPanel())
+    expect((t.getByLabelText(/^الاسم/) as HTMLInputElement).placeholder).toBe('الاسم الأول والاسم الأخير')
+    expect(t.queryByTestId('sa-national-address-notice')).toBeNull()
+    expect((t.getByLabelText(/^نوع الهاتف/) as HTMLSelectElement).value).toBe('office')
+    pickCountry(1, 'SA')
+    expect(within(toPanel()).getByTestId('sa-national-address-notice')).toBeTruthy()
+    expect((within(toPanel()).getByLabelText(/^الرمز\*?$/) as HTMLInputElement).value).toBe('966') // calling code from the country
+    pickCountry(1, 'EG')
+    expect((within(toPanel()).getByLabelText(/^الرمز\*?$/) as HTMLInputElement).value).toBe('20')
+    expect(within(toPanel()).queryByLabelText(/^العنوان المختصر/)).toBeNull()
+  })
+
+  it('Next is blocked until the SHIPPEC customer and every required From / To field is filled; VAT/Tax ID and EORI never block; the stepper cannot jump past it', async () => {
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    next()
+    expect(await screen.findByTestId('parties-gate-summary')).toBeTruthy()
+    expect(screen.getByText('اختر عميل SHIPPEC (صاحب الفاتورة).')).toBeTruthy()
+    for (const msg of ['الاسم مطلوب.', 'اسم الشركة مطلوب.', 'البلد/الإقليم مطلوب.', 'العنوان 1 مطلوب.', 'المدينة مطلوبة.', 'رمز الاتصال الدولي مطلوب.', 'رقم الهاتف مطلوب.']) {
+      expect(within(toPanel()).getByText(msg)).toBeTruthy()
+    }
+    expect(screen.queryByText('نوع المحتوى')).toBeNull()
+    goStep(/المراجعة/)
+    expect(screen.queryByText('التحقق')).toBeNull() // still on Parties
+    expect(svc.validate).not.toHaveBeenCalled()
+    // From missing a field blocks too
+    fireEvent.change(within(fromPanel()).getByLabelText(/^المدينة/), { target: { value: '' } })
+    expect(within(fromPanel()).getByText('المدينة مطلوبة.')).toBeTruthy()
+    fireEvent.change(within(fromPanel()).getByLabelText(/^المدينة/), { target: { value: 'DAMMAM' } })
+    await chooseClient()
+    fillReceiverSA()
+    expect(screen.queryByTestId('parties-gate-summary')).toBeNull() // errors clear as the fields are filled
+    expect((within(toPanel()).getByLabelText(/^رقم تعريف VAT/) as HTMLInputElement).value).toBe('')
+    expect((within(toPanel()).getByLabelText(/^رقم EORI/) as HTMLInputElement).value).toBe('')
+    next()
+    expect(await screen.findByText('نوع المحتوى')).toBeTruthy()
+  })
+
+  it('AR | EN switch: this page only; English is LTR with English labels, buttons and validation; the data never changes', async () => {
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    fireEvent.change(within(toPanel()).getByLabelText(/^الاسم/), { target: { value: 'Omar Receiver' } })
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(screen.getByRole('heading', { name: /Create Shipment/ })).toBeTruthy()
+    const root = screen.getByTestId('parties-surface').closest('[dir]') as HTMLElement
+    expect(root.getAttribute('dir')).toBe('ltr')
+    expect(within(fromPanel()).getByRole('heading', { name: /^From$/ })).toBeTruthy()
+    expect(within(toPanel()).getByRole('heading', { name: /^To$/ })).toBeTruthy()
+    expect(screen.getByTestId('parties-switch').textContent).toContain('Switch')
+    for (const l of [/^Name/, /^Company/, /^Country\/Territory/, /^Address 1/, /^Address 2/, /^City/, /^Email address/, /^Phone Type/, /^VAT\/Tax ID/, /^EORI Number/]) {
+      expect(within(toPanel()).getAllByLabelText(l).length).toBeGreaterThan(0)
+    }
+    expect(within(toPanel()).getByText('Notes about this contact')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /Save to Database/ })).toHaveLength(2)
+    expect(within(fromPanel()).getByText(/National Address structure as a mandatory requirement/)).toBeTruthy()
+    // the data stays
+    expect((within(toPanel()).getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Omar Receiver')
+    expect((within(fromPanel()).getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Operations Management - SHIPPEC')
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    expect(await screen.findByText('Select the SHIPPEC customer (invoice owner).')).toBeTruthy()
+    expect(within(toPanel()).getByText('Company is required.')).toBeTruthy()
+    expect(within(toPanel()).getByText('Phone number is required.')).toBeTruthy()
+    // back to Arabic: RTL, Arabic labels, the same data
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'AR' }))
+    expect((screen.getByTestId('parties-surface').closest('[dir]') as HTMLElement).getAttribute('dir')).toBe('rtl')
+    expect((within(toPanel()).getByLabelText(/^الاسم/) as HTMLInputElement).value).toBe('Omar Receiver')
+    expect(within(toPanel()).getByText('اسم الشركة مطلوب.')).toBeTruthy()
+  })
+
+  it('saved contacts: Name searches SHIPPEC contacts (debounced, by role); selecting fills every field, all editable; nothing is saved by selecting', async () => {
+    contacts.search.mockResolvedValue([{
+      id: 41, role: 'receiver', name: 'Ahmed Hassan', business_contact: false, company: 'ABC Trading', country_code: 'EG', country_name: 'Egypt',
+      address_line1: '12 Tahrir Street', address_line2: 'Floor 3', short_address: null, building_number: null, street: null, additional_number: null, suburb: 'Downtown',
+      city: 'Cairo', province: 'Cairo', postal_code: '11511', residential: true, email: 'ahmed@abc.example', phones: [{ type: 'office', code: '20', number: '100 123 4567', extension: '5', sms: false }],
+      phone_normalized: '201001234567', vat_tax_id: 'EG-VAT-1', eori: 'EG-EORI', notes: 'Call first', created_by: 1, created_at: '', updated_at: '',
+    }])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    const name = within(toPanel()).getByLabelText(/^الاسم/)
+    fireEvent.change(name, { target: { value: 'Ah' } })
+    const option = await screen.findByRole('option', { name: /Ahmed Hassan/ })
+    expect(contacts.search).toHaveBeenCalledTimes(1)
+    expect(contacts.search.mock.calls[0].slice(0, 2)).toEqual(['Ah', 'receiver'])
+    expect(option.textContent).toContain('ABC Trading')
+    expect(option.textContent).toContain('مستلم محفوظ')
+    fireEvent.click(option)
+    const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    expect(v(/^الاسم/)).toBe('Ahmed Hassan')
+    expect(v(/^الشركة/)).toBe('ABC Trading')
+    expect(v(/^البلد\/الإقليم/)).toMatch(/مصر/)
+    expect(v(/^العنوان 1/)).toBe('12 Tahrir Street')
+    expect(v(/^الضاحية/)).toBe('Downtown')
+    expect(v(/^المدينة/)).toBe('Cairo')
+    expect(v(/^الرمز البريدي/)).toBe('11511')
+    expect(v(/^الرمز\*?$/)).toBe('20')
+    expect(v(/^الهاتف/)).toBe('100 123 4567')
+    expect(v(/^التحويلة/)).toBe('5')
+    expect(v(/^رقم تعريف VAT/)).toBe('EG-VAT-1')
+    expect(v(/^رقم EORI/)).toBe('EG-EORI')
+    expect((t.getByLabelText(/^ملاحظات حول جهة الاتصال/) as HTMLTextAreaElement).value).toBe('Call first')
+    expect((t.getByLabelText(/عنوان سكني/) as HTMLInputElement).checked).toBe(true)
+    expect(t.getByText('من قاعدة البيانات')).toBeTruthy()
+    fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'Giza' } })
+    expect(v(/^المدينة/)).toBe('Giza')
+    expect(contacts.create).not.toHaveBeenCalled()
+    expect(contacts.update).not.toHaveBeenCalled()
+  })
+
+  it('«حفظ في قاعدة البيانات»: only on click; a likely duplicate → use existing / update existing / cancel, never a silent second contact', async () => {
+    const existing = {
+      id: 7, role: 'sender', name: 'Omar Receiver', business_contact: false, company: 'Omar Co', country_code: 'SA', country_name: 'Saudi Arabia', address_line1: '2121 Test Street',
+      address_line2: '3434 Al Olaya', short_address: null, building_number: '2121', street: 'Test Street', additional_number: '3434', suburb: null, city: 'Khobar', province: null,
+      postal_code: '34421', residential: false, email: null, phones: [{ type: 'mobile', code: '966', number: '55 222 2222', extension: null, sms: false }], phone_normalized: '966552222222',
+      vat_tax_id: null, eori: null, notes: null, created_by: 2, created_at: '', updated_at: '',
+    }
+    contacts.create.mockRejectedValue(new ApiError('توجد جهة اتصال محفوظة مشابهة بالفعل.', 409, 'CONTACT_DUPLICATE', undefined, { success: false, data: { duplicates: [existing] } }))
+    contacts.update.mockResolvedValue({ ...existing, role: 'both' })
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    fillReceiverSA()
+    expect(contacts.create).not.toHaveBeenCalled() // never automatically
+    const saveBtn = within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ })
+    fireEvent.click(saveBtn)
+    await waitFor(() => expect(contacts.create).toHaveBeenCalledTimes(1))
+    expect(contacts.create.mock.calls[0][0]).toBe('receiver')
+    expect(contacts.create.mock.calls[0][1]).toMatchObject({ name: 'Omar Receiver', company: 'Omar Co', country_code: 'SA', phones: [{ code: '966', number: '55 222 2222' }] })
+    const dialog = await screen.findByTestId('contact-duplicate-dialog')
+    expect(dialog.textContent).toContain('توجد جهة اتصال محفوظة مشابهة بالفعل.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+    await waitFor(() => expect(screen.queryByTestId('contact-duplicate-dialog')).toBeNull())
+    expect(contacts.update).not.toHaveBeenCalled()
+    // again → «تحديث البيانات» updates the existing row (a manager may)
+    fireEvent.click(saveBtn)
+    fireEvent.click(within(await screen.findByTestId('contact-duplicate-dialog')).getByRole('button', { name: 'تحديث البيانات' }))
+    await waitFor(() => expect(contacts.update).toHaveBeenCalledWith(7, 'receiver', expect.objectContaining({ name: 'Omar Receiver' })))
+    expect(contacts.create).toHaveBeenCalledTimes(2)
+    expect(within(toPanel()).getByText('من قاعدة البيانات')).toBeTruthy()
+    // an employee cannot update a contact someone else saved: only «استخدام الموجود»
+    cleanup()
+    auth.role = 'employee'
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    fillReceiverSA()
+    fireEvent.click(within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ }))
+    const d2 = await screen.findByTestId('contact-duplicate-dialog')
+    expect(within(d2).queryByRole('button', { name: 'تحديث البيانات' })).toBeNull()
+    fireEvent.click(within(d2).getByRole('button', { name: 'استخدام الموجود' }))
+    await waitFor(() => expect(screen.queryByTestId('contact-duplicate-dialog')).toBeNull())
+    expect(within(toPanel()).getByText('من قاعدة البيانات')).toBeTruthy()
+  })
+
+  it('«التبديل» swaps From and To (codes, phones, details) — never the SHIPPEC invoice customer', async () => {
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    const v = (panel: HTMLElement, l: RegExp) => (within(panel).getByLabelText(l) as HTMLInputElement).value
+    expect(v(fromPanel(), /^الاسم/)).toBe('Sara Operations')
+    expect(v(toPanel(), /^الاسم/)).toBe('Omar')
+    fireEvent.change(within(toPanel()).getByLabelText(/^رقم تعريف VAT/), { target: { value: 'VAT-OMAR' } })
+    fireEvent.click(screen.getByTestId('parties-switch'))
+    expect(v(fromPanel(), /^الاسم/)).toBe('Omar')
+    expect(v(toPanel(), /^الاسم/)).toBe('Sara Operations')
+    expect(v(fromPanel(), /^رقم تعريف VAT/)).toBe('VAT-OMAR')
+    expect(v(fromPanel(), /^الهاتف/)).toBe('552222222')
+    expect(v(toPanel(), /^المدينة/)).toBe('Dammam')
+    expect(screen.getByText('عميل الاختبار')).toBeTruthy() // invoice owner unchanged
+  })
+
+  it('Address 1: suggestions only inside the chosen country; an older slow answer never replaces a newer one; selecting fills city / state / postal code; still editable', async () => {
+    const resolvers: Record<string, (v: unknown) => void> = {}
+    lookup.autocomplete.mockImplementation((q: string) => new Promise((r) => { resolvers[q] = r }))
+    lookup.details.mockResolvedValue({ address_line1: '350 5th Avenue', address_line2: null, short_address: null, building_number: '350', street: '5th Avenue', additional_number: null,
+      district: 'Manhattan', city: 'New York', province: 'NY', postal_code: '10118', country_code: 'US' })
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    const addr = within(toPanel()).getByLabelText(/^العنوان 1/)
+    fireEvent.change(addr, { target: { value: '350 5' } })
+    expect(await within(toPanel()).findByText('اختر البلد/الإقليم أولًا لعرض العناوين المقترحة.')).toBeTruthy()
+    await new Promise((r) => setTimeout(r, 450))
+    expect(lookup.autocomplete).not.toHaveBeenCalled() // never without a country
+    pickCountry(1, 'US')
+    fireEvent.change(addr, { target: { value: '350 5th' } })
+    await waitFor(() => expect(lookup.autocomplete).toHaveBeenCalledTimes(1))
+    expect(lookup.autocomplete.mock.calls[0].slice(0, 2)).toEqual(['350 5th', 'US'])
+    fireEvent.change(addr, { target: { value: '350 5th Ave' } })
+    await waitFor(() => expect(lookup.autocomplete).toHaveBeenCalledTimes(2))
+    // the NEWER answer first, then the older one arrives late
+    await act(async () => { resolvers['350 5th Ave']([{ id: 'ChIJ_new_place_01', main: '350 5th Ave', secondary: 'New York, NY, USA', short_address: null, address: null, provider: 'google' }]) })
+    await act(async () => { resolvers['350 5th']([{ id: 'ChIJ_old_place_01', main: 'OLD RESULT', secondary: '', short_address: null, address: null, provider: 'google' }]) })
+    expect(await screen.findByRole('option', { name: /350 5th Ave/ })).toBeTruthy()
+    expect(screen.queryByText('OLD RESULT')).toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: /350 5th Ave/ }))
+    await waitFor(() => expect(lookup.details).toHaveBeenCalledWith('ChIJ_new_place_01', 'US', expect.any(String)))
+    const t = within(toPanel())
+    await waitFor(() => expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('New York'))
+    expect((t.getByLabelText(/^العنوان 1/) as HTMLInputElement).value).toBe('350 5th Avenue')
+    expect((t.getByLabelText(/^الولاية/) as HTMLInputElement).value).toBe('NY')
+    expect((t.getByLabelText(/^الرمز البريدي/) as HTMLInputElement).value).toBe('10118')
+    fireEvent.change(t.getByLabelText(/^العنوان 1/), { target: { value: '350 Fifth Avenue' } })
+    expect((t.getByLabelText(/^العنوان 1/) as HTMLInputElement).value).toBe('350 Fifth Avenue')
+  })
+
+  it('Address 1 lookup states: no result and provider not configured are explained; the typed address is kept', async () => {
+    lookup.autocomplete.mockResolvedValueOnce([])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'EG')
+    const addr = within(toPanel()).getByLabelText(/^العنوان 1/)
+    fireEvent.change(addr, { target: { value: 'Tahrir Square' } })
+    expect(await screen.findByText('لم يتم العثور على عنوان مطابق.')).toBeTruthy()
+    lookup.autocomplete.mockRejectedValueOnce(new ApiError('not configured', 503, 'ADDRESS_PROVIDER_NOT_CONFIGURED'))
+    fireEvent.change(addr, { target: { value: 'Tahrir Square 1' } })
+    expect(await screen.findByText(/البحث التلقائي عن العناوين غير مفعّل/)).toBeTruthy()
+    expect((addr as HTMLInputElement).value).toBe('Tahrir Square 1')
+  })
+
+  it('Saudi Short Address: normalized to upper case, asked only when well-formed; selecting fills the DHL National Address lines, city, region and postal code', async () => {
+    lookup.shortAddress.mockResolvedValue([{ id: null, main: '2519 Prince Mohammed Bin Fahd Road', secondary: '7531 Al Faisaliyah Dist, DAMMAM', short_address: 'KUDA2519', provider: 'spl',
+      address: { address_line1: '2519 Prince Mohammed Bin Fahd Road', address_line2: '7531 Al Faisaliyah Dist', short_address: 'KUDA2519', building_number: '2519', street: 'Prince Mohammed Bin Fahd Road',
+        additional_number: '7531', district: 'Al Faisaliyah Dist', city: 'DAMMAM', province: 'EASTERN PROVINCE', postal_code: '32272', country_code: 'SA' } }])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'SA')
+    const t = within(toPanel())
+    const short = t.getByLabelText(/^العنوان المختصر/) as HTMLInputElement
+    fireEvent.change(short, { target: { value: 'kuda' } })
+    expect(short.value).toBe('KUDA')
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.shortAddress).not.toHaveBeenCalled() // obviously incomplete: no provider call
+    fireEvent.change(short, { target: { value: 'kuda2519' } })
+    expect(short.value).toBe('KUDA2519')
+    const option = await screen.findByRole('option', { name: /2519 Prince Mohammed Bin Fahd Road/ })
+    expect(lookup.shortAddress).toHaveBeenCalledTimes(1)
+    expect(lookup.shortAddress.mock.calls[0][0]).toBe('KUDA2519')
+    fireEvent.click(option)
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Bin Fahd Road')
+    expect(v(/^عنوان 2/)).toBe('7531 Al Faisaliyah Dist')
+    expect(v(/^العنوان المختصر/)).toBe('KUDA2519')
+    expect(v(/^المدينة/)).toBe('DAMMAM')
+    expect(v(/^الولاية/)).toBe('EASTERN PROVINCE')
+    expect(v(/^الرمز البريدي/)).toBe('32272')
+    expect(v(/^الرمز\*?$/)).toBe('966')
+    // a well-formed code without a match → the national-address no-result message; manual entry stays
+    lookup.shortAddress.mockResolvedValueOnce([])
+    fireEvent.change(short, { target: { value: 'ABCD1234' } })
+    expect(await screen.findByText('لم يتم العثور على عنوان وطني مطابق.')).toBeTruthy()
+    expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Bin Fahd Road')
+    // provider failure: explained, nothing cleared
+    lookup.shortAddress.mockRejectedValueOnce(new ApiError('down', 502, 'ADDRESS_PROVIDER_ERROR'))
+    fireEvent.change(short, { target: { value: 'ABCD1235' } })
+    expect(await screen.findByText(/تعذر البحث الآن/)).toBeTruthy()
+    expect(v(/^المدينة/)).toBe('DAMMAM')
+  })
+
+  it('«مسح العنوان» clears only the address (name, company, e-mail, phones, VAT/Tax ID, EORI stay)', async () => {
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    const f = within(fromPanel())
+    fireEvent.change(f.getByLabelText(/^رقم تعريف VAT/), { target: { value: '310000000000003' } })
+    fireEvent.click(f.getByRole('button', { name: /مسح العنوان/ }))
+    const v = (l: RegExp) => (f.getByLabelText(l) as HTMLInputElement).value
+    for (const l of [/^العنوان 1/, /^عنوان 2/, /^العنوان المختصر/, /^الضاحية/, /^المدينة/, /^الولاية/, /^الرمز البريدي/]) expect(v(l)).toBe('')
+    expect(v(/^الاسم/)).toBe('Operations Management - SHIPPEC')
+    expect(v(/^الشركة/)).toBe('SHIPPEC EXPRESS')
+    expect(v(/^عنوان البريد الإلكتروني/)).toBe('info@altakamullog.com')
+    expect(v(/^الهاتف/)).toBe('53 729 9636')
+    expect(v(/^رقم تعريف VAT/)).toBe('310000000000003')
+    expect(v(/^البلد\/الإقليم/)).toMatch(/السعودية/)
+  })
+
 })

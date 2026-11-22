@@ -5,7 +5,8 @@
  */
 import React, { useId } from 'react';
 import { AlertCircle, AlertTriangle, Check, Info, Loader2 } from 'lucide-react';
-import { allCountries, type StepId } from './wizardModel';
+import { allCountries, stepLabel, stepShort, type StepDef, type StepId } from './wizardModel';
+import { useCsLang } from './csLang';
 
 export const inputCls = (error?: string | null) =>
   `w-full min-w-0 px-3 py-2.5 rounded-xl border bg-white dark:bg-slate-900/40 text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 ${
@@ -39,10 +40,11 @@ export function SelectInput({ error, onValue, children, className = '', ...rest 
 }
 
 export function CountrySelect({ value, onValue, error, id, disabled }: { value: string; onValue: (v: string) => void; error?: string | null; id: string; disabled?: boolean }) {
+  const { lang, t } = useCsLang();
   return (
     <SelectInput id={id} value={value} onValue={onValue} error={error} disabled={disabled}>
-      <option value="">اختر الدولة</option>
-      {allCountries().map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+      <option value="">{t('اختر الدولة', 'Choose a country')}</option>
+      {allCountries(lang).map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
     </SelectInput>
   );
 }
@@ -127,15 +129,16 @@ export function Button({ variant = 'primary', loading, children, className = '',
 }
 
 export function Stepper({ steps, current, onGo, status }: {
-  steps: Array<{ id: StepId; label: string; short: string }>; current: StepId; onGo: (s: StepId) => void;
+  steps: StepDef[]; current: StepId; onGo: (s: StepId) => void;
   status: (s: StepId) => 'done' | 'issues' | 'missing' | 'todo';
 }) {
+  const { lang, t } = useCsLang();
   const idx = steps.findIndex((s) => s.id === current);
   return (
-    <nav aria-label="خطوات إنشاء الشحنة" className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm p-3 sm:p-4">
+    <nav aria-label={t('خطوات إنشاء الشحنة', 'Create shipment steps')} className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm p-3 sm:p-4">
       <div className="sm:hidden flex items-center justify-between text-xs font-bold text-slate-500 mb-2">
-        <span>الخطوة {idx + 1} من {steps.length}</span>
-        <span className="text-indigo-700 dark:text-indigo-300">{steps[idx]?.label}</span>
+        <span>{t(`الخطوة ${idx + 1} من ${steps.length}`, `Step ${idx + 1} of ${steps.length}`)}</span>
+        <span className="text-indigo-700 dark:text-indigo-300">{stepLabel(steps[idx], lang)}</span>
       </div>
       <ol className="flex gap-1 sm:gap-2 overflow-x-auto hidden-scrollbar">
         {steps.map((s, i) => {
@@ -147,7 +150,7 @@ export function Stepper({ steps, current, onGo, status }: {
                 type="button"
                 onClick={() => onGo(s.id)}
                 aria-current={active ? 'step' : undefined}
-                aria-label={`${i + 1}. ${s.label}${st === 'issues' ? ' — توجد أخطاء' : st === 'missing' ? ' — بيانات ناقصة' : st === 'done' ? ' — مكتملة' : ''}`}
+                aria-label={`${i + 1}. ${stepLabel(s, lang)}${st === 'issues' ? t(' — توجد أخطاء', ' — has errors') : st === 'missing' ? t(' — بيانات ناقصة', ' — missing data') : st === 'done' ? t(' — مكتملة', ' — complete') : ''}`}
                 className="w-full flex flex-col items-center gap-1.5 group"
               >
                 <span className={`h-1.5 w-full rounded-full ${active ? 'bg-indigo-600' : st === 'issues' ? 'bg-red-400' : st === 'done' ? 'bg-indigo-300 dark:bg-indigo-700' : 'bg-slate-200 dark:bg-slate-700'}`} />
@@ -155,7 +158,7 @@ export function Stepper({ steps, current, onGo, status }: {
                   <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] tabular-nums ${active ? 'bg-indigo-600 text-white' : st === 'done' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : st === 'issues' ? 'bg-red-100 text-red-700' : 'bg-slate-100 dark:bg-slate-700'}`}>
                     {st === 'done' && !active ? <Check size={11} /> : st === 'issues' ? '!' : i + 1}
                   </span>
-                  <span className="hidden sm:inline whitespace-nowrap">{s.short}</span>
+                  <span className="hidden sm:inline whitespace-nowrap">{stepShort(s, lang)}</span>
                 </span>
               </button>
             </li>

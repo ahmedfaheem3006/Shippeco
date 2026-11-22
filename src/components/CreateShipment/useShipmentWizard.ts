@@ -11,9 +11,10 @@ import {
   dhlShipmentService, type CreateResult, type DhlShipment, type Issue, type ProductOption, type RateQuote, type ValidationResult,
 } from '../../services/dhlShipment.service';
 import {
-  emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, translateIssue, visibleSteps,
+  emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, visibleSteps,
   type FieldErrors, type StepId, type WizardForm,
 } from './wizardModel';
+import { useCsLang } from './csLang';
 
 export type CostMode = 'dhl_quote' | 'manual' | 'unknown';
 export interface Pricing { selling_price: string; cost_mode: CostMode; manual_cost: string }
@@ -34,6 +35,11 @@ const problemField = (code: string) => ({
 } as Record<string, string>)[code] ?? 'review';
 
 export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
+  const { t, lang } = useCsLang();
+  // messages built inside callbacks read the current language through a ref (no stale closure, no re-created callbacks)
+  const tRef = useRef(t);
+  const langRef = useRef(lang);
+  useEffect(() => { tRef.current = t; langRef.current = lang; }, [t, lang]);
   const [form, setForm] = useState<WizardForm>(emptyForm);
   const [shipment, setShipment] = useState<DhlShipment | null>(null);
   const [savedJson, setSavedJson] = useState<string | null>(null);
@@ -90,7 +96,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       setLoading(false);
     }, (err) => {
       if (!alive) return;
-      setLoadError(describeApiError(err, 'تعذر تحميل المسودة'));
+      setLoadError(describeApiError(err, tRef.current('تعذر تحميل المسودة', 'Could not load the draft')));
       setLoading(false);
     });
     return () => { alive = false; };
@@ -160,13 +166,13 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       setValidation(null);
       setErrors({});
       setStepIssues({});
-      if (!quiet) toast.success('تم حفظ المسودة');
+      if (!quiet) toast.success(tRef.current('تم حفظ المسودة', 'Draft saved'));
       if (!shipment) window.history.replaceState(window.history.state, '', `/create-shipment?draft=${sh.id}`);
       return sh;
     } catch (err) {
       const issues = issuesOf(err);
       if (issues.length) showIssues(issues);
-      toast.error(issues.length ? 'تعذر الحفظ — راجع الحقول المحددة' : describeApiError(err, 'تعذر حفظ المسودة'));
+      toast.error(issues.length ? tRef.current('تعذر الحفظ — راجع الحقول المحددة', 'Could not save — check the marked fields') : describeApiError(err, tRef.current('تعذر حفظ المسودة', 'Could not save the draft')));
       return null;
     } finally {
       setSaving(false);
@@ -190,7 +196,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       if (p.status === 'rejected') throw p.reason;
       setProducts(p.value.products);
       setQuotes(r.status === 'fulfilled' ? r.value.quotes : []);
-      if (r.status === 'rejected') setServicesError(`تعذر جلب الأسعار: ${describeApiError(r.reason, 'أعد المحاولة')}`);
+      if (r.status === 'rejected') setServicesError(`${tRef.current('تعذر جلب الأسعار:', 'Could not load the prices:')} ${describeApiError(r.reason, tRef.current('أعد المحاولة', 'try again'))}`);
       setServicesSnapshot(routeSnapshot(form));
       const still = p.value.products.some((x) => x.productCode === form.product_code);
       if (form.product_code && !still) setForm((f) => ({ ...f, product_code: '', local_product_code: '' }));
@@ -198,8 +204,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       const issues = issuesOf(err);
       if (issues.length) showIssues(issues);
       setServicesError(err instanceof ApiError && err.code === 'ROUTE_INCOMPLETE'
-        ? routeIssuesText(issues)
-        : describeApiError(err, 'تعذر جلب خدمات DHL'));
+        ? routeIssuesText(issues, langRef.current)
+        : describeApiError(err, tRef.current('تعذر جلب خدمات DHL', 'Could not load the DHL services')));
     } finally {
       setServicesLoading(false);
     }
@@ -218,9 +224,9 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       setPricing((p) => ({ ...p, cost_mode: 'dhl_quote' }));
     } catch (err) {
       if (err instanceof ApiError && err.code === 'PRODUCTS_STALE') {
-        toast.error('تغيّرت بيانات الشحنة — حدّث قائمة الخدمات');
+        toast.error(tRef.current('تغيّرت بيانات الشحنة — حدّث قائمة الخدمات', 'The shipment data changed — refresh the services'));
         setServicesSnapshot('stale');
-      } else toast.error(describeApiError(err, 'تعذر اختيار الخدمة'));
+      } else toast.error(describeApiError(err, tRef.current('تعذر اختيار الخدمة', 'Could not select the service')));
     } finally {
       setSelecting(null);
     }
@@ -239,7 +245,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       showIssues(r.issues);
       return r;
     } catch (err) {
-      toast.error(describeApiError(err, 'تعذر التحقق من البيانات'));
+      toast.error(describeApiError(err, tRef.current('تعذر التحقق من البيانات', 'Could not validate the data')));
       return null;
     } finally {
       setValidating(false);
@@ -260,7 +266,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     try {
       setCreatePhase('saving');
       let sh = await save();
-      if (!sh) throw new Error('تعذر حفظ المسودة');
+      if (!sh) throw new Error(tRef.current('تعذر حفظ المسودة', 'Could not save the draft'));
       const json = JSON.stringify(toContent(form));
       if (sh.creation_status !== 'ready') {
         if (!(sh.creation_status === 'validated' && validatedJson === json && sh.dhl_validation_status === 'passed')) {
@@ -271,7 +277,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
           sh = v.shipment;
           if (!v.ok || v.dhl_validation.status !== 'passed') {
             showIssues(v.issues);
-            setCreateError({ message: v.ok ? 'لم يكتمل تحقق DHL — أعد المحاولة بعد قليل' : 'البيانات لا تجتاز التحقق — صحّح الحقول المحددة', issues: v.issues });
+            setCreateError({ message: v.ok ? tRef.current('لم يكتمل تحقق DHL — أعد المحاولة بعد قليل', 'DHL validation did not complete — try again shortly') : tRef.current('البيانات لا تجتاز التحقق — صحّح الحقول المحددة', 'The data does not pass validation — correct the marked fields'), issues: v.issues });
             return;
           }
         }
@@ -293,7 +299,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     } catch (err) {
       const issues = issuesOf(err);
       if (issues.length) showIssues(issues);
-      setCreateError({ message: describeApiError(err, 'تعذر إنشاء الشحنة'), issues: issues.map((i) => ({ ...i, message: translateIssue(i.message) })) });
+      // issues stay as the Backend wrote them; the review shows them in the current language
+      setCreateError({ message: describeApiError(err, tRef.current('تعذر إنشاء الشحنة', 'Could not create the shipment')), issues });
       setCreatePhase('idle');
     } finally {
       inFlight.current = false;

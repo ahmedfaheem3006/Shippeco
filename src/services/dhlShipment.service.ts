@@ -90,8 +90,26 @@ export interface DraftContent {
   service_point_name: string | null;
   shipper: Party & { national_address?: unknown };
   receiver: Party & { national_address?: unknown };
+  /** Parties-screen extras stored with the draft (never sent to DHL). */
+  party_details?: { shipper: PartyDetailsContent | null; receiver: PartyDetailsContent | null } | null;
   packages: PackageInput[];
   items: ItemInput[];
+}
+
+export type PhoneType = 'mobile' | 'office' | 'fax';
+export interface PhoneEntry { type: PhoneType; code: string; number: string; extension: string; sms: boolean }
+/** Backend partyDetailsSchema (shipper_details / receiver_details). */
+export interface PartyDetailsContent {
+  business_contact: boolean;
+  residential: boolean;
+  country_name: string | null;
+  short_address: string | null;
+  suburb: string | null;
+  phones: Array<{ type: PhoneType; code: string | null; number: string | null; extension: string | null; sms: boolean }>;
+  vat_tax_id: string | null;
+  eori: string | null;
+  notes: string | null;
+  saved_contact_id: number | null;
 }
 
 export type CreationStatus = 'draft' | 'validating' | 'validated' | 'ready' | 'creating' | 'created' | 'uncertain' | 'failed' | 'cancelled';
