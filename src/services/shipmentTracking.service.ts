@@ -9,7 +9,11 @@ export type NormalizedStatus =
 
 // Keep in sync with Backend src/validators/shipmentTracking.validator.ts
 export type TrackingStatusFilter =
-  | 'all' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'not_delivered' | 'problem' | 'exception' | 'on_hold' | 'customs' | 'pre_transit' | 'not_synced' | 'unknown';
+  | 'all' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'not_delivered' | 'problem' | 'exception' | 'on_hold' | 'customs' | 'pre_transit' | 'not_synced' | 'unknown'
+  /** «بانتظار المزامنة»: the actionable queue (never the verified «no DHL data» rows). */
+  | 'pending_sync'
+  /** «لا تتوفر بيانات تتبع من DHL»: DHL proved (asked alone) it has no data; not re-checked before its date. */
+  | 'dhl_no_data';
 export type TrackingSyncFilter = 'all' | 'recent_1h' | 'recent_24h' | 'never' | 'stale' | 'failed';
 /**
  * active (default): every undelivered shipment whatever its age + deliveries of the last 12 months;
@@ -129,8 +133,11 @@ export interface TrackingCounts {
   active?: number;
   /** Delivered within the last 12 months (= `delivered`). */
   delivered_recent?: number;
-  /** Never answered by DHL yet. */
+  /** «بانتظار المزامنة»: the actionable queue (= pending_sync). */
   waiting_sync?: number;
+  pending_sync?: number;
+  /** «لا تتوفر بيانات تتبع من DHL» (verified, in cooldown). */
+  dhl_no_data?: number;
   /** «المسلّمة القديمة»: delivered more than 12 months ago. */
   archived_delivered?: number;
   /** Active + archived. */
@@ -194,124 +201,6 @@ export interface RefreshResult {
   record: TrackingDetails;
 }
 
-/** GET /shipment-tracking/admin/backfill/status — admin only, PostgreSQL only (never calls DHL). */
-export interface BackfillRun {
-  id: number;
-  status: 'running' | 'paused' | 'completed' | 'cancelled';
-  scope: 'unsynced' | 'active';
-  batch_size: number;
-  discovered: number;
-  queued: number;
-  processed: number;
-  successful: number;
-  not_found: number;
-  failed: number;
-  temporary_errors: number;
-  permanent_errors: number;
-  skipped: number;
-  remaining: number;
-  batches_completed: number;
-  api_calls: number;
-  started_at: string;
-  last_activity_at: string | null;
-  paused_at: string | null;
-  finished_at: string | null;
-  last_error_code: string | null;
-  last_error_at: string | null;
-  // A refused multi-AWB request is ONE batch_rejected — never N "not found" AWBs.
-  awb_attempted?: number;
-  awb_successful?: number;
-  /** Proven by a request carrying that AWB alone. */
-  individually_verified_not_found?: number;
-  /** not_found from a multi-AWB batch (before the fix) — to repair. */
-  unverified_not_found?: number;
-  batch_rejected?: number;
-  temporary_failed?: number;
-  permanent_failed?: number;
-  awaiting_single_check?: number;
-  /** AWBs per DHL request the run actually uses (halves on a batch-level refusal). */
-  effective_batch_size?: number;
-  pause_reason?: 'admin' | 'budget_exhausted' | 'repair' | null;
-  repaired_total?: number;
-}
-
-export interface TrackingSyncStatus {
-  env: 'test' | 'production' | null;
-  /** Why the worker cannot make progress now (null = it can). */
-  blocked_by: 'not_configured' | 'tracking_disabled' | 'sync_disabled' | 'paused' | 'rate_limited' | 'circuit_open' | 'auth_stopped' | null;
-  bulk_batch_size: number;
-  calls_per_cycle: number;
-  daily_call_limit: number;
-  /** The backfill stops here; the rest of the day is kept for refreshes / lookups. */
-  backfill_daily_call_limit?: number;
-  verify_max_awbs?: number;
-  run: BackfillRun | null;
-  registration: {
-    /** Distinct DHL AWBs on SHIPPEC invoices. */
-    invoice_awbs: number;
-    registered_from_invoices: number;
-    tracked: number;
-    synced: number;
-    waiting_first_sync: number;
-    not_found: number;
-    errors: number;
-    polling: number;
-    last_synced_at: string | null;
-  };
-  today: { api_calls: number; errors: number; awbs_requested: number; awbs_found: number; awbs_not_found: number; awbs_failed: number } | null;
-  last_successful_sync_at: string | null;
-  /** What SHIPPEC knows about DHL's real limits (adaptive quota mode). */
-  quota?: TrackingQuota;
-}
-
-export interface TrackingQuota {
-  /** adaptive = DHL_TRACKING_DAILY_CALL_LIMIT=0: no SHIPPEC daily cap, DHL's own limits learnt safely. */
-  mode: 'adaptive' | 'capped';
-  daily_call_limit: number;
-  calls_today: number;
-  state: 'running' | 'paused' | 'stopped';
-  pause_reason: 'rate_limited' | 'circuit_open' | 'auth_stopped' | null;
-  paused_until: string | null;
-  last_429_at: string | null;
-  last_retry_after_seconds: number | null;
-  consecutive_429: number;
-  total_429: number;
-  consecutive_failures: number;
-  last_failure_at: string | null;
-  last_failure_code: string | null;
-  last_auth_error_at: string | null;
-  last_auth_error_code: string | null;
-  last_dhl_answer_at: string | null;
-  last_paused_at: string | null;
-  last_resumed_at: string | null;
-  resume_reason: string | null;
-  pacing: { min_request_interval_ms: number; max_concurrency: number; in_flight: number; last_request_at: string | null; backfill_calls_per_minute: number };
-  batch: { backfill_effective_size: number | null; sync_effective_size: number; max_size: number };
-}
-
-export interface InvoiceDiscoveryStats {
-  invoices_scanned: number;
-  invoices_with_awb: number;
-  invoices_other_carrier: number;
-  invoices_with_valid_awb: number;
-  invoices_invalid_awb: number;
-  valid_awbs: number;
-  duplicate_awbs: number;
-  tracking_rows_created: number;
-  existing_rows_reused: number;
-  duration_ms: number;
-}
-
-export interface RepairFalseNotFoundResult {
-  examined: number;
-  repaired: number;
-  skipped_success: number;
-  skipped_individual_not_found: number;
-  remaining_pending: number;
-  tracking_rows_reset: number;
-  runs: Array<{ id: number; repaired: number; status: string }>;
-}
-
 export interface VerifyAwbResult {
   input: string;
   awb: string | null;
@@ -320,6 +209,53 @@ export interface VerifyAwbResult {
   normalized_status: NormalizedStatus | null;
   error_code: string | null;
   detail: string | null;
+  /** Registered by this verification (SHIPPEC did not track it yet; source manual_lookup). */
+  registered_now?: boolean;
+  /** The stored record after the verification (null when SHIPPEC does not track the AWB). */
+  record?: VerifiedRecord | null;
+}
+
+/** «تحقق البوليصة»: what SHIPPEC stored — never raw DHL JSON. */
+export interface VerifiedRecord {
+  normalized_status: NormalizedStatus | null;
+  sync_status: 'pending' | 'ok' | 'not_found' | 'error';
+  current_description: string | null;
+  current_location: string | null;
+  last_event_local: string | null;
+  last_event_gmt_offset: string | null;
+  last_synced_at: string | null;
+  last_attempt_at: string | null;
+}
+
+/** Why the DHL synchronization cannot progress right now (null = it can). */
+export type SyncBlockedReason = 'not_configured' | 'tracking_disabled' | 'sync_disabled' | 'paused' | 'rate_limited' | 'circuit_open' | 'auth_stopped';
+
+/** GET /shipment-tracking/admin/pending-sync — «مزامنة الفواتير», business terms only (PostgreSQL, never DHL). */
+export interface PendingSyncStatus {
+  /** AWBs a new run would queue now (the «بانتظار المزامنة» queue). */
+  eligible: number;
+  run: {
+    id: number;
+    status: 'running' | 'paused' | 'completed' | 'cancelled';
+    total: number;
+    processed: number;
+    found: number;
+    no_data: number;
+    temporary: number;
+    skipped: number;
+    started_at: string | null;
+    finished_at: string | null;
+  } | null;
+  blocked: SyncBlockedReason | null;
+}
+
+export interface StartPendingSyncResult {
+  started: boolean;
+  already_running: boolean;
+  nothing_to_sync: boolean;
+  run_id: number | null;
+  queued: number;
+  status: PendingSyncStatus;
 }
 
 const BASE = '/shipment-tracking';
@@ -355,31 +291,23 @@ export const shipmentTrackingService = {
     return unifiedService.post<RefreshResult>(`${BASE}/${encodeURIComponent(awb)}/refresh`, {});
   },
 
-  // ── Admin: invoice discovery + initial DHL sync (the Backend's worker does the DHL calls) ──
-  async syncStatus(signal?: AbortSignal): Promise<TrackingSyncStatus> {
-    return api.get<TrackingSyncStatus>(`${BASE}/admin/backfill/status`, { signal });
-  },
-  async discoverInvoices(): Promise<InvoiceDiscoveryStats> {
-    return api.post<InvoiceDiscoveryStats>(`${BASE}/admin/discover-invoices`, {});
-  },
-  /** batchSize: AWBs per DHL request for this run (a small one after a verification). */
-  async startBackfill(batchSize?: number): Promise<{ run_id: number; created: boolean; resumed: boolean; status: TrackingSyncStatus }> {
-    return api.post(`${BASE}/admin/backfill`, batchSize ? { batch_size: batchSize } : {});
-  },
-  /** DB only: false "not found" from a batch-level DHL 404 → pending again. */
-  async repairFalseNotFound(): Promise<RepairFalseNotFoundResult> {
-    return api.post<RepairFalseNotFoundResult>(`${BASE}/admin/backfill/repair-false-not-found`, {});
-  },
-  /** ≤ 5 AWBs, one DHL request each (asked by the Backend). */
+  // ── Admin page actions (the Backend's worker makes the DHL calls; the browser never calls DHL) ──
+
+  /** «تحقق البوليصة»: ≤ 5 AWBs per call, one DHL request each (the page sends longer lists in chunks). */
   async verifyAwbs(awbs: string[]): Promise<{ api_calls: number; stopped_by: string | null; results: VerifyAwbResult[] }> {
     return api.post(`${BASE}/admin/backfill/verify`, { awbs });
   },
-  async pauseBackfill(): Promise<TrackingSyncStatus> {
-    return api.post<TrackingSyncStatus>(`${BASE}/admin/backfill/pause`, {});
+  /** «مزامنة الفواتير»: eligible count + the latest run's progress. */
+  async pendingSyncStatus(signal?: AbortSignal): Promise<PendingSyncStatus> {
+    return api.get<PendingSyncStatus>(`${BASE}/admin/pending-sync`, { signal });
   },
-  /** After a 401/403 stop (credentials fixed) or to end a 429 / circuit pause: the Backend resumes. Sends nothing to DHL. */
-  async resumeSync(): Promise<TrackingSyncStatus> {
-    return api.post<TrackingSyncStatus>(`${BASE}/admin/sync/resume`, {});
+  /** «مزامنة الفواتير»: the Backend queues the current «بانتظار المزامنة» AWBs itself (no ids sent). */
+  async startPendingSync(): Promise<StartPendingSyncResult> {
+    return api.post<StartPendingSyncResult>(`${BASE}/admin/pending-sync`, {});
+  },
+  /** After a 401/403 stop (credentials fixed on the server): background tracking resumes. Sends nothing to DHL. */
+  async resumeSync(): Promise<unknown> {
+    return api.post(`${BASE}/admin/sync/resume`, {});
   },
 
   /**

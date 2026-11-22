@@ -1,5 +1,6 @@
 /**
- * «متابعة البوليصة» — (A) direct DHL AWB search, (B) SHIPPEC shipments.
+ * «متابعة البوليصة» — admin actions («تحقق البوليصة» / «مزامنة الفواتير»),
+ * (A) direct DHL AWB search, (B) SHIPPEC shipments.
  *
  * Layout rule (final): EXACTLY ONE shipment per row at every width — a
  * full-width table row on wide screens, one full-width card per row below
@@ -23,7 +24,7 @@ import {
   shipmentTrackingService, type LookupResult, type TrackingItem, type TrackingStatusFilter, type TrackingSummary, type TrackingSyncFilter, type TrackingView,
 } from '../services/shipmentTracking.service';
 import { Freshness } from '../components/ShipmentTracking/TrackingParts';
-import { TrackingSyncStatusBar } from '../components/ShipmentTracking/TrackingSyncStatus';
+import { TrackingActions } from '../components/ShipmentTracking/TrackingActions';
 import {
   TRACKING_EVENTS, TRACKING_PAGE_SIZE, canRefreshTracking, describeTrackingError, formatAwb, formatEstimated, formatLocal, formatRiyadh,
   formatYmd, isDhlAwb, needsAction, normalizeAwb, placeLabel, rowBadge, timeAgo,
@@ -42,7 +43,8 @@ const STATUS_OPTIONS: { id: TrackingStatusFilter; label: string }[] = [
   { id: 'problem', label: 'يوجد مشكلة' },
   { id: 'exception', label: 'استثناء' },
   { id: 'on_hold', label: 'معلّقة' },
-  { id: 'not_synced', label: 'لم تتم المزامنة' },
+  { id: 'pending_sync', label: 'بانتظار المزامنة' },
+  { id: 'dhl_no_data', label: 'لا تتوفر بيانات تتبع من DHL' },
 ];
 const SYNC_FILTERS: { id: TrackingSyncFilter; label: string }[] = [
   { id: 'all', label: 'كل أوقات التحديث' },
@@ -258,6 +260,8 @@ export const ShipmentTrackingPage: React.FC = () => {
   useEffect(() => { void load('replace'); }, [q, filters, page, load]);
   useEffect(() => { void loadSummary(); }, [loadSummary]);
   useRealtimeRefresh(TRACKING_EVENTS, () => { void load('background'); void loadSummary(); setSyncKey((k) => k + 1); }, 600);
+  // After a verification / a finished «مزامنة الفواتير»: counters, filters and the current list.
+  const refreshAll = useCallback(() => { void load('background'); void loadSummary(); }, [load, loadSummary]);
 
   const switching = () => setPhase((ph) => (ph === 'initial' || ph === 'error' ? 'initial' : 'switching'));
   const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => { switching(); setFilters((f) => ({ ...f, [k]: v })); setPage(1); };
@@ -273,7 +277,9 @@ export const ShipmentTrackingPage: React.FC = () => {
     { id: 'out_for_delivery', label: 'خرجت للتسليم', n: counts?.out_for_delivery, view: 'active', status: 'out_for_delivery' },
     { id: 'delivered', label: 'سُلّمت (آخر 12 شهرًا)', n: counts?.delivered_recent ?? counts?.delivered, view: 'active', status: 'delivered' },
     { id: 'problem', label: 'يوجد مشكلة', n: counts?.problem, view: 'active', status: 'problem' },
-    { id: 'not_synced', label: 'بانتظار المزامنة', n: counts?.waiting_sync ?? counts?.not_synced, view: 'active', status: 'not_synced' },
+    // the REAL actionable queue — never mixed with «لا تتوفر بيانات تتبع من DHL»
+    { id: 'pending_sync', label: 'بانتظار المزامنة', n: counts?.pending_sync ?? counts?.waiting_sync, view: 'active', status: 'pending_sync' },
+    { id: 'dhl_no_data', label: 'لا تتوفر بيانات DHL', n: counts?.dhl_no_data, view: 'active', status: 'dhl_no_data' },
     { id: 'archived', label: 'المسلّمة القديمة', n: counts?.archived_delivered, view: 'archived', status: 'all' },
   ];
   const chipOn = (c: (typeof chips)[number]) => filters.view === c.view && filters.status === c.status;
@@ -289,6 +295,8 @@ export const ShipmentTrackingPage: React.FC = () => {
         {counts?.last_synced_at && <span className="text-xs text-slate-500">آخر مزامنة مع DHL: <span className="font-bold">{timeAgo(counts.last_synced_at)}</span></span>}
       </header>
 
+      {role === 'admin' && <TrackingActions refreshKey={syncKey} onChanged={refreshAll} />}
+
       {integration && !integration.usable && (
         <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/15 px-4 py-3 text-xs font-semibold text-amber-800 dark:text-amber-300" role="status">
           <AlertCircle size={16} className="shrink-0 mt-0.5" /> ربط DHL غير مفعّل على الخادم بعد — تظهر الشحنات من SHIPPEC، وتُحدَّث حالاتها بعد التفعيل.
@@ -297,8 +305,6 @@ export const ShipmentTrackingPage: React.FC = () => {
       {integration?.usable && integration.env === 'test' && (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 dark:border-sky-900/40 dark:bg-sky-900/15 px-4 py-2 text-xs font-semibold text-sky-800 dark:text-sky-300" role="status">ربط DHL يعمل على بيئة الاختبار (Test).</div>
       )}
-
-      {role === 'admin' && <TrackingSyncStatusBar refreshKey={syncKey} />}
 
       <AwbSearch canLookup={canRefreshTracking(role)} lookupEnabled={integration?.features?.trackingLookup} />
 

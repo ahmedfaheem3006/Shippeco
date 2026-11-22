@@ -5,8 +5,7 @@ import type { TrackingDetails, TrackingItem, TrackingSummary } from '../services
 
 const svc = vi.hoisted(() => ({
   list: vi.fn(), summary: vi.fn(), details: vi.fn(), refresh: vi.fn(), lookup: vi.fn(),
-  syncStatus: vi.fn(), discoverInvoices: vi.fn(), startBackfill: vi.fn(), pauseBackfill: vi.fn(),
-  repairFalseNotFound: vi.fn(), verifyAwbs: vi.fn(), downloadAwbDocument: vi.fn(), resumeSync: vi.fn(),
+  verifyAwbs: vi.fn(), pendingSyncStatus: vi.fn(), startPendingSync: vi.fn(), downloadAwbDocument: vi.fn(), resumeSync: vi.fn(),
 }))
 vi.mock('../services/shipmentTracking.service', () => ({ shipmentTrackingService: svc }))
 const dhl = vi.hoisted(() => ({ get: vi.fn(), getPickup: vi.fn(), downloadDocument: vi.fn() }))
@@ -134,35 +133,6 @@ describe('«متابعة البوليصة» — one shipment per row, AWB never 
     expect(document.body.textContent).not.toContain('660 607 7671')
   })
 
-  it('admin: the DHL quota as learnt (adaptive, last 429 + Retry-After, pause) and a resume after a 401/403 stop', async () => {
-    auth.role = 'admin'
-    const base = {
-      env: 'production', blocked_by: 'auth_stopped', bulk_batch_size: 100, calls_per_cycle: 2, daily_call_limit: 0, backfill_daily_call_limit: 0, verify_max_awbs: 5, run: null,
-      registration: { invoice_awbs: 10, registered_from_invoices: 10, tracked: 10, synced: 4, waiting_first_sync: 6, not_found: 0, errors: 0, polling: 6, last_synced_at: null },
-      today: { api_calls: 1500, errors: 1, awbs_requested: 1500, awbs_found: 1400, awbs_not_found: 99, awbs_failed: 1 }, last_successful_sync_at: null,
-      quota: {
-        mode: 'adaptive', daily_call_limit: 0, calls_today: 1500, state: 'stopped', pause_reason: 'auth_stopped', paused_until: null,
-        last_429_at: new Date(Date.now() - 3600_000).toISOString(), last_retry_after_seconds: 600, consecutive_429: 0, total_429: 2, consecutive_failures: 0,
-        last_failure_at: null, last_failure_code: null, last_auth_error_at: new Date().toISOString(), last_auth_error_code: 'DHL_UNAUTHORIZED', last_dhl_answer_at: null,
-        last_paused_at: null, last_resumed_at: null, resume_reason: null,
-        pacing: { min_request_interval_ms: 1500, max_concurrency: 1, in_flight: 0, last_request_at: null, backfill_calls_per_minute: 2 },
-        batch: { backfill_effective_size: 1, sync_effective_size: 100, max_size: 100 },
-      },
-    }
-    svc.syncStatus.mockResolvedValue(base)
-    svc.resumeSync.mockResolvedValue({ ...base, blocked_by: null, quota: { ...base.quota, state: 'running', pause_reason: null } })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    renderApp()
-    const bar = await screen.findByTestId('tracking-sync-status')
-    const q = within(bar).getByTestId('quota-status').textContent!
-    expect(q).toContain('الحصة: تكيّفية')
-    expect(q).toContain('Retry-After 600')
-    expect(q).toContain('فاصل الطلبات: 1.5 ث')
-    expect(within(bar).getByText(/رفضت DHL بيانات الربط \(401\/403\)/)).toBeTruthy()
-    expect(within(bar).getByText(/طلبات DHL اليوم/).textContent).not.toContain('/ 0')
-    fireEvent.click(within(bar).getByTestId('quota-resume'))
-    await waitFor(() => expect(svc.resumeSync).toHaveBeenCalledTimes(1))
-  })
 })
 
 describe('«متابعة البوليصة» — list', () => {
@@ -192,48 +162,6 @@ describe('«متابعة البوليصة» — list', () => {
     const rows = await screen.findAllByRole('row')
     expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '1111111111')!).getByText('لا تتوفر بيانات تتبع من DHL')).toBeTruthy()
     expect(within(rows.find((r) => r.getAttribute('data-tracking-awb') === '2222222222')!).getByText('غير متاحة مؤقتًا')).toBeTruthy()
-  })
-
-  it('admin sees the DHL sync status (registered / synced / remaining) and can start the backfill; other roles do not', async () => {
-    const status = {
-      env: 'production', blocked_by: null, bulk_batch_size: 100, calls_per_cycle: 2, daily_call_limit: 300,
-      run: { id: 1, status: 'running', scope: 'unsynced', batch_size: 100, discovered: 14271, queued: 5971, processed: 8300, successful: 8000, not_found: 280, failed: 20,
-        temporary_errors: 20, permanent_errors: 0, skipped: 0, remaining: 5971, batches_completed: 83, api_calls: 84, started_at: new Date().toISOString(),
-        last_activity_at: new Date().toISOString(), paused_at: null, finished_at: null, last_error_code: null, last_error_at: null },
-      registration: { invoice_awbs: 14271, registered_from_invoices: 12840, tracked: 12850, synced: 8300, waiting_first_sync: 4000, not_found: 280, errors: 20, polling: 900, last_synced_at: new Date().toISOString() },
-      today: { api_calls: 84, errors: 0, awbs_requested: 8300, awbs_found: 8000, awbs_not_found: 280, awbs_failed: 20 },
-      last_successful_sync_at: new Date().toISOString(),
-    }
-    svc.syncStatus.mockResolvedValue(status)
-    renderApp()
-    await screen.findAllByRole('row')
-    expect(screen.queryByTestId('tracking-sync-status')).toBeNull() // employee: nothing
-    expect(svc.syncStatus).not.toHaveBeenCalled()
-    cleanup()
-
-    auth.role = 'admin'
-    renderApp()
-    const bar = await screen.findByTestId('tracking-sync-status')
-    expect(within(bar).getByText('تم تسجيل 12,840 من 14,271 بوليصة — تمت مزامنة 8,300')).toBeTruthy()
-    expect(within(bar).getByText(/المتبقي/).textContent).toContain('5,971')
-    expect(within(bar).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('58')
-    // running → pause is offered; the list stays usable meanwhile
-    svc.pauseBackfill.mockResolvedValue({ ...status, run: { ...status.run, status: 'paused' } })
-    fireEvent.click(within(bar).getByRole('button', { name: /إيقاف مؤقت/ }))
-    await waitFor(() => expect(svc.pauseBackfill).toHaveBeenCalledTimes(1))
-    expect(screen.getAllByRole('row').length).toBeGreaterThan(1)
-
-    // nothing running → start (after confirmation)
-    cleanup()
-    svc.syncStatus.mockResolvedValue({ ...status, run: null, blocked_by: 'sync_disabled' })
-    svc.startBackfill.mockResolvedValue({ run_id: 2, created: true, resumed: false, status })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    renderApp()
-    const bar2 = await screen.findByTestId('tracking-sync-status')
-    fireEvent.click(within(bar2).getByRole('button', { name: /بدء المزامنة الأولية/ }))
-    await waitFor(() => expect(svc.startBackfill).toHaveBeenCalledTimes(1))
-    expect(confirm).toHaveBeenCalled()
-    confirm.mockRestore()
   })
 
   it('filters: year → date range, not delivered, freshness, client; pagination preserved', async () => {
@@ -418,75 +346,184 @@ describe('/shipment-tracking/:awb — AWB / waybill download & print', () => {
   })
 })
 
-describe('«متابعة البوليصة» — backfill accounting, repair, verification', () => {
-  const baseRun = {
-    id: 2, status: 'paused', scope: 'unsynced', batch_size: 100, discovered: 12996, queued: 8796, processed: 4200, successful: 0, not_found: 4200, failed: 0,
-    temporary_errors: 0, permanent_errors: 0, skipped: 0, remaining: 8796, batches_completed: 42, api_calls: 42, started_at: new Date().toISOString(),
-    last_activity_at: new Date().toISOString(), paused_at: new Date().toISOString(), finished_at: null, last_error_code: null, last_error_at: null,
-    awb_attempted: 4200, awb_successful: 0, individually_verified_not_found: 0, unverified_not_found: 4200, batch_rejected: 0,
-    temporary_failed: 0, permanent_failed: 0, effective_batch_size: 100, pause_reason: 'admin', repaired_total: 0,
-  }
-  const status = (run: Record<string, unknown> = baseRun) => ({
-    env: 'production', blocked_by: null, bulk_batch_size: 100, calls_per_cycle: 2, daily_call_limit: 300, backfill_daily_call_limit: 240, verify_max_awbs: 5,
-    run,
-    registration: { invoice_awbs: 14276, registered_from_invoices: 14276, tracked: 14280, synced: 1281, waiting_first_sync: 8796, not_found: 4200, errors: 0, polling: 900, last_synced_at: new Date().toISOString() },
-    today: { api_calls: 242, errors: 0, awbs_requested: 19026, awbs_found: 1281, awbs_not_found: 4200, awbs_failed: 0 },
-    last_successful_sync_at: new Date().toISOString(),
+describe('«متابعة البوليصة» — the two admin actions («تحقق البوليصة» / «مزامنة الفواتير»)', () => {
+  const idle = { eligible: 324, run: null, blocked: null }
+  const rec = (over: Record<string, unknown> = {}) => ({
+    normalized_status: 'IN_TRANSIT', sync_status: 'ok', current_description: 'Arrived at DHL Sort Facility - RIYADH-SA', current_location: 'RIYADH-SA',
+    last_event_local: '2026-11-20 10:15:00', last_event_gmt_offset: '+03:00', last_synced_at: new Date().toISOString(), last_attempt_at: null, ...over,
+  })
+  const ok = (awb: string, over: Record<string, unknown> = {}) => ({ input: awb, awb, result: 'success', registered: true, normalized_status: 'IN_TRANSIT', error_code: null, detail: null, registered_now: false, record: rec(), ...over })
+  const actions = () => screen.findByTestId('tracking-actions')
+
+  it('the old engineering panel is gone: only «تحقق البوليصة» and «مزامنة الفواتير» (admin); other roles see neither', async () => {
+    svc.pendingSyncStatus.mockResolvedValue(idle)
+    renderApp()
+    await screen.findAllByRole('row')
+    expect(screen.queryByTestId('tracking-actions')).toBeNull()
+    expect(svc.pendingSyncStatus).not.toHaveBeenCalled()
+    cleanup()
+
+    auth.role = 'admin'
+    renderApp()
+    const bar = await actions()
+    expect(within(bar).getAllByRole('button').map((b) => b.textContent!.trim())).toEqual(['تحقق البوليصة', 'مزامنة الفواتير'])
+    await screen.findAllByRole('row')
+    const text = document.body.textContent!
+    for (const gone of ['تم تسجيل', 'فحص الفواتير', 'تحقق تجريبي', 'حجم الدفعة', 'بدء المزامنة الأولية', 'الحصة', 'فاصل الطلبات', 'طلبات DHL اليوم', 'دفعات رفضتها DHL', 'بوالص في كل طلب', 'إيقاف مؤقت']) {
+      expect([gone, text.includes(gone)]).toEqual([gone, false])
+    }
+    // the normal SHIPPEC search and the list are unchanged
+    expect(screen.getByPlaceholderText('رقم البوليصة، رقم الفاتورة، اسم العميل أو الجوال')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'ابحث برقم البوليصة AWB' })).toBeTruthy()
   })
 
-  it('false not_found from a batch-level 404 is flagged; «إصلاح» repairs (after confirmation); accounting separates batch rejections', async () => {
-    auth.role = 'admin'
-    svc.syncStatus.mockResolvedValue(status())
-    svc.repairFalseNotFound.mockResolvedValue({ examined: 4200, repaired: 4200, skipped_success: 0, skipped_individual_not_found: 0, remaining_pending: 12996, tracking_rows_reset: 4200, runs: [] })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('«بانتظار المزامنة» and «لا تتوفر بيانات DHL» are two separate counters / filters', async () => {
+    svc.summary.mockResolvedValue({ ...summary(), counts: { ...summary().counts, not_synced: 8688, waiting_sync: 4, pending_sync: 4, dhl_no_data: 8684 } })
     renderApp()
-    const bar = await screen.findByTestId('tracking-sync-status')
-    expect(within(bar).getByRole('alert').textContent).toContain('4,200')
-    const acc = within(bar).getByTestId('backfill-accounting')
-    expect(acc.textContent).toContain('دفعات رفضتها DHL')
-    expect(acc.textContent).toContain('غير موجودة (مؤكدة فرديًا): 0')
-    expect(acc.textContent).toContain('حجم الدفعة الفعلي: 100')
-    fireEvent.click(within(bar).getByRole('button', { name: /إصلاح «غير موجودة» الخاطئة/ }))
-    await waitFor(() => expect(svc.repairFalseNotFound).toHaveBeenCalledTimes(1))
-    expect(confirm).toHaveBeenCalled()
-    confirm.mockRestore()
+    const counters = await screen.findByTestId('tracking-counters')
+    await waitFor(() => expect(within(counters).getByRole('radio', { name: /بانتظار المزامنة\s*·\s*4$/ })).toBeTruthy())
+    fireEvent.click(within(counters).getByRole('radio', { name: /بانتظار المزامنة/ }))
+    await waitFor(() => expect(svc.list).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'active', status: 'pending_sync', page: 1 })))
+    fireEvent.click(within(counters).getByRole('radio', { name: /لا تتوفر بيانات DHL\s*·\s*8684/ }))
+    await waitFor(() => expect(svc.list).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'active', status: 'dhl_no_data', page: 1 })))
   })
 
-  it('no false not_found → no repair button; budget pause explained; resume with a small batch size', async () => {
+  it('«تحقق البوليصة»: lines / commas, leading zeros kept, duplicates dropped, invalid numbers never sent, 5 AWBs per request, summary + each result, page refreshed', async () => {
     auth.role = 'admin'
-    svc.syncStatus.mockResolvedValue(status({ ...baseRun, not_found: 3, unverified_not_found: 0, individually_verified_not_found: 3, batch_rejected: 7, effective_batch_size: 12, pause_reason: 'budget_exhausted' }))
-    svc.startBackfill.mockResolvedValue({ run_id: 2, created: false, resumed: true, status: status() })
+    svc.pendingSyncStatus.mockResolvedValue(idle)
     renderApp()
-    const bar = await screen.findByTestId('tracking-sync-status')
-    expect(within(bar).queryByRole('button', { name: /إصلاح/ })).toBeNull()
-    expect(within(bar).getByText(/نفدت حصة اليوم/)).toBeTruthy()
-    expect(within(bar).getByTestId('backfill-accounting').textContent).toContain('دفعات رفضتها DHL: 7')
-    fireEvent.change(within(bar).getByLabelText('عدد البوالص في كل طلب DHL'), { target: { value: '5' } })
-    fireEvent.click(within(bar).getByRole('button', { name: /استئناف المزامنة/ }))
-    await waitFor(() => expect(svc.startBackfill).toHaveBeenCalledWith(5))
+    const bar = await actions()
+    fireEvent.click(within(bar).getByRole('button', { name: /تحقق البوليصة/ }))
+    const panel = await screen.findByTestId('verify-panel')
+    const input = within(panel).getByLabelText('أرقام البوالص')
+    const send = () => within(panel).getByRole('button', { name: /تحقق الآن|جاري التحقق/ }) as HTMLButtonElement
+
+    fireEvent.change(input, { target: { value: '6606077671\n12345, 2816850120' } })
+    expect(within(panel).getByRole('alert').textContent).toContain('12345')
+    expect(send().disabled).toBe(true)
+
+    const awbs = ['6606077671', '2816850120', '0012345678', '1000000001', '1000000002', '1000000003', '1000000004']
+    fireEvent.change(input, { target: { value: `${awbs.slice(0, 3).join('\n')}\n${awbs.slice(3).join(', ')}, 6606077671` } })
+    expect(panel.textContent).toContain('7 بوالص — حُذف المكرر (1)')
+    svc.verifyAwbs
+      .mockResolvedValueOnce({ api_calls: 5, stopped_by: null, results: [
+        ok('6606077671'),
+        ok('2816850120', { registered_now: true }),
+        { input: '0012345678', awb: '0012345678', result: 'not_found', registered: true, normalized_status: null, error_code: 'DHL_NOT_FOUND', detail: null, record: rec({ normalized_status: null, sync_status: 'not_found', current_description: null, last_synced_at: null }) },
+        ok('1000000001'), ok('1000000002'),
+      ] })
+      .mockResolvedValueOnce({ api_calls: 1, stopped_by: null, results: [
+        { input: '1000000003', awb: '1000000003', result: 'temporary_error', registered: true, normalized_status: null, error_code: 'DHL_TIMEOUT', detail: 'raw dhl text', record: null },
+        { input: '1000000004', awb: '1000000004', result: 'not_found', registered: false, normalized_status: null, error_code: 'DHL_NOT_FOUND', detail: null, record: null },
+      ] })
+    const summaryCalls = svc.summary.mock.calls.length
+    fireEvent.click(send())
+    fireEvent.click(send()) // double click: one verification
+    const results = await within(panel).findByTestId('verify-results')
+    expect(svc.verifyAwbs.mock.calls).toEqual([[awbs.slice(0, 5)], [awbs.slice(5)]])
+    expect(results.textContent).toContain('تم التحقق من 7 بوالص')
+    expect(results.textContent).toContain('وجدت بيانات: 4')
+    expect(results.textContent).toContain('لا تتوفر بيانات: 2')
+    expect(results.textContent).toContain('تعذر التحقق مؤقتًا: 1')
+    const row = (awb: string) => results.querySelector(`[data-verify-awb="${awb}"]`) as HTMLElement
+    expect(row('0012345678').textContent).toContain('0012345678') // never split, leading zeros kept
+    expect(row('6606077671').textContent).toContain('تم العثور على بيانات البوليصة وتحديثها بنجاح.')
+    expect(row('6606077671').textContent).toContain('Arrived at DHL Sort Facility')
+    expect(row('6606077671').textContent).toContain('20/11/2026 10:15')
+    expect(within(row('6606077671')).getByRole('link', { name: 'فتح تفاصيل الشحنة' }).getAttribute('href')).toBe('/shipment-tracking/6606077671')
+    expect(row('2816850120').textContent).toContain('وأُضيفت إلى متابعة SHIPPEC')
+    expect(row('0012345678').textContent).toContain('لا تتوفر بيانات تتبع من DHL لهذه البوليصة.')
+    expect(row('0012345678').textContent).toContain('تم التحقق مباشرة من DHL.')
+    expect(row('1000000003').textContent).toContain('لم تستجب DHL في الوقت المحدد')
+    expect(results.textContent).not.toContain('raw dhl text') // never DHL's raw text / JSON
+    await waitFor(() => expect(svc.summary.mock.calls.length).toBeGreaterThan(summaryCalls)) // counters + list refreshed
   })
 
-  it('controlled verification: up to 5 AWBs, results per AWB', async () => {
+  it('«تحقق البوليصة»: DHL asks to slow down (429) → the rest is not sent and shown as "not verified for now"', async () => {
     auth.role = 'admin'
-    svc.syncStatus.mockResolvedValue(status())
-    svc.verifyAwbs.mockResolvedValue({
-      api_calls: 2, stopped_by: null,
-      results: [
-        { input: '6606077671', awb: '6606077671', result: 'success', registered: true, normalized_status: 'IN_TRANSIT', error_code: null, detail: '12 نقطة تتبع' },
-        { input: '1000000004', awb: '1000000004', result: 'not_found', registered: true, normalized_status: null, error_code: 'DHL_NOT_FOUND', detail: null },
-        { input: 'ABC', awb: null, result: 'skipped', registered: false, normalized_status: null, error_code: 'INVALID_AWB', detail: 'ليس رقم DHL' },
-      ],
-    })
+    svc.pendingSyncStatus.mockResolvedValue(idle)
+    svc.verifyAwbs.mockResolvedValueOnce({ api_calls: 1, stopped_by: 'DHL_RATE_LIMITED', results: [
+      { input: '1000000001', awb: '1000000001', result: 'temporary_error', registered: true, normalized_status: null, error_code: 'DHL_RATE_LIMITED', detail: null, record: null },
+      { input: '1000000002', awb: '1000000002', result: 'skipped', registered: true, normalized_status: null, error_code: 'DHL_RATE_LIMITED', detail: null, record: null },
+    ] })
     renderApp()
-    const bar = await screen.findByTestId('tracking-sync-status')
-    fireEvent.click(within(bar).getByRole('button', { name: /تحقق تجريبي/ }))
-    const panel = within(bar).getByTestId('verify-panel')
-    fireEvent.change(within(panel).getByLabelText('أرقام البوالص للتحقق'), { target: { value: '6606077671, 1000000004\nABC 1 2 3 4' } })
-    fireEvent.click(within(panel).getByRole('button', { name: /^تحقق$/ }))
-    await waitFor(() => expect(svc.verifyAwbs).toHaveBeenCalledWith(['6606077671', '1000000004', 'ABC', '1', '2']))
-    const list = await within(panel).findByRole('list', { name: 'نتائج التحقق' })
-    expect(list.textContent).toContain('نجحت')
-    expect(list.textContent).toContain('غير موجودة لدى DHL (طلب منفرد)')
-    expect(list.textContent).toContain('لم تُرسل')
+    fireEvent.click(within(await actions()).getByRole('button', { name: /تحقق البوليصة/ }))
+    const panel = await screen.findByTestId('verify-panel')
+    fireEvent.change(within(panel).getByLabelText('أرقام البوالص'), { target: { value: Array.from({ length: 8 }, (_, i) => String(1000000001 + i)).join('\n') } })
+    fireEvent.click(within(panel).getByRole('button', { name: /تحقق الآن/ }))
+    const results = await within(panel).findByTestId('verify-results')
+    expect(svc.verifyAwbs).toHaveBeenCalledTimes(1) // nothing more after DHL's 429
+    expect(results.textContent).toContain('تم التحقق من 8 بوالص')
+    expect(results.textContent).toContain('تعذر التحقق مؤقتًا: 8')
+    expect(results.textContent).toContain('DHL مشغولة حاليًا')
+  })
+
+  it('«مزامنة الفواتير»: confirmation with the eligible count → one start (double click safe) → minimal progress → «اكتملت المزامنة» + page refreshed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      auth.role = 'admin'
+      const running = { id: 9, status: 'running', total: 324, processed: 85, found: 63, no_data: 18, temporary: 4, skipped: 0, started_at: new Date().toISOString(), finished_at: null }
+      svc.pendingSyncStatus.mockResolvedValue(idle)
+      let resolveStart!: (v: unknown) => void
+      svc.startPendingSync.mockReturnValue(new Promise((r) => { resolveStart = r }))
+      renderApp()
+      fireEvent.click(within(await actions()).getByRole('button', { name: /مزامنة الفواتير/ }))
+      const dialog = await screen.findByTestId('sync-dialog')
+      expect(dialog.textContent).toContain('سيتم بدء مزامنة البوالص الموجودة حاليًا في «بانتظار المزامنة» مع DHL.')
+      expect((await within(dialog).findByTestId('sync-eligible')).textContent).toContain('عدد البوالص المؤهلة للمزامنة: 324')
+      const start = within(dialog).getByRole('button', { name: /بدء المزامنة/ })
+      fireEvent.click(start)
+      fireEvent.click(start)
+      expect(svc.startPendingSync).toHaveBeenCalledTimes(1)
+      svc.pendingSyncStatus.mockResolvedValue({ eligible: 0, run: running, blocked: null })
+      resolveStart({ started: true, already_running: false, nothing_to_sync: false, run_id: 9, queued: 324, status: { eligible: 0, run: running, blocked: null } })
+
+      const progress = await screen.findByTestId('pending-sync-progress')
+      expect(progress.textContent).toContain('تمت معالجة 85 من 324')
+      expect(progress.textContent).toContain('وجدت بيانات: 63')
+      expect(progress.textContent).toContain('لا تتوفر بيانات: 18')
+      expect(progress.textContent).toContain('تعذر مؤقتًا: 4')
+      const syncBtn = within(screen.getByTestId('tracking-actions')).getByRole('button', { name: /جاري المزامنة/ }) as HTMLButtonElement
+      expect(syncBtn.disabled).toBe(true)
+      for (const word of ['concurrency', 'batch', 'lane', 'Retry-After', 'حجم الدفعة']) expect(progress.textContent).not.toContain(word)
+
+      // the run completes → result + counters, filters and list refreshed
+      const summaryCalls = svc.summary.mock.calls.length
+      const listCalls = svc.list.mock.calls.length
+      svc.pendingSyncStatus.mockResolvedValue({ eligible: 0, run: { ...running, status: 'completed', processed: 324, found: 270, no_data: 46, temporary: 8, finished_at: new Date().toISOString() }, blocked: null })
+      await vi.advanceTimersByTimeAsync(5_100)
+      const done = await screen.findByTestId('pending-sync-done')
+      expect(done.textContent).toContain('اكتملت المزامنة')
+      for (const [label, v] of [['تمت معالجة', '324'], ['تم تحديثها بنجاح', '270'], ['لا تتوفر لها بيانات من DHL', '46'], ['تعذر التحقق مؤقتًا', '8']]) {
+        expect(done.textContent).toContain(`${label}${v}`)
+      }
+      expect(svc.summary.mock.calls.length).toBeGreaterThan(summaryCalls)
+      expect(svc.list.mock.calls.length).toBeGreaterThan(listCalls)
+      expect((within(screen.getByTestId('tracking-actions')).getByRole('button', { name: /مزامنة الفواتير/ }) as HTMLButtonElement).disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('«مزامنة الفواتير» with nothing pending: «لا توجد بوالص بانتظار المزامنة حاليًا.» and no run is started', async () => {
+    auth.role = 'admin'
+    svc.pendingSyncStatus.mockResolvedValue({ eligible: 0, run: null, blocked: null })
+    renderApp()
+    fireEvent.click(within(await actions()).getByRole('button', { name: /مزامنة الفواتير/ }))
+    const dialog = await screen.findByTestId('sync-dialog')
+    expect(await within(dialog).findByText('لا توجد بوالص بانتظار المزامنة حاليًا.')).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: /بدء المزامنة/ })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حسنًا' }))
+    expect(svc.startPendingSync).not.toHaveBeenCalled()
+  })
+
+  it('«مزامنة الفواتير» while DHL tracking is switched off on the server: explained, cannot start', async () => {
+    auth.role = 'admin'
+    svc.pendingSyncStatus.mockResolvedValue({ eligible: 12, run: null, blocked: 'tracking_disabled' })
+    renderApp()
+    fireEvent.click(within(await actions()).getByRole('button', { name: /مزامنة الفواتير/ }))
+    const dialog = await screen.findByTestId('sync-dialog')
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('التتبع من DHL غير مفعّل على الخادم')
+    expect((within(dialog).getByRole('button', { name: /بدء المزامنة/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
