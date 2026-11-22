@@ -6,12 +6,44 @@
  */
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
 import type {
-  DhlShipment, DraftContent, DutiesPayer, Issue, ItemInput, Party, PartyDetailsContent, PhoneEntry, PhoneType, PickupOption, ShipmentPurpose, TransportPayer,
+  DetailsExtraContent, DhlShipment, DraftContent, DutiesPayer, Issue, ItemInput, Party, PartyDetailsContent, PhoneEntry, PhoneType, PickupOption, ShipmentPurpose, TransportPayer,
 } from '../../services/dhlShipment.service';
 import { tr, type CsLang } from './csLang';
 
 // ── Countries (full ISO list, names in Arabic and English from the browser, calling codes) ──
-export interface CountryOption { code: string; name: string; ar: string; en: string; dial: string }
+export interface CountryOption { code: string; name: string; ar: string; en: string; dial: string; aliases: string[] }
+/** Business names that differ from the browser's region names (the ISO code never changes: US stays US, AS stays American Samoa). */
+const COUNTRY_NAME_OVERRIDES: Record<string, { ar: string; en: string }> = {
+  US: { ar: 'الولايات المتحدة الأمريكية', en: 'United States of America' },
+};
+/** Extra words that must find a country (lower case; Arabic without diacritics). */
+const COUNTRY_ALIASES: Record<string, string[]> = {
+  US: ['united states of america', 'united states', 'usa', 'u.s.a.', 'u.s.a', 'u.s.', 'us', 'america', 'الولايات المتحدة', 'الولايات المتحدة الأمريكية', 'أمريكا', 'امريكا', 'امريكيا'],
+  GB: ['uk', 'u.k.', 'great britain', 'england', 'britain', 'بريطانيا', 'انجلترا'],
+  AE: ['uae', 'u.a.e.', 'emirates', 'الإمارات', 'الامارات'],
+  SA: ['ksa', 'saudi', 'السعودية'],
+};
+/** How well a country matches a search ("usa", "مصر", "966", "US"): lower = better, null = no match. */
+export function countryMatch(c: CountryOption, raw: string): number | null {
+  const q = raw.trim().toLowerCase();
+  if (!q) return 3;
+  if (c.code.toLowerCase() === q || c.aliases.includes(q)) return 0;
+  const names = [c.ar.toLowerCase(), c.en.toLowerCase()];
+  if (names.some((n) => n === q)) return 0;
+  if (names.some((n) => n.startsWith(q)) || c.aliases.some((a) => a.startsWith(q))) return 1;
+  if (names.some((n) => n.includes(q)) || c.aliases.some((a) => a.includes(q))) return 2;
+  const digits = q.replace(/\D/g, '');
+  if (digits && digits === q.replace(/^\+/, '') && c.dial.startsWith(digits)) return 2;
+  return null;
+}
+/** Countries matching a search, best first (exact name / code / alias, then prefix, then contains). */
+export function searchCountries(q: string, lang: CsLang = 'ar'): CountryOption[] {
+  return allCountries(lang)
+    .map((c, i) => ({ c, i, m: countryMatch(c, q) }))
+    .filter((x) => x.m != null)
+    .sort((a, b) => (a.m as number) - (b.m as number) || a.i - b.i)
+    .map((x) => x.c);
+}
 const countryCache: Partial<Record<CsLang, CountryOption[]>> = {};
 const FIRST_COUNTRIES = ['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'EG', 'JO', 'US', 'GB', 'CN', 'TR', 'DE'];
 const displayNames = (lang: CsLang) => { try { return new Intl.DisplayNames([lang], { type: 'region' }); } catch { return null; } };
@@ -25,8 +57,9 @@ export function allCountries(lang: CsLang = 'ar'): CountryOption[] {
   const ar = displayNames('ar');
   const en = displayNames('en');
   const list = getCountries().map((code) => {
-    const a = ar?.of(code) ?? code; const e = en?.of(code) ?? code;
-    return { code, ar: a, en: e, name: lang === 'en' ? e : a, dial: callingCode(code) };
+    const a = COUNTRY_NAME_OVERRIDES[code]?.ar ?? ar?.of(code) ?? code;
+    const e = COUNTRY_NAME_OVERRIDES[code]?.en ?? en?.of(code) ?? code;
+    return { code, ar: a, en: e, name: lang === 'en' ? e : a, dial: callingCode(code), aliases: COUNTRY_ALIASES[code] ?? [] };
   });
   list.sort((a, b) => {
     const ia = FIRST_COUNTRIES.indexOf(a.code); const ib = FIRST_COUNTRIES.indexOf(b.code);
@@ -70,15 +103,29 @@ export interface PackageForm { weight_kg: string; length_cm: string; width_cm: s
 export interface ItemForm {
   description: string; quantity: string; unit: string; unit_value: string; country_of_origin: string;
   outbound_hs_code: string; inbound_hs_code: string; unit_net_weight_kg: string; gross_mode: 'unit' | 'line'; gross_weight_kg: string;
+  /** Shipment Details extras (stored with the draft, not sent to DHL). */
+  manufacturer_id: string; line_reference: string; show_reference: boolean;
 }
+/** A shipment reference; the FIRST one is DHL's customer reference (printed on the label / waybill). */
+export interface ReferenceForm { type: string; value: string }
+export type ChargeType = 'freight' | 'insurance' | 'other';
+export interface ChargeForm { type: ChargeType; description: string; amount: string }
 export type ContentKind = 'documents' | 'goods';
 export interface WizardForm {
   client_id: number | null;
   client_name: string;
   content_kind: ContentKind;
   content_description: string;
-  customer_reference: string;
+  /** Shipment references — [0] is sent to DHL as customer_reference; the others are kept by SHIPPEC. */
+  references: ReferenceForm[];
   declared_value: string;
+  /** Shipment Details preferences — stored only; no MyDHL mapping is wired for them yet (never sent to DHL). */
+  document_protection: boolean;
+  insurance: boolean;
+  estimated_duties: boolean;
+  precalculated_duties: boolean;
+  item_entry: 'describe' | 'upload';
+  charges: ChargeForm[];
   currency: string;
   shipment_purpose: ShipmentPurpose | '';
   export_reason_type: string;
@@ -141,7 +188,7 @@ export const toDefaultParty = (): PartyForm => ({ ...emptyParty('', 'office'), u
 export const emptyPackage = (): PackageForm => ({ weight_kg: '', length_cm: '', width_cm: '', height_cm: '', quantity: '1' });
 export const emptyItem = (): ItemForm => ({
   description: '', quantity: '1', unit: 'PCS', unit_value: '', country_of_origin: '', outbound_hs_code: '', inbound_hs_code: '',
-  unit_net_weight_kg: '', gross_mode: 'line', gross_weight_kg: '',
+  unit_net_weight_kg: '', gross_mode: 'line', gross_weight_kg: '', manufacturer_id: '', line_reference: '', show_reference: false,
 });
 
 /** Next business day in Riyadh (Fri/Sat weekend), YYYY-MM-DD. */
@@ -166,7 +213,8 @@ export function nextBusinessDay(now = new Date(), country = 'SA', from?: string)
 
 export function emptyForm(): WizardForm {
   return {
-    client_id: null, client_name: '', content_kind: 'documents', content_description: '', customer_reference: '', declared_value: '', currency: 'SAR',
+    client_id: null, client_name: '', content_kind: 'documents', content_description: '', references: [], declared_value: '', currency: 'SAR',
+    document_protection: false, insurance: false, estimated_duties: false, precalculated_duties: false, item_entry: 'describe', charges: [],
     shipment_purpose: '', export_reason_type: '', customs_invoice_number: '', customs_invoice_date: '', dhl_invoice_type: '', paperless_trade: false,
     incoterm: 'DAP', transport_payer: 'shipper', transport_payer_account: '', duties_payer: 'receiver', duties_payer_account: '',
     shipment_date: nextBusinessDay(), origin_gmt_offset: '', product_code: '', local_product_code: '', service_codes: [],
@@ -279,26 +327,33 @@ function detailsOut(p: PartyForm): PartyDetailsContent {
 const blank = (...v: Array<string | null | undefined>) => v.every((x) => !String(x ?? '').trim());
 const blankPackage = (p: PackageForm) => blank(p.weight_kg, p.length_cm, p.width_cm, p.height_cm);
 const blankItem = (it: ItemForm) => blank(it.description, it.unit_value, it.country_of_origin, it.outbound_hs_code, it.inbound_hs_code, it.unit_net_weight_kg, it.gross_weight_kg);
+/** International packages without a typed contents summary: the item descriptions (what DHL prints as the contents). */
+export function derivedContents(f: Pick<WizardForm, 'items'>): string {
+  return [...new Set(f.items.map((it) => it.description.trim()).filter(Boolean))].join(', ').slice(0, 255);
+}
 
 export function toContent(f: WizardForm): Partial<DraftContent> {
   const customs = needsCustoms(f);
-  const items: ItemInput[] = customs ? f.items.filter((it) => !blankItem(it)).map((it) => ({
+  const sentItems = customs ? f.items.filter((it) => !blankItem(it)) : [];
+  const items: ItemInput[] = sentItems.map((it) => ({
     description: it.description.trim(), quantity: it.quantity, unit: it.unit, unit_value: it.unit_value,
     country_of_origin: t(it.country_of_origin), outbound_hs_code: t(it.outbound_hs_code), inbound_hs_code: t(it.inbound_hs_code),
     unit_net_weight_kg: t(it.unit_net_weight_kg),
     ...(it.gross_mode === 'unit' ? { unit_gross_weight_kg: t(it.gross_weight_kg) } : { line_gross_weight_kg: t(it.gross_weight_kg) }),
-  })) : [];
+  }));
   const schedule = f.pickup_option === 'schedule';
+  const refs = f.references.filter((r) => r.value.trim());
+  const amountOf = (v: string) => { const n = num(v); return n == null ? null : Math.round(n * 100) / 100; };
   const services = f.service_codes.filter((s) => s !== 'WY' && s !== 'DD');
   return {
     client_id: f.client_id,
-    customer_reference: t(f.customer_reference),
+    customer_reference: t(refs[0]?.value),
     product_code: t(f.product_code),
     local_product_code: t(f.local_product_code),
     service_codes: customs && f.paperless_trade ? [...services, 'WY'] : services,
     customs_required: customs,
     paperless_trade: customs && f.paperless_trade,
-    content_description: t(f.content_description),
+    content_description: t(f.content_description) ?? (customs ? t(derivedContents(f)) : null),
     incoterm: customs ? t(f.incoterm) : null,
     currency: customs ? t(f.currency) : f.declared_value.trim() ? t(f.currency) : null,
     declared_value: !customs && f.declared_value.trim() ? f.declared_value : null,
@@ -326,6 +381,16 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
     shipper: partiesPartyOut(f.shipper) as DraftContent['shipper'],
     receiver: partiesPartyOut(f.receiver) as DraftContent['receiver'],
     party_details: { shipper: detailsOut(f.shipper), receiver: detailsOut(f.receiver) },
+    details_extra: {
+      references: refs.map((r) => ({ type: t(r.type), value: r.value.trim().slice(0, 35) })),
+      document_protection: !customs && f.content_kind === 'documents' && f.document_protection,
+      insurance: f.content_kind === 'goods' && f.insurance,
+      estimated_duties: customs && f.estimated_duties,
+      precalculated_duties: false,
+      item_entry: f.item_entry,
+      charges: customs ? f.charges.filter((c) => c.amount.trim()).map((c) => ({ type: c.type, description: t(c.description), amount: amountOf(c.amount) })) : [],
+      items: sentItems.map((it) => ({ manufacturer_id: t(it.manufacturer_id), line_reference: it.show_reference ? t(it.line_reference) : null })),
+    },
     packages: f.packages.filter((p) => !blankPackage(p)).map((p) => ({
       weight_kg: p.weight_kg, length_cm: t(p.length_cm), width_cm: t(p.width_cm), height_cm: t(p.height_cm),
       quantity: Math.max(1, Math.floor(num(p.quantity) ?? 1)),
@@ -402,12 +467,19 @@ export function groupPieces(rows: DhlShipment['packages']): PackageForm[] {
 
 export function fromShipment(sh: DhlShipment, clientName = ''): WizardForm {
   const f = emptyForm();
+  const extra = (sh['shipment_details_extra'] ?? null) as DetailsExtraContent | null;
   const pa = sh.pickup_address ? partyIn(Object.fromEntries(Object.entries(flatParty(sh.pickup_address)).map(([k, v]) => [k, v])), '') : emptyParty(sh['shipper_country_code'] as string || 'SA');
   return {
     ...f,
     client_id: sh.client_id, client_name: clientName,
     content_kind: sh.customs_required ? 'goods' : (sh.items?.length ? 'goods' : f.content_kind),
-    content_description: s(sh.content_description), customer_reference: s(sh.customer_reference),
+    content_description: s(sh.content_description),
+    references: extra?.references?.length
+      ? extra.references.map((r) => ({ type: s(r.type) || 'CU', value: s(r.value) }))
+      : sh.customer_reference ? [{ type: 'CU', value: s(sh.customer_reference) }] : [],
+    document_protection: !!extra?.document_protection, insurance: !!extra?.insurance, estimated_duties: !!extra?.estimated_duties, precalculated_duties: false,
+    item_entry: extra?.item_entry === 'upload' ? 'upload' : 'describe',
+    charges: (extra?.charges ?? []).map((c) => ({ type: (['freight', 'insurance', 'other'].includes(String(c.type)) ? c.type : 'other') as ChargeType, description: s(c.description), amount: c.amount == null ? '' : s(c.amount) })),
     declared_value: sh.customs_required ? '' : s(sh.declared_value != null ? num(sh.declared_value) : ''), currency: s(sh.currency) || 'SAR',
     shipment_purpose: sh.shipment_purpose ?? '', export_reason_type: s(sh.export_reason_type),
     customs_invoice_number: s(sh.customs_invoice_number), customs_invoice_date: s(sh.customs_invoice_date),
@@ -423,7 +495,8 @@ export function fromShipment(sh: DhlShipment, clientName = ''): WizardForm {
     shipper: partiesPartyIn(sh as Record<string, unknown>, 'shipper_', sh['shipper_details'] as PartyDetailsContent | null, 'mobile'),
     receiver: partiesPartyIn(sh as Record<string, unknown>, 'receiver_', sh['receiver_details'] as PartyDetailsContent | null, 'office'),
     packages: sh.packages?.length ? groupPieces(sh.packages) : [emptyPackage()],
-    items: (sh.items ?? []).map((i: Record<string, any>) => ({
+    items: (sh.items ?? []).map((i: Record<string, any>, k: number) => ({
+      manufacturer_id: s(extra?.items?.[k]?.manufacturer_id), line_reference: s(extra?.items?.[k]?.line_reference), show_reference: !!extra?.items?.[k]?.line_reference,
       description: s(i.description), quantity: s(i.quantity), unit: s(i.unit) || 'PCS', unit_value: s(num(i.unit_value)), country_of_origin: s(i.country_of_origin),
       outbound_hs_code: s(i.outbound_hs_code), inbound_hs_code: s(i.inbound_hs_code), unit_net_weight_kg: s(num(i.unit_net_weight_kg) ?? ''),
       gross_mode: i.unit_gross_weight_kg != null ? 'unit' : 'line', gross_weight_kg: s(num(i.unit_gross_weight_kg ?? i.line_gross_weight_kg) ?? ''),
@@ -469,19 +542,20 @@ export function locateIssue(field: string): { step: StepId; key: string } {
     const k = DHL_TO_FORM[party[2]] ?? party[2];
     return { step: party[1] === 'pickup_address' ? 'pickup' : 'parties', key: `${party[1]}.${k}` };
   }
+  // the customs lines are entered on «تفاصيل الشحنة» (Shipment Details, packages)
   const line = /^customs\.lineItems\.(\d+)\.([A-Za-z]+)/.exec(f);
-  if (line) return { step: 'customs', key: `items.${line[1]}.${CUSTOMS_TO_FORM[line[2]] ?? line[2]}` };
-  if (/^customs\.lineItems$/.test(f)) return { step: 'customs', key: 'items' };
+  if (line) return { step: 'details', key: `items.${line[1]}.${CUSTOMS_TO_FORM[line[2]] ?? line[2]}` };
+  if (/^customs\.lineItems$/.test(f)) return { step: 'details', key: 'items' };
   const item = /^items\.(\d+)\.?([a-z_]*)/.exec(f);
-  if (item) return { step: 'customs', key: item[2] ? `items.${item[1]}.${item[2]}` : 'items' };
+  if (item) return { step: 'details', key: item[2] ? `items.${item[1]}.${item[2]}` : 'items' };
   const pkg = /^packages\.?(\d*)/.exec(f);
   if (pkg) return { step: 'packages', key: pkg[1] ? `packages.${pkg[1]}` : 'packages' };
   const top = f.split('.')[0];
   const STEP_OF: Record<string, StepId> = {
     content_description: 'details', customer_reference: 'details', customs_required: 'details', declared_value: 'details', shipment_purpose: 'details',
     export_reason_type: 'details', shipment_type: 'details',
-    items: 'customs', customs_invoice_number: 'customs', customs_invoice_date: 'customs', dhl_invoice_type: 'customs', paperless_trade: 'customs',
-    service_codes: 'customs', currency: 'customs', customs: 'customs',
+    items: 'details', customs_invoice_number: 'customs', customs_invoice_date: 'customs', dhl_invoice_type: 'customs', paperless_trade: 'customs',
+    service_codes: 'customs', currency: 'details', customs: 'customs', details_extra: 'details',
     incoterm: 'payment', transport_payer: 'payment', transport_payer_account: 'payment', duties_payer: 'payment', duties_payer_account: 'payment',
     product_code: 'service', shipment_date: 'service', origin_gmt_offset: 'service', dhl: 'service',
     pickup_option: 'pickup', pickup_earliest_time: 'pickup', pickup_latest_time: 'pickup', pickup_location: 'pickup', pickup_location_type: 'pickup',
@@ -621,6 +695,52 @@ export function partiesGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
   return errors;
 }
 
+/** Latin only (DHL); the same rule as the Backend's findNonLatinStrings, for one text. */
+export const isLatin = (v: string) => !/[^\t\n\r -\u024F\u2018-\u201F\u2013\u2014]/.test(v);
+export const ITEM_DESCRIPTION_MAX = 170;
+/** Purposes DHL documents no export reason for: the person chooses DHL's export reason type. */
+export const PURPOSES_NEEDING_REASON: ShipmentPurpose[] = ['return_for_repair', 'return_after_repair', 'claim', 'return_to_seller'];
+const positive = (v: string) => { const n = num(v); return n != null && n > 0; };
+
+/**
+ * The Shipment Details gate (Next / stepper): field key → message; empty = Next allowed.
+ * Documents: a contents description; a value, when typed, positive.
+ * International packages: purpose (+ DHL export reason when needed), currency, at least one item
+ * with an English description (≤ 170), quantity, unit, value, weight, origin and both HS codes.
+ */
+export function detailsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
+  const e: FieldErrors = {};
+  const T = (ar: string, en: string) => tr(lang, ar, en);
+  const customs = needsCustoms(f);
+  if (!customs && !f.content_description.trim()) e.content_description = T('وصف المحتوى مطلوب.', 'A description of the contents is required.');
+  if (f.content_description.trim() && !isLatin(f.content_description)) e.content_description = T('الوصف بالإنجليزية فقط (DHL تقبل الأحرف اللاتينية).', 'English only (DHL accepts Latin characters).');
+  if (!customs && f.declared_value.trim() && !positive(f.declared_value)) e.declared_value = T('القيمة رقم أكبر من صفر.', 'The value must be a number greater than zero.');
+  f.references.forEach((r, i) => { if (r.value.trim() && !isLatin(r.value)) e[`references.${i}`] = T('المرجع بالأحرف اللاتينية فقط.', 'Latin characters only.'); });
+  if (customs) {
+    if (!f.shipment_purpose) e.shipment_purpose = T('اختر غرض الشحنة.', 'Choose the purpose of the shipment.');
+    else if (PURPOSES_NEEDING_REASON.includes(f.shipment_purpose as ShipmentPurpose) && !f.export_reason_type) e.export_reason_type = T('اختر سبب التصدير لدى DHL.', "Choose DHL's export reason.");
+    if (!/^[A-Z]{3}$/.test(f.currency)) e.currency = T('اختر العملة.', 'Choose the currency.');
+    const items = f.items.filter((it) => !blankItem(it));
+    if (!items.length) e.items = T('أضف بندًا واحدًا على الأقل.', 'Add at least one item.');
+    f.items.forEach((it, i) => {
+      if (blankItem(it) && f.items.length > 1) return;
+      const k = (x: string) => `items.${i}.${x}`;
+      if (!it.description.trim()) e[k('description')] = T('وصف البند مطلوب.', 'The item description is required.');
+      else if (it.description.length > ITEM_DESCRIPTION_MAX) e[k('description')] = T(`الوصف ${ITEM_DESCRIPTION_MAX} حرفًا كحد أقصى.`, `At most ${ITEM_DESCRIPTION_MAX} characters.`);
+      else if (!isLatin(it.description)) e[k('description')] = T('الوصف بالإنجليزية فقط (DHL تقبل الأحرف اللاتينية).', 'English only (DHL accepts Latin characters).');
+      if (!/^\d+$/.test(it.quantity.trim()) || Number(it.quantity) < 1) e[k('quantity')] = T('الكمية رقم صحيح من 1 فأكثر.', 'Quantity: a whole number of 1 or more.');
+      if (!it.unit) e[k('unit')] = T('اختر الوحدة.', 'Choose the unit.');
+      if (!positive(it.unit_value)) e[k('unit_value')] = T('قيمة البند رقم أكبر من صفر.', 'The item value must be greater than zero.');
+      if (!positive(it.unit_net_weight_kg)) e[k('unit_net_weight_kg')] = T('وزن البند رقم أكبر من صفر.', 'The item weight must be greater than zero.');
+      if (!it.country_of_origin) e[k('country_of_origin')] = T('اختر بلد الصنع.', 'Choose where the item was made.');
+      if (!it.outbound_hs_code.trim()) e[k('outbound_hs_code')] = T('رمز HS للتصدير مطلوب.', 'The export HS code is required.');
+      if (!it.inbound_hs_code.trim()) e[k('inbound_hs_code')] = T('رمز HS للاستيراد مطلوب.', 'The import HS code is required.');
+    });
+    f.charges.forEach((c, i) => { if (c.amount.trim() && (num(c.amount) == null || (num(c.amount) as number) < 0)) e[`charges.${i}`] = T('المبلغ رقم صفر أو أكثر.', 'The amount must be zero or more.'); });
+  }
+  return e;
+}
+
 /** Light presence checks — which steps visibly still need input (the Backend decides validity). */
 export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): string[] {
   const miss: string[] = [];
@@ -632,8 +752,14 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
       }
       if (!f.client_id) miss.push(T('العميل (للفاتورة)', 'Customer (invoice)'));
       break;
-    case 'details': if (!f.content_description.trim()) miss.push(T('وصف المحتوى', 'Contents description')); if (needsCustoms(f) && !f.shipment_purpose) miss.push(T('غرض الشحنة', 'Purpose of shipment')); break;
-    case 'customs': if (!f.items.length) miss.push(T('بند جمركي واحد على الأقل', 'At least one customs line')); if (!f.customs_invoice_number.trim()) miss.push(T('رقم الفاتورة الجمركية', 'Customs invoice number')); break;
+    case 'details': {
+      const g = detailsGate(f, lang);
+      if (g.content_description) miss.push(T('وصف المحتوى', 'Contents description'));
+      if (g.shipment_purpose) miss.push(T('غرض الشحنة', 'Purpose of shipment'));
+      if (g.items || Object.keys(g).some((k) => k.startsWith('items.'))) miss.push(T('بيانات البنود', 'Item details'));
+      break;
+    }
+    case 'customs': if (!f.customs_invoice_number.trim()) miss.push(T('رقم الفاتورة الجمركية', 'Customs invoice number')); break;
     case 'packages': if (!f.packages.length || f.packages.some((p) => !(num(p.weight_kg) ?? 0))) miss.push(T('وزن كل طرد', 'Weight of each package')); break;
     case 'service': if (!f.product_code) miss.push(T('خدمة DHL', 'DHL service')); break;
     case 'pickup': if (f.pickup_option === 'schedule' && (!f.pickup_earliest_time || !f.pickup_latest_time)) miss.push(T('وقت الاستلام', 'Pickup time')); if (f.pickup_option === 'drop_off' && !f.service_point_id) miss.push(T('نقطة الخدمة', 'Service point')); break;
@@ -656,8 +782,8 @@ export function routeSnapshot(f: WizardForm): string {
 
 // ── Labels ──
 export const PURPOSE_LABELS_EN: Record<ShipmentPurpose, string> = {
-  commercial: 'Commercial (sale)', gift: 'Gift', personal_not_for_resale: 'Personal, not for resale', sample: 'Sample',
-  return_for_repair: 'Return for repair', return_after_repair: 'Return after repair',
+  gift: 'Gift', commercial: 'Commercial', personal_not_for_resale: 'Personal, Not for Resale', sample: 'Sample',
+  return_for_repair: 'Return for Repair', return_after_repair: 'Return after Repair', claim: 'Claim', return_to_seller: 'Return to Seller',
 };
 export const purposeLabel = (p: ShipmentPurpose, lang: CsLang) => (lang === 'en' ? PURPOSE_LABELS_EN[p] : PURPOSE_LABELS[p]);
 export const PURPOSE_LABELS: Record<ShipmentPurpose, string> = {
@@ -667,7 +793,11 @@ export const PURPOSE_LABELS: Record<ShipmentPurpose, string> = {
   sample: 'عيّنة',
   return_for_repair: 'إرجاع للإصلاح',
   return_after_repair: 'إرجاع بعد الإصلاح',
+  claim: 'مطالبة',
+  return_to_seller: 'إرجاع إلى البائع',
 };
+/** DHL's MyDHL+ order. */
+export const PURPOSE_ORDER: ShipmentPurpose[] = ['gift', 'commercial', 'personal_not_for_resale', 'sample', 'return_for_repair', 'return_after_repair', 'claim', 'return_to_seller'];
 /** DHL's exportReasonType enum (MyDHL OpenAPI) — chosen explicitly for purposes without a documented mapping. */
 export const DHL_EXPORT_REASONS: Array<{ value: string; label: string }> = [
   { value: 'temporary', label: 'تصدير مؤقت (temporary)' },
@@ -685,6 +815,44 @@ export const DHL_EXPORT_REASONS: Array<{ value: string; label: string }> = [
   { value: 'defence_material', label: 'مواد دفاعية (defence_material)' },
 ];
 export const ITEM_UNITS = ['PCS', 'PRS', 'SET', 'BOX', 'DOZ', 'EA', 'NO', 'KG', 'GM', 'LTR', 'M', 'ROLL'];
+/** How an item is packaged — DHL quantity unit codes (all in the Backend's DHL_QUANTITY_UNITS). */
+export const UNIT_LABELS: Record<string, [string, string]> = {
+  PCS: ['قطع', 'Pieces'], PRS: ['أزواج', 'Pairs'], SET: ['أطقم', 'Sets'], BOX: ['صناديق', 'Boxes'], DOZ: ['دزينة', 'Dozen'], EA: ['وحدة', 'Each'],
+  NO: ['عدد', 'Number'], KG: ['كيلوغرام', 'Kilograms'], GM: ['غرام', 'Grams'], LTR: ['لتر', 'Litres'], M: ['متر', 'Metres'], ROLL: ['لفّات', 'Rolls'],
+};
+/** English contents descriptions for documents (free text for DHL — never a code). */
+export const DOCUMENT_DESCRIPTIONS: Array<[string, string]> = [
+  ['Business documents', 'مستندات تجارية'], ['Legal documents', 'مستندات قانونية'], ['Financial documents', 'مستندات مالية'], ['Contracts', 'عقود'],
+  ['Correspondence', 'مراسلات'], ['Invoices', 'فواتير'], ['Shipping documents', 'مستندات شحن'], ['Tender documents', 'مستندات مناقصات'],
+  ['Educational certificates', 'شهادات تعليمية'], ['Personal documents', 'مستندات شخصية'], ['Bank documents', 'مستندات بنكية'], ['Printed matter', 'مطبوعات'],
+];
+const CURRENCY_FALLBACK = ['SAR', 'USD', 'EUR', 'GBP', 'AED', 'KWD', 'QAR', 'BHD', 'OMR', 'EGP', 'JOD', 'CNY', 'JPY', 'INR', 'TRY', 'CHF', 'CAD', 'AUD'];
+const CURRENCY_FIRST = ['SAR', 'USD', 'EUR', 'GBP', 'AED', 'KWD', 'QAR', 'BHD', 'OMR', 'EGP', 'CNY'];
+const currencyCache: Partial<Record<CsLang, Array<{ code: string; name: string }>>> = {};
+/** ISO 4217 currencies (from the browser), names in the page language, the common ones first. */
+export function currencyOptions(lang: CsLang = 'ar'): Array<{ code: string; name: string }> {
+  const hit = currencyCache[lang];
+  if (hit) return hit;
+  let codes: string[] = CURRENCY_FALLBACK;
+  try {
+    const sv = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf;
+    if (sv) codes = sv('currency');
+  } catch { codes = CURRENCY_FALLBACK; }
+  let names: Intl.DisplayNames | null = null;
+  try { names = new Intl.DisplayNames([lang], { type: 'currency' }); } catch { names = null; }
+  const list = [...new Set([...CURRENCY_FIRST, ...codes])].filter((c) => /^[A-Z]{3}$/.test(c)).map((code) => ({ code, name: names?.of(code) ?? code }));
+  currencyCache[lang] = list;
+  return list;
+}
+/** kg → lb for display only (3 decimals, never fed back into the form). */
+export const kgToLb = (kgValue: number) => Math.round(kgValue * 2.20462262 * 1000) / 1000;
+/** Goods value + the additional charges = what the customs invoice states. */
+export function invoiceTotals(f: Pick<WizardForm, 'items' | 'charges'>) {
+  const goods = itemTotals(f.items).value;
+  const charges = Math.round(f.charges.reduce((sum, c) => sum + (num(c.amount) ?? 0), 0) * 100) / 100;
+  const units = f.items.reduce((sum, it) => sum + (Math.floor(num(it.quantity) ?? 0)), 0);
+  return { goods, charges, total: Math.round((goods + charges) * 100) / 100, units };
+}
 export const CHARGE_LABELS: Record<string, string> = {
   transportation: 'أجرة النقل', fuel_surcharge: 'رسوم الوقود', demand_surcharge: 'رسوم الطلب', premium: 'خدمة مميزة', gogreen: 'GoGreen', other: 'رسوم أخرى',
 };

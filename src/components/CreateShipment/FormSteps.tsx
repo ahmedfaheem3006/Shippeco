@@ -1,18 +1,17 @@
 /**
- * Steps 2–5 of «إنشاء شحنة»: shipment details, customs, packages, payment &
- * terms (step 1, the Parties screen, lives in PartiesStep.tsx), plus the
- * pickup-address fields. Arabic or English (the page's own AR | EN). Field
+ * Steps of «إنشاء شحنة»: customs invoice, packages, payment & terms (the
+ * Parties screen lives in PartiesStep.tsx, Shipment Details in
+ * DetailsStep.tsx), plus the pickup-address fields. Arabic or English (the page's own AR | EN). Field
  * errors come from the Backend's validation (mapped by
  * wizardModel.locateIssue) — never re-implemented here.
  */
 import React, { useEffect, useState } from 'react';
-import { Copy, FileText, Package, Plus, Trash2, Wallet } from 'lucide-react';
-import { dhlShipmentService, type ShipmentPurpose } from '../../services/dhlShipment.service';
+import { Copy, Package, Plus, Trash2, Wallet } from 'lucide-react';
+import { dhlShipmentService } from '../../services/dhlShipment.service';
 import { ChoiceCards, CountrySelect, Field, Note, Section, SelectInput, TextInput, Button } from './ui';
 import { useCsLang } from './csLang';
 import {
-  DHL_EXPORT_REASONS, emptyItem, emptyPackage, exportReasonLabel, isInternational, ITEM_UNITS, itemTotals, kg, packageTotals, purposeLabel, PURPOSE_LABELS,
-  translateIssue, type FieldErrors, type ItemForm, type PartyForm, type WizardForm,
+  emptyPackage, isInternational, itemTotals, kg, packageTotals, translateIssue, type FieldErrors, type PartyForm, type WizardForm,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
 
@@ -82,123 +81,11 @@ function PartyFields({ who, value, onChange, errors, title, icon }: {
 }
 export { PartyFields };
 
-// ── Details ──
-export function StepDetails({ w }: Props) {
-  const { form, update, errors, customs } = w;
-  const { t, lang } = useCsLang();
-  const err = useErr(errors);
-  const international = isInternational(form);
-  const purposeNeedsReason = form.shipment_purpose === 'return_for_repair' || form.shipment_purpose === 'return_after_repair';
-  return (
-    <div className="space-y-4">
-      <Section title={t('نوع المحتوى', 'Contents type')} icon={<FileText size={18} className="text-indigo-600" />}>
-        <ChoiceCards
-          name={t('نوع المحتوى', 'Contents type')}
-          value={form.content_kind}
-          onChange={(v) => update((f) => ({ ...f, content_kind: v, items: v === 'goods' && !f.items.length && international ? [emptyItem()] : f.items }))}
-          options={[
-            { value: 'documents', title: t('مستندات', 'Documents'), description: t('أوراق ومستندات بلا قيمة تجارية — لا تحتاج بيانات جمركية.', 'Papers and documents without commercial value — no customs data needed.'), icon: <FileText size={18} /> },
-            { value: 'goods', title: t('طرود / بضائع', 'Packages / goods'), description: international ? t('بضائع دولية — تتطلب فاتورة وبيانات جمركية لكل بند.', 'International goods — an invoice and customs data for every line are required.') : t('بضائع داخل الدولة — بدون بيانات جمركية.', 'Domestic goods — no customs data.'), icon: <Package size={18} /> },
-          ]}
-        />
-        {customs && <div className="mt-3"><Note>{t('هذه شحنة بضائع دولية: ستظهر خطوة «الجمارك» لأن الجمارك في بلد الوصول تحتاج وصف كل بند وقيمته ووزنه ورمزه (HS) وبلد المنشأ.', 'This is an international goods shipment: the «Customs» step appears because destination customs need each line\'s description, value, weight, HS code and country of origin.')}</Note></div>}
-      </Section>
-      <Section title={t('وصف الشحنة', 'Shipment description')}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label={t('وصف المحتوى', 'Contents description')} required error={err('content_description')} className="sm:col-span-2" hint={t('بالإنجليزية كما سيظهر على الملصق، مثل: Cotton T-Shirts', 'In English as printed on the label, e.g. Cotton T-Shirts')}>
-            {(id) => <TextInput id={id} value={form.content_description} onValue={(v) => update((f) => ({ ...f, content_description: v }))} error={err('content_description')} ltr maxLength={255} />}
-          </Field>
-          <Field label={t('مرجع العميل (اختياري)', 'Customer reference (optional)')} error={err('customer_reference')} hint={t('يطبع على الملصق، 35 حرفًا كحد أقصى', 'Printed on the label, 35 characters at most')}>
-            {(id) => <TextInput id={id} value={form.customer_reference} onValue={(v) => update((f) => ({ ...f, customer_reference: v }))} ltr maxLength={35} />}
-          </Field>
-          {!customs && (
-            <Field label={t('القيمة المصرّح بها (اختياري)', 'Declared value (optional)')} error={err('declared_value')}>
-              {(id) => (
-                <div className="flex gap-2">
-                  <TextInput id={id} value={form.declared_value} onValue={(v) => update((f) => ({ ...f, declared_value: v }))} ltr inputMode="decimal" />
-                  <TextInput aria-label={t('العملة', 'Currency')} value={form.currency} onValue={(v) => update((f) => ({ ...f, currency: v.toUpperCase().slice(0, 3) }))} ltr className="!w-20" />
-                </div>
-              )}
-            </Field>
-          )}
-        </div>
-      </Section>
-      {customs && (
-        <Section title={t('غرض الشحنة', 'Purpose of shipment')} description={t('يُرسل إلى DHL كسبب التصدير ويُطبع على الفاتورة الجمركية.', 'Sent to DHL as the export reason and printed on the customs invoice.')}>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" role="radiogroup" aria-label={t('غرض الشحنة', 'Purpose of shipment')}>
-            {(Object.keys(PURPOSE_LABELS) as ShipmentPurpose[]).map((p) => (
-              <button key={p} type="button" role="radio" aria-checked={form.shipment_purpose === p}
-                onClick={() => update((f) => ({ ...f, shipment_purpose: p, export_reason_type: p === 'return_for_repair' || p === 'return_after_repair' ? f.export_reason_type : '' }))}
-                className={`px-3 py-3 rounded-2xl border text-sm font-bold text-start ${form.shipment_purpose === p ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-100 dark:ring-indigo-900/40' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-300'}`}>
-                {purposeLabel(p, lang)}
-              </button>
-            ))}
-          </div>
-          {err('shipment_purpose') && <p className="mt-2 text-[11px] font-semibold text-red-600" role="alert">{err('shipment_purpose')}</p>}
-          {purposeNeedsReason && (
-            <div className="mt-3 space-y-2">
-              <Note tone="warn">{t(`لا يوجد لدى DHL رمز موثّق لـ«${purposeLabel(form.shipment_purpose as ShipmentPurpose, 'ar')}». اختر سبب التصدير من قائمة DHL نفسها — لن يُفترض أي رمز تلقائيًا.`, `DHL has no documented code for «${purposeLabel(form.shipment_purpose as ShipmentPurpose, 'en')}». Choose the export reason from DHL's own list — no code is assumed automatically.`)}</Note>
-              <Field label={t('سبب التصدير لدى DHL', 'DHL export reason')} required error={err('export_reason_type')}>
-                {(id) => (
-                  <SelectInput id={id} value={form.export_reason_type} onValue={(v) => update((f) => ({ ...f, export_reason_type: v }))} error={err('export_reason_type')}>
-                    <option value="">{t('اختر', 'Choose')}</option>
-                    {DHL_EXPORT_REASONS.map((r) => <option key={r.value} value={r.value}>{exportReasonLabel(r, lang)}</option>)}
-                  </SelectInput>
-                )}
-              </Field>
-            </div>
-          )}
-        </Section>
-      )}
-    </div>
-  );
-}
-
 // ── Customs ──
-function ItemCard({ it, i, onChange, onRemove, onCopy, errors, canRemove }: {
-  it: ItemForm; i: number; onChange: (x: ItemForm) => void; onRemove: () => void; onCopy: () => void; errors: FieldErrors; canRemove: boolean;
-}) {
-  const { t, lang } = useCsLang();
-  const errOf = useErr(errors);
-  const set = <K extends keyof ItemForm>(k: K, v: ItemForm[K]) => onChange({ ...it, [k]: v });
-  const e = (k: string) => errOf(`items.${i}.${k}`);
-  const qty = Number(it.quantity) || 0;
-  const total = qty * (Number(it.unit_value) || 0);
-  const kgU = lang === 'en' ? 'kg' : 'كغ';
-  return (
-    <article className="rounded-2xl border border-slate-200 dark:border-slate-700 p-3 sm:p-4 space-y-3" data-item={i}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-extrabold text-slate-800 dark:text-slate-100">{t(`البند ${i + 1}`, `Line ${i + 1}`)}</span>
-        <div className="flex gap-1">
-          <button type="button" onClick={onCopy} className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" aria-label={t(`نسخ البند ${i + 1}`, `Copy line ${i + 1}`)}><Copy size={16} /></button>
-          {canRemove && <button type="button" onClick={onRemove} className="p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" aria-label={t(`حذف البند ${i + 1}`, `Remove line ${i + 1}`)}><Trash2 size={16} /></button>}
-        </div>
-      </div>
-      <Field label={t('الوصف', 'Description')} required error={e('description')}>{(id) => <TextInput id={id} value={it.description} onValue={(v) => set('description', v)} error={e('description')} ltr placeholder="Men's 100% cotton T-shirt" />}</Field>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Field label={t('الكمية', 'Quantity')} required error={e('quantity')}>{(id) => <TextInput id={id} value={it.quantity} onValue={(v) => set('quantity', v.replace(/[^\d]/g, ''))} error={e('quantity')} ltr inputMode="numeric" />}</Field>
-        <Field label={t('الوحدة', 'Unit')} error={e('unit')}>{(id) => <SelectInput id={id} value={it.unit} onValue={(v) => set('unit', v)}>{ITEM_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</SelectInput>}</Field>
-        <Field label={t('سعر الوحدة', 'Unit price')} required error={e('unit_value')}>{(id) => <TextInput id={id} value={it.unit_value} onValue={(v) => set('unit_value', v)} error={e('unit_value')} ltr inputMode="decimal" />}</Field>
-        <Field label={t('الإجمالي', 'Total')}>{() => <div className="px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/40 text-sm font-extrabold tabular-nums" dir="ltr">{total.toFixed(2)}</div>}</Field>
-        <Field label={t('بلد المنشأ', 'Country of origin')} required error={e('country_of_origin')} className="col-span-2">{(id) => <CountrySelect id={id} value={it.country_of_origin} onValue={(v) => set('country_of_origin', v)} error={e('country_of_origin')} />}</Field>
-        <Field label={t('رمز HS للتصدير', 'Outbound HS code')} required error={e('outbound_hs_code')}>{(id) => <TextInput id={id} value={it.outbound_hs_code} onValue={(v) => set('outbound_hs_code', v)} error={e('outbound_hs_code')} ltr placeholder="6109.10" />}</Field>
-        <Field label={t('رمز HS للاستيراد', 'Inbound HS code')} required error={e('inbound_hs_code')}>{(id) => <TextInput id={id} value={it.inbound_hs_code} onValue={(v) => set('inbound_hs_code', v)} error={e('inbound_hs_code')} ltr placeholder="6109.10" />}</Field>
-        <Field label={t(`الوزن الصافي للوحدة (${kgU})`, `Net weight per unit (${kgU})`)} required error={e('unit_net_weight_kg')} className="col-span-2 sm:col-span-1">{(id) => <TextInput id={id} value={it.unit_net_weight_kg} onValue={(v) => set('unit_net_weight_kg', v)} error={e('unit_net_weight_kg')} ltr inputMode="decimal" />}</Field>
-        <Field label={t(`الوزن الإجمالي (${kgU})`, `Gross weight (${kgU})`)} error={e('gross_weight_kg')} className="col-span-2 sm:col-span-3" hint={t('شامل التغليف — أكبر من الصافي', 'Including packaging — greater than the net weight')}>
-          {(id) => (
-            <div className="flex gap-2">
-              <TextInput id={id} value={it.gross_weight_kg} onValue={(v) => set('gross_weight_kg', v)} error={e('gross_weight_kg')} ltr inputMode="decimal" />
-              <SelectInput aria-label={t('الوزن الإجمالي لكل', 'Gross weight per')} value={it.gross_mode} onValue={(v) => set('gross_mode', v as ItemForm['gross_mode'])} className="!w-40">
-                <option value="line">{t('للبند كاملًا', 'Whole line')}</option><option value="unit">{t('لكل وحدة', 'Per unit')}</option>
-              </SelectInput>
-            </div>
-          )}
-        </Field>
-      </div>
-    </article>
-  );
-}
-
+/**
+ * The customs invoice header (international goods). The items, purpose and
+ * currency are entered on «تفاصيل الشحنة» (Shipment Details).
+ */
 export function StepCustoms({ w }: Props) {
   const { form, update, errors } = w;
   const { t, lang } = useCsLang();
@@ -208,10 +95,9 @@ export function StepCustoms({ w }: Props) {
   return (
     <div className="space-y-4">
       <Section title={t('الفاتورة الجمركية', 'Customs invoice')} description={t('بيانات الفاتورة التي تُرفق بالشحنة للجمارك.', 'The invoice that travels with the shipment for customs.')}>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label={t('رقم الفاتورة', 'Invoice number')} required error={err('customs_invoice_number')}>{(id) => <TextInput id={id} value={form.customs_invoice_number} onValue={(v) => update((f) => ({ ...f, customs_invoice_number: v }))} error={err('customs_invoice_number')} ltr maxLength={35} />}</Field>
           <Field label={t('تاريخ الفاتورة', 'Invoice date')} required error={err('customs_invoice_date')}>{(id) => <TextInput id={id} type="date" value={form.customs_invoice_date} onValue={(v) => update((f) => ({ ...f, customs_invoice_date: v }))} error={err('customs_invoice_date')} />}</Field>
-          <Field label={t('العملة', 'Currency')} required error={err('currency')}>{(id) => <TextInput id={id} value={form.currency} onValue={(v) => update((f) => ({ ...f, currency: v.toUpperCase().slice(0, 3) }))} error={err('currency')} ltr placeholder="USD" />}</Field>
           <Field label={t('فاتورة تُنشئها DHL', 'Invoice created by DHL')} error={err('dhl_invoice_type')}>{(id) => (
             <SelectInput id={id} value={form.dhl_invoice_type} onValue={(v) => update((f) => ({ ...f, dhl_invoice_type: v as WizardForm['dhl_invoice_type'] }))} error={err('dhl_invoice_type')}>
               <option value="">{t('لا', 'No')}</option><option value="commercial">{t('فاتورة تجارية (Commercial)', 'Commercial invoice')}</option><option value="proforma">{t('فاتورة مبدئية (Proforma)', 'Proforma invoice')}</option>
@@ -226,28 +112,14 @@ export function StepCustoms({ w }: Props) {
           </span>
         </label>
       </Section>
-
-      <Section
-        title={t(`البنود (${form.items.length})`, `Lines (${form.items.length})`)}
-        actions={<Button variant="secondary" onClick={() => update((f) => ({ ...f, items: [...f.items, emptyItem()] }))}><Plus size={16} /> {t('إضافة بند', 'Add line')}</Button>}
-      >
-        {err('items') && <div className="mb-3"><Note tone="error">{err('items')}</Note></div>}
-        <div className="space-y-3">
-          {form.items.map((it, i) => (
-            <ItemCard key={i} it={it} i={i} errors={errors} canRemove={form.items.length > 1}
-              onChange={(x) => update((f) => ({ ...f, items: f.items.map((y, j) => (j === i ? x : y)) }))}
-              onRemove={() => update((f) => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
-              onCopy={() => update((f) => ({ ...f, items: [...f.items.slice(0, i + 1), { ...it }, ...f.items.slice(i + 1)] }))} />
-          ))}
-          {!form.items.length && <Button variant="secondary" onClick={() => update((f) => ({ ...f, items: [emptyItem()] }))}><Plus size={16} /> {t('إضافة أول بند', 'Add the first line')}</Button>}
-        </div>
-        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 p-3 text-xs">
+      <Section title={t(`البنود (${form.items.length})`, `Items (${form.items.length})`)} description={t('البنود والعملة والغرض تُدخل في «تفاصيل الشحنة».', 'Items, currency and purpose are entered in «Shipment Details».')}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 p-3 text-xs">
           <div><div className="font-bold text-slate-400">{t('القيمة الإجمالية', 'Total value')}</div><div className="font-extrabold tabular-nums" dir="ltr">{totals.value.toFixed(2)} {form.currency}</div></div>
           <div><div className="font-bold text-slate-400">{t('الوزن الصافي', 'Net weight')}</div><div className="font-extrabold tabular-nums">{kg(totals.net, lang)}</div></div>
           <div><div className="font-bold text-slate-400">{t('الوزن الإجمالي للبنود', 'Gross weight of the lines')}</div><div className="font-extrabold tabular-nums">{kg(totals.gross, lang)}</div></div>
           <div><div className="font-bold text-slate-400">{t('وزن الطرود', 'Package weight')}</div><div className={`font-extrabold tabular-nums ${totals.gross != null && Math.abs(totals.gross - pk.weight) > 0.001 ? 'text-amber-600' : ''}`}>{kg(pk.weight, lang)}</div></div>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">{t('الوزن الإجمالي للبنود يجب أن يساوي وزن الطرود، والإجمالي أكبر من الصافي. قد ترفض DHL عناوين أو قيمًا جمركية حتى بعد نجاح التحقق المحلي.', 'The gross weight of the lines must equal the package weight, and gross must exceed net. DHL may still refuse addresses or customs values after the local checks pass.')}</p>
+        <p className="mt-2 text-[11px] text-slate-500">{t('الوزن الإجمالي للبنود يجب أن يساوي وزن الطرود، والإجمالي أكبر من الصافي.', 'The gross weight of the lines must equal the package weight, and gross must exceed net.')}</p>
       </Section>
     </div>
   );

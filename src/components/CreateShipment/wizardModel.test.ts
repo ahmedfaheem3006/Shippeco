@@ -159,8 +159,9 @@ describe('wizard model', () => {
   it('Backend issue paths land on the right step and field; common rules are shown in Arabic', () => {
     expect(locateIssue('receiver.cityName')).toEqual({ step: 'parties', key: 'receiver.city' });
     expect(locateIssue('customerDetails.shipperDetails.postalAddress.addressLine1')).toEqual({ step: 'parties', key: 'shipper.address_line1' });
-    expect(locateIssue('items[2].country_of_origin')).toEqual({ step: 'customs', key: 'items.1.country_of_origin' });
-    expect(locateIssue('customs.lineItems[1].hsCode')).toEqual({ step: 'customs', key: 'items.0.outbound_hs_code' });
+    // the customs lines are entered on Shipment Details
+    expect(locateIssue('items[2].country_of_origin')).toEqual({ step: 'details', key: 'items.1.country_of_origin' });
+    expect(locateIssue('customs.lineItems[1].hsCode')).toEqual({ step: 'details', key: 'items.0.outbound_hs_code' });
     expect(locateIssue('packages[1]')).toEqual({ step: 'packages', key: 'packages.0' });
     expect(locateIssue('incoterm')).toEqual({ step: 'payment', key: 'incoterm' });
     expect(locateIssue('pickup_latest_time')).toEqual({ step: 'pickup', key: 'pickup_latest_time' });
@@ -170,7 +171,7 @@ describe('wizard model', () => {
     expect(translateIssue(errors['receiver.phone'])).toBe('حقل مطلوب');
     expect(translateIssue(errors['receiver.phone'], 'en')).toBe('Phone number is required');
     expect(translateIssue(errors['items.0.country_of_origin'])).toBe('حقل مطلوب');
-    expect(byStep).toEqual({ parties: 1, customs: 1 });
+    expect(byStep).toEqual({ parties: 1, details: 1 });
     expect(translateIssue('420505 : The destination location is invalid. Please check the data')).toBe('DHL لم تتعرف على عنوان المستلم — تحقق من المدينة والرمز البريدي والدولة (DHL 420505)');
     expect(translateIssue('999999 : Something DHL-specific')).toBe('999999 : Something DHL-specific'); // unknown → DHL's own words
     // DHL's address verdict arrives on receiver.city (Backend) → the «المرسل والمستلم» step, the city field

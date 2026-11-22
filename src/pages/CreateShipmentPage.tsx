@@ -12,7 +12,8 @@ import { useAuthStore } from '../hooks/useAuthStore';
 import { dhlShipmentService, type DraftListRow } from '../services/dhlShipment.service';
 import { useShipmentWizard } from '../components/CreateShipment/useShipmentWizard';
 import { Button, Note, Skeleton, Stepper } from '../components/CreateShipment/ui';
-import { StepCustoms, StepDetails, StepPackages, StepPayment } from '../components/CreateShipment/FormSteps';
+import { StepCustoms, StepPackages, StepPayment } from '../components/CreateShipment/FormSteps';
+import { StepDetails } from '../components/CreateShipment/DetailsStep';
 import { StepParties } from '../components/CreateShipment/PartiesStep';
 import { StepService } from '../components/CreateShipment/StepService';
 import { StepPickup } from '../components/CreateShipment/StepPickup';
@@ -20,7 +21,7 @@ import { StepReview } from '../components/CreateShipment/StepReview';
 import { CreateOutcome } from '../components/CreateShipment/CreateOutcome';
 import { CsLangProvider, LangToggle } from '../components/CreateShipment/i18n';
 import { useCsLang } from '../components/CreateShipment/csLang';
-import { canShipment, countryName, partiesGate, stepMissing, type StepId } from '../components/CreateShipment/wizardModel';
+import { canShipment, countryName, detailsGate, partiesGate, stepMissing, type FieldErrors, type StepId } from '../components/CreateShipment/wizardModel';
 
 const STATUS: Record<string, [string, string]> = {
   draft: ['مسودة', 'Draft'], validated: ['تم التحقق', 'Validated'], ready: ['مؤكدة', 'Confirmed'], failed: ['رفضتها DHL', 'Refused by DHL'],
@@ -81,8 +82,8 @@ function Wizard({ draftId }: { draftId: number | null }) {
   const w = useShipmentWizard({ draftId });
   const { form, step, setStep, steps } = w;
   const idx = steps.findIndex((s) => s.id === step);
-  /** After a blocked Next on the Parties screen, its missing required fields are marked. */
-  const [showGate, setShowGate] = useState(false);
+  /** After a blocked Next, the missing required fields of that screen are marked (Parties, Shipment Details). */
+  const [gated, setGated] = useState<Partial<Record<StepId, boolean>>>({});
 
   // A step that disappeared (customs no longer needed) → the next visible one.
   useEffect(() => {
@@ -116,21 +117,26 @@ function Wizard({ draftId }: { draftId: number | null }) {
     return i < idx ? ('done' as const) : ('todo' as const);
   };
   /**
-   * Leaving the Parties screen forward (Next or the stepper) needs every required field —
-   * a saved contact, an address suggestion or a lookup never bypasses this.
+   * Leaving a gated screen forward (Next or the stepper) needs every required field — Parties
+   * (customer, From, To) then Shipment Details. A saved contact, an address suggestion or an
+   * uploaded item file never bypasses this.
    */
-  const partiesBlocked = () => {
-    if (!Object.keys(partiesGate(form, lang)).length) return false;
-    setShowGate(true);
-    if (step !== 'parties') setStep('parties');
-    window.setTimeout(() => (document.querySelector('[data-testid="parties-surface"] [aria-invalid="true"], [aria-invalid="true"]') as HTMLElement | null)?.focus?.(), 0);
-    return true;
+  const gateOf = (s: StepId): FieldErrors => (s === 'parties' ? partiesGate(form, lang) : s === 'details' ? detailsGate(form, lang) : {});
+  const blockedBefore = (target: number) => {
+    for (const s of ['parties', 'details'] as const) {
+      const at = steps.findIndex((x) => x.id === s);
+      if (at < 0 || target <= at || !Object.keys(gateOf(s)).length) continue;
+      setGated((g) => ({ ...g, [s]: true }));
+      if (step !== s) setStep(s);
+      window.setTimeout(() => (document.querySelector('[aria-invalid="true"]') as HTMLElement | null)?.focus?.(), 0);
+      return true;
+    }
+    return false;
   };
-  const partiesIdx = steps.findIndex((x) => x.id === 'parties');
   const go = (s: StepId) => {
     const target = steps.findIndex((x) => x.id === s);
     if (target < 0) return;
-    if (target > partiesIdx && partiesBlocked()) return;
+    if (blockedBefore(target)) return;
     setStep(s);
   };
   const next = () => { if (idx < steps.length - 1) go(steps[idx + 1].id); };
@@ -154,7 +160,7 @@ function Wizard({ draftId }: { draftId: number | null }) {
 
   const PrevIcon = dir === 'rtl' ? ChevronRight : ChevronLeft;
   const NextIcon = dir === 'rtl' ? ChevronLeft : ChevronRight;
-  const gateCount = showGate && step === 'parties' ? Object.keys(partiesGate(form, lang)).length : 0;
+  const gateCount = gated[step] ? Object.keys(gateOf(step)).length : 0;
 
   return (
     <div className="space-y-4 sm:space-y-5 min-w-0 pb-24" dir={dir} lang={lang}>
@@ -182,8 +188,8 @@ function Wizard({ draftId }: { draftId: number | null }) {
       )}
 
       <div className="animate-in fade-in">
-        {step === 'parties' && <StepParties w={w} showGate={showGate} />}
-        {step === 'details' && <StepDetails w={w} />}
+        {step === 'parties' && <StepParties w={w} showGate={!!gated.parties} />}
+        {step === 'details' && <StepDetails w={w} showGate={!!gated.details} />}
         {step === 'customs' && <StepCustoms w={w} />}
         {step === 'packages' && <StepPackages w={w} />}
         {step === 'payment' && <StepPayment w={w} />}

@@ -137,6 +137,6 @@ for (const [w, h] of [[1440, 900], [390, 844]] as const) {
     await expect(page.getByTestId('parties-gate-summary')).toHaveCount(0)
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/parties-filled-${w}.png`, fullPage: true })
     await page.getByRole('button', { name: /التالي/ }).click()
-    await expect(page.getByText('نوع المحتوى')).toBeVisible()
+    await expect(page.getByText('ماذا تقوم بشحنه؟')).toBeVisible()
   })
 }

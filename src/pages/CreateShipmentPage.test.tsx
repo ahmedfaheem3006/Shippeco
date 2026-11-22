@@ -11,7 +11,7 @@ const svc = vi.hoisted(() => ({
 const clients = vi.hoisted(() => ({ searchClients: vi.fn() }))
 vi.mock('../services/dhlShipment.service', () => ({ dhlShipmentService: svc, searchClients: clients.searchClients }))
 const contacts = vi.hoisted(() => ({ search: vi.fn(), create: vi.fn(), update: vi.fn() }))
-const lookup = vi.hoisted(() => ({ autocomplete: vi.fn(), details: vi.fn(), shortAddress: vi.fn() }))
+const lookup = vi.hoisted(() => ({ autocomplete: vi.fn(), details: vi.fn(), shortAddress: vi.fn(), postalCode: vi.fn() }))
 vi.mock('../services/shippingContacts.service', async (orig) => ({
   ...(await orig<typeof import('../services/shippingContacts.service')>()), shippingContactsService: contacts, addressLookupService: lookup,
 }))
@@ -70,6 +70,8 @@ const created = (over: Record<string, unknown> = {}) => ({
   shipment: shipment({ creation_status: 'created', awb: '4614961120', invoice_id: 91 }), ...over,
 })
 
+/** The options of a combobox's own listbox (not every <option> on the page). */
+const listOf = (box: HTMLElement) => within(document.getElementById(box.getAttribute('aria-controls') ?? '') as HTMLElement).getAllByRole('option')
 /** Country/Territory combobox of From (0) / To (1): search, Enter picks the first match. */
 const pickCountry = (side: 0 | 1, q: string) => {
   const box = screen.getAllByLabelText(/^(البلد\/الإقليم|Country\/Territory)/)[side]
@@ -89,6 +91,7 @@ beforeEach(() => {
   contacts.search.mockResolvedValue([])
   lookup.autocomplete.mockResolvedValue([])
   lookup.shortAddress.mockResolvedValue([])
+  lookup.postalCode.mockResolvedValue([])
   svc.listDrafts.mockResolvedValue({ data: [], pagination: { total: 0 } })
   svc.get.mockResolvedValue(shipment())
   svc.incoterms.mockResolvedValue({ source: 'dhl', items: [{ code: 'DAP', name: 'Delivered At Place' }, { code: 'DDP', name: 'Delivered Duty Paid' }] })
@@ -104,7 +107,7 @@ describe('«إنشاء شحنة» wizard', () => {
     const contact = screen.getAllByLabelText(/^الاسم/)[1]
     fireEvent.change(contact, { target: { value: 'Omar Receiver' } })
     next()
-    expect(await screen.findByText('نوع المحتوى')).toBeTruthy()
+    expect(await screen.findByText('ماذا تقوم بشحنه؟')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /السابق/ }))
     expect(((await screen.findAllByLabelText(/^الاسم/))[1] as HTMLInputElement).value).toBe('Omar Receiver')
     expect(screen.queryByRole('button', { name: /الجمارك/ })).toBeNull()
@@ -113,7 +116,7 @@ describe('«إنشاء شحنة» wizard', () => {
     next()
     fireEvent.click(screen.getByRole('radio', { name: /طرود \/ بضائع/ }))
     expect(screen.getByRole('button', { name: /3\. الجمارك/ })).toBeTruthy()
-    expect(screen.getByText(/ستظهر خطوة «الجمارك»/)).toBeTruthy()
+    expect(screen.getByText('1. وصف البند')).toBeTruthy() // the items are entered right here
   })
 
   it('saves a draft (create, then update) and a Backend field error lands on its field', async () => {
@@ -171,18 +174,18 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.getByText('0.6 كغ')).toBeTruthy()
   })
 
-  it('customs items: repeatable cards for international goods', async () => {
+  it('customs items: repeatable cards for international goods (on Shipment Details); the last item cannot be removed', async () => {
     renderAt('/create-shipment?draft=5')
     await screen.findByText('عميل الاختبار')
     pickCountry(1, 'AE')
     goStep(/تفاصيل الشحنة/)
     fireEvent.click(await screen.findByRole('radio', { name: /طرود \/ بضائع/ }))
-    goStep(/الجمارك/)
-    expect(await screen.findByText('البند 1')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /إضافة بند/ }))
-    expect(screen.getByText('البند 2')).toBeTruthy()
+    expect(await screen.findByText('1. وصف البند')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'حذف البند 1' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /إضافة بند آخر/ }))
+    expect(screen.getByText('2. وصف البند')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'حذف البند 2' }))
-    expect(screen.queryByText('البند 2')).toBeNull()
+    expect(screen.queryByText('2. وصف البند')).toBeNull()
   })
 
   it('DHL products and rates: cards with DHL prices, details, selection; SHIPPEC price and profit kept apart', async () => {
@@ -392,7 +395,7 @@ describe('«إنشاء شحنة» wizard', () => {
     expect((within(toPanel()).getByLabelText(/^رقم تعريف VAT/) as HTMLInputElement).value).toBe('')
     expect((within(toPanel()).getByLabelText(/^رقم EORI/) as HTMLInputElement).value).toBe('')
     next()
-    expect(await screen.findByText('نوع المحتوى')).toBeTruthy()
+    expect(await screen.findByText('ماذا تقوم بشحنه؟')).toBeTruthy()
   })
 
   it('AR | EN switch: this page only; English is LTR with English labels, buttons and validation; the data never changes', async () => {
@@ -428,7 +431,7 @@ describe('«إنشاء شحنة» wizard', () => {
 
   it('saved contacts: Name searches SHIPPEC contacts (debounced, by role); selecting fills every field, all editable; nothing is saved by selecting', async () => {
     contacts.search.mockResolvedValue([{
-      id: 41, role: 'receiver', name: 'Ahmed Hassan', business_contact: false, company: 'ABC Trading', country_code: 'EG', country_name: 'Egypt',
+      id: 41, role: 'receiver', saved_name: 'Ahmed Cairo Office', name: 'Ahmed Hassan', business_contact: false, company: 'ABC Trading', country_code: 'EG', country_name: 'Egypt',
       address_line1: '12 Tahrir Street', address_line2: 'Floor 3', short_address: null, building_number: null, street: null, additional_number: null, suburb: 'Downtown',
       city: 'Cairo', province: 'Cairo', postal_code: '11511', residential: true, email: 'ahmed@abc.example', phones: [{ type: 'office', code: '20', number: '100 123 4567', extension: '5', sms: false }],
       phone_normalized: '201001234567', vat_tax_id: 'EG-VAT-1', eori: 'EG-EORI', notes: 'Call first', created_by: 1, created_at: '', updated_at: '',
@@ -437,10 +440,12 @@ describe('«إنشاء شحنة» wizard', () => {
     await screen.findByTestId('parties-surface')
     const name = within(toPanel()).getByLabelText(/^الاسم/)
     fireEvent.change(name, { target: { value: 'Ah' } })
-    const option = await screen.findByRole('option', { name: /Ahmed Hassan/ })
+    const option = await screen.findByRole('option', { name: /Ahmed Cairo Office/ })
     expect(contacts.search).toHaveBeenCalledTimes(1)
     expect(contacts.search.mock.calls[0].slice(0, 2)).toEqual(['Ah', 'receiver'])
-    expect(option.textContent).toContain('ABC Trading')
+    // the saved alias first, then the real name, company, phone, city / country
+    expect(option.querySelector('[data-saved-name]')?.textContent).toBe('Ahmed Cairo Office')
+    expect(option.textContent).toContain('Ahmed Hassan · ABC Trading · +20 100 123 4567')
     expect(option.textContent).toContain('مستلم محفوظ')
     fireEvent.click(option)
     const t = within(toPanel())
@@ -464,49 +469,6 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(v(/^المدينة/)).toBe('Giza')
     expect(contacts.create).not.toHaveBeenCalled()
     expect(contacts.update).not.toHaveBeenCalled()
-  })
-
-  it('«حفظ في قاعدة البيانات»: only on click; a likely duplicate → use existing / update existing / cancel, never a silent second contact', async () => {
-    const existing = {
-      id: 7, role: 'sender', name: 'Omar Receiver', business_contact: false, company: 'Omar Co', country_code: 'SA', country_name: 'Saudi Arabia', address_line1: '2121 Test Street',
-      address_line2: '3434 Al Olaya', short_address: null, building_number: '2121', street: 'Test Street', additional_number: '3434', suburb: null, city: 'Khobar', province: null,
-      postal_code: '34421', residential: false, email: null, phones: [{ type: 'mobile', code: '966', number: '55 222 2222', extension: null, sms: false }], phone_normalized: '966552222222',
-      vat_tax_id: null, eori: null, notes: null, created_by: 2, created_at: '', updated_at: '',
-    }
-    contacts.create.mockRejectedValue(new ApiError('توجد جهة اتصال محفوظة مشابهة بالفعل.', 409, 'CONTACT_DUPLICATE', undefined, { success: false, data: { duplicates: [existing] } }))
-    contacts.update.mockResolvedValue({ ...existing, role: 'both' })
-    renderAt()
-    await screen.findByTestId('parties-surface')
-    fillReceiverSA()
-    expect(contacts.create).not.toHaveBeenCalled() // never automatically
-    const saveBtn = within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ })
-    fireEvent.click(saveBtn)
-    await waitFor(() => expect(contacts.create).toHaveBeenCalledTimes(1))
-    expect(contacts.create.mock.calls[0][0]).toBe('receiver')
-    expect(contacts.create.mock.calls[0][1]).toMatchObject({ name: 'Omar Receiver', company: 'Omar Co', country_code: 'SA', phones: [{ code: '966', number: '55 222 2222' }] })
-    const dialog = await screen.findByTestId('contact-duplicate-dialog')
-    expect(dialog.textContent).toContain('توجد جهة اتصال محفوظة مشابهة بالفعل.')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
-    await waitFor(() => expect(screen.queryByTestId('contact-duplicate-dialog')).toBeNull())
-    expect(contacts.update).not.toHaveBeenCalled()
-    // again → «تحديث البيانات» updates the existing row (a manager may)
-    fireEvent.click(saveBtn)
-    fireEvent.click(within(await screen.findByTestId('contact-duplicate-dialog')).getByRole('button', { name: 'تحديث البيانات' }))
-    await waitFor(() => expect(contacts.update).toHaveBeenCalledWith(7, 'receiver', expect.objectContaining({ name: 'Omar Receiver' })))
-    expect(contacts.create).toHaveBeenCalledTimes(2)
-    expect(within(toPanel()).getByText('من قاعدة البيانات')).toBeTruthy()
-    // an employee cannot update a contact someone else saved: only «استخدام الموجود»
-    cleanup()
-    auth.role = 'employee'
-    renderAt()
-    await screen.findByTestId('parties-surface')
-    fillReceiverSA()
-    fireEvent.click(within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ }))
-    const d2 = await screen.findByTestId('contact-duplicate-dialog')
-    expect(within(d2).queryByRole('button', { name: 'تحديث البيانات' })).toBeNull()
-    fireEvent.click(within(d2).getByRole('button', { name: 'استخدام الموجود' }))
-    await waitFor(() => expect(screen.queryByTestId('contact-duplicate-dialog')).toBeNull())
-    expect(within(toPanel()).getByText('من قاعدة البيانات')).toBeTruthy()
   })
 
   it('«التبديل» swaps From and To (codes, phones, details) — never the SHIPPEC invoice customer', async () => {
@@ -626,6 +588,275 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(v(/^الهاتف/)).toBe('53 729 9636')
     expect(v(/^رقم تعريف VAT/)).toBe('310000000000003')
     expect(v(/^البلد\/الإقليم/)).toMatch(/السعودية/)
+  })
+
+
+
+  // ═════════ Parties final fixes ═════════
+  it('Country: «United States of America» (US, +1) is found by USA / America / أمريكا; American Samoa stays a separate territory', async () => {
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    const box = within(toPanel()).getByLabelText(/^البلد\/الإقليم/) as HTMLInputElement
+    for (const q of ['USA', 'U.S.A.', 'America', 'أمريكا', 'الولايات المتحدة', 'united states of america']) {
+      fireEvent.focus(box)
+      fireEvent.change(box, { target: { value: q } })
+      expect([q, listOf(box)[0].textContent]).toEqual([q, expect.stringContaining('الولايات المتحدة الأمريكية')])
+      fireEvent.keyDown(box, { key: 'Escape' })
+    }
+    pickCountry(1, 'USA')
+    expect(box.value).toBe('الولايات المتحدة الأمريكية')
+    expect((within(toPanel()).getByLabelText(/^الرمز\*?$/) as HTMLInputElement).value).toBe('1')
+    pickCountry(1, 'American Samoa')
+    expect(box.value).toMatch(/ساموا/)
+    expect(box.value).not.toBe('الولايات المتحدة الأمريكية')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    pickCountry(1, 'usa')
+    expect((within(toPanel()).getByLabelText(/^Country\/Territory/) as HTMLInputElement).value).toBe('United States of America')
+  })
+
+  it('US ZIP → City + State: asked only for a complete ZIP (debounced), a choice fills City + State and keeps the ZIP; no result is explained', async () => {
+    lookup.postalCode.mockResolvedValue([{ postal_code: '48126', city: 'Dearborn', province: 'MI', province_name: 'Michigan', country_code: 'US', provider: 'google' }])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'USA')
+    const t = within(toPanel())
+    const zip = t.getByLabelText(/^الرمز البريدي/) as HTMLInputElement
+    fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'typed city' } })
+    fireEvent.change(zip, { target: { value: '4812' } })
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.postalCode).not.toHaveBeenCalled() // never on every digit
+    expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('typed city') // nothing overwritten by typing
+    fireEvent.change(zip, { target: { value: '48126' } })
+    const opt = await screen.findByRole('option', { name: /DEARBORN, MI 48126/ })
+    expect(lookup.postalCode).toHaveBeenCalledTimes(1)
+    expect(lookup.postalCode.mock.calls[0].slice(0, 2)).toEqual(['48126', 'US'])
+    expect(opt.textContent).toContain('Michigan')
+    fireEvent.click(opt)
+    expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('Dearborn')
+    expect((t.getByLabelText(/^الولاية/) as HTMLInputElement).value).toBe('MI')
+    expect(zip.value).toBe('48126')
+    expect((t.getByLabelText(/^الرمز\*?$/) as HTMLInputElement).value).toBe('1')
+    lookup.postalCode.mockResolvedValueOnce([])
+    fireEvent.change(zip, { target: { value: '00000' } })
+    expect(await screen.findByText('لم يتم العثور على مدينة مطابقة لهذا الرمز البريدي.')).toBeTruthy()
+    expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('Dearborn') // kept
+  })
+
+  it('Google suggestions carry the «Powered by Google» attribution; SPL ones do not', async () => {
+    lookup.autocomplete.mockResolvedValue([{ id: 'ChIJ_osborne_0001', main: '13051 Osborne Street', secondary: 'Dearborn, MI, USA', short_address: null, address: null, provider: 'google' }])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'USA')
+    fireEvent.change(within(toPanel()).getByLabelText(/^العنوان 1/), { target: { value: '13051 Osborne' } })
+    expect(await screen.findByRole('option', { name: /13051 Osborne Street/ })).toBeTruthy()
+    expect(screen.getByTestId('google-attribution').textContent).toBe('Powered by Google')
+  })
+
+  it('«حفظ في قاعدة البيانات» asks for a saved name (alias, not sent to DHL); only that alias can clash → update existing / choose another name / cancel', async () => {
+    const existing = {
+      id: 7, role: 'sender', saved_name: 'Omar Khobar', name: 'Omar Receiver', business_contact: false, company: 'Omar Co', country_code: 'SA', country_name: 'Saudi Arabia',
+      address_line1: '2121 Test Street', address_line2: '3434 Al Olaya', short_address: null, building_number: '2121', street: 'Test Street', additional_number: '3434', suburb: null,
+      city: 'Khobar', province: null, postal_code: '34421', residential: false, email: null, phones: [], phone_normalized: null, vat_tax_id: null, eori: null, notes: null,
+      created_by: 2, created_at: '', updated_at: '',
+    }
+    const { toast } = await import('react-hot-toast')
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    fillReceiverSA()
+    fireEvent.click(within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ }))
+    const dialog = await screen.findByTestId('save-contact-dialog')
+    expect(dialog.textContent).toContain('حفظ جهة الاتصال')
+    expect(dialog.textContent).toContain('بأي اسم تريد حفظ هذه البيانات؟')
+    const nameBox = within(dialog).getByLabelText(/^اسم الحفظ/) as HTMLInputElement
+    expect(nameBox.value).toBe('Omar Receiver')
+    expect(contacts.create).not.toHaveBeenCalled() // not before «حفظ»
+    fireEvent.change(nameBox, { target: { value: ' ' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /^حفظ$/ }))
+    expect(within(dialog).getByText('اسم الحفظ مطلوب.')).toBeTruthy()
+    // the alias is taken → conflict choices
+    contacts.create.mockRejectedValueOnce(new ApiError('توجد جهة اتصال محفوظة بهذا الاسم بالفعل.', 409, 'CONTACT_NAME_EXISTS', undefined, { success: false, data: { duplicates: [existing] } }))
+    fireEvent.change(nameBox, { target: { value: 'Omar Khobar' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /^حفظ$/ }))
+    await waitFor(() => expect(contacts.create).toHaveBeenCalledWith('receiver', 'Omar Khobar', expect.objectContaining({ name: 'Omar Receiver', company: 'Omar Co' })))
+    const conflict = await screen.findByTestId('save-contact-conflict')
+    expect(conflict.textContent).toContain('توجد جهة اتصال محفوظة بهذا الاسم بالفعل.')
+    // «اختيار اسم آخر» → back to the name, then a new alias saves
+    fireEvent.click(within(conflict).getByRole('button', { name: 'اختيار اسم آخر' }))
+    contacts.create.mockResolvedValueOnce({ ...existing, id: 8, saved_name: 'Omar Khobar 2' })
+    fireEvent.change(within(screen.getByTestId('save-contact-dialog')).getByLabelText(/^اسم الحفظ/), { target: { value: 'Omar Khobar 2' } })
+    fireEvent.click(within(screen.getByTestId('save-contact-dialog')).getByRole('button', { name: /^حفظ$/ }))
+    await waitFor(() => expect(screen.queryByTestId('save-contact-dialog')).toBeNull())
+    expect(toast.success).toHaveBeenCalledWith('تم حفظ جهة الاتصال في قاعدة البيانات بنجاح.')
+    expect(within(toPanel()).getByText('من قاعدة البيانات')).toBeTruthy()
+    // a manager may update the contact holding the alias; never a silent overwrite
+    contacts.create.mockRejectedValueOnce(new ApiError('x', 409, 'CONTACT_NAME_EXISTS', undefined, { success: false, data: { duplicates: [existing] } }))
+    contacts.update.mockResolvedValueOnce({ ...existing, role: 'both' })
+    fireEvent.click(within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ }))
+    fireEvent.change(within(await screen.findByTestId('save-contact-dialog')).getByLabelText(/^اسم الحفظ/), { target: { value: 'Omar Khobar' } })
+    fireEvent.click(within(screen.getByTestId('save-contact-dialog')).getByRole('button', { name: /^حفظ$/ }))
+    fireEvent.click(within(await screen.findByTestId('save-contact-conflict')).getByRole('button', { name: 'تحديث الموجود' }))
+    await waitFor(() => expect(contacts.update).toHaveBeenCalledWith(7, 'receiver', 'Omar Khobar', expect.objectContaining({ name: 'Omar Receiver' })))
+    // an employee cannot update a contact someone else saved: another name or cancel only
+    cleanup()
+    auth.role = 'employee'
+    contacts.create.mockRejectedValueOnce(new ApiError('x', 409, 'CONTACT_NAME_EXISTS', undefined, { success: false, data: { duplicates: [existing] } }))
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    fillReceiverSA()
+    fireEvent.click(within(toPanel()).getByRole('button', { name: /حفظ في قاعدة البيانات/ }))
+    fireEvent.click(within(await screen.findByTestId('save-contact-dialog')).getByRole('button', { name: /^حفظ$/ }))
+    const c2 = await screen.findByTestId('save-contact-conflict')
+    expect(within(c2).queryByRole('button', { name: 'تحديث الموجود' })).toBeNull()
+    fireEvent.click(within(c2).getByRole('button', { name: 'إلغاء' }))
+    await waitFor(() => expect(screen.queryByTestId('save-contact-dialog')).toBeNull())
+  })
+
+  // ═════════ Screen 2 «تفاصيل الشحنة / Shipment Details» ═════════
+  const openDetails = async (receiverCountry?: string) => {
+    renderAt('/create-shipment?draft=5'); await screen.findByText('عميل الاختبار')
+    if (receiverCountry) pickCountry(1, receiverCountry)
+    goStep(/تفاصيل الشحنة/)
+    return screen.findByTestId('details-step')
+  }
+
+  it('Documents: description required (Next blocked), list or free text, value > 0 with an ISO currency, references (first on the label), protection saved but not sent; AR ↔ EN keeps the data', async () => {
+    svc.get.mockResolvedValue(shipment({ content_description: null }))
+    const step = within(await openDetails())
+    expect(step.getByText('تفاصيل الشحنة')).toBeTruthy()
+    expect(step.getByText('ماذا تقوم بشحنه؟')).toBeTruthy()
+    expect(step.getByRole('radio', { name: /مستندات/ }).getAttribute('aria-checked')).toBe('true')
+    expect(step.queryByText('1. وصف البند')).toBeNull() // no customs item form for documents
+    expect(screen.getByTestId('prohibited-items-card').textContent).toContain('السعودية') // the receiver's country, not hard-coded
+    next()
+    expect(await screen.findByText('وصف المحتوى مطلوب.')).toBeTruthy()
+    expect(screen.getByTestId('parties-gate-summary')).toBeTruthy()
+    // choose from the list
+    const desc = screen.getByLabelText(/^اختر وصفًا/) as HTMLInputElement
+    fireEvent.focus(desc)
+    fireEvent.click(screen.getByRole('option', { name: /مستندات قانونية/ }))
+    expect(desc.value).toBe('Legal documents')
+    // value + currency
+    const value = screen.getByLabelText(/^القيمة/) as HTMLInputElement
+    fireEvent.change(value, { target: { value: '0' } })
+    expect(await screen.findByText('القيمة رقم أكبر من صفر.')).toBeTruthy()
+    fireEvent.change(value, { target: { value: '150' } })
+    const cur = screen.getByLabelText(/^العملة/) as HTMLInputElement
+    fireEvent.focus(cur)
+    fireEvent.change(cur, { target: { value: 'USD' } })
+    fireEvent.keyDown(cur, { key: 'Enter' })
+    expect(cur.value).toMatch(/^USD — /)
+    // references: the first on the label, more kept
+    fireEvent.click(screen.getByRole('button', { name: /إضافة مرجع/ }))
+    fireEvent.change(screen.getByLabelText(/^المرجع 1/), { target: { value: 'PO-1001' } })
+    fireEvent.click(screen.getByRole('button', { name: /إضافة مرجع/ }))
+    fireEvent.change(screen.getByLabelText(/^المرجع 2/), { target: { value: 'INTERNAL-7' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حذف المرجع 2' }))
+    expect(screen.queryByLabelText(/^المرجع 2/)).toBeNull()
+    // protection: saved, clearly not sent
+    fireEvent.click(screen.getByLabelText(/خدمة المسؤولية الممتدة للمستندات/))
+    expect(screen.getByText(/خدمة الحماية\/التأمين لدى DHL غير مربوطة بعد/)).toBeTruthy()
+    // English: same data
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(screen.getByText('Describe the documents in your shipment')).toBeTruthy()
+    expect((screen.getByLabelText(/^Select a description/) as HTMLInputElement).value).toBe('Legal documents')
+    expect((screen.getByLabelText(/^Value/) as HTMLInputElement).value).toBe('150')
+    expect((screen.getByLabelText(/^Reference 1/) as HTMLInputElement).value).toBe('PO-1001')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'AR' }))
+    // saved: first reference = DHL customer reference, the choices in details_extra
+    svc.updateDraft.mockResolvedValue(shipment())
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({
+      content_description: 'Legal documents', customer_reference: 'PO-1001', declared_value: '150', currency: 'USD', customs_required: false,
+      details_extra: { references: [{ value: 'PO-1001' }], document_protection: true },
+    })
+    next()
+    expect(await screen.findByText('الطرد 1')).toBeTruthy()
+  })
+
+  it('Packages (international): every purpose, explicit DHL reason when needed, item card fields with validation, units, LB, totals, charges and invoice total, insurance; Documents ↔ Packages keeps the data', async () => {
+    await openDetails('AE')
+    fireEvent.click(await screen.findByRole('radio', { name: /طرود \/ بضائع/ }))
+    // purposes: DHL's eight, in Arabic
+    const purpose = screen.getByLabelText(/^غرض الشحنة/)
+    fireEvent.focus(purpose)
+    expect(listOf(purpose).map((o) => o.textContent)).toEqual(['هدية', 'تجاري (بيع)', 'شخصي — ليس للبيع', 'عيّنة', 'إرجاع للإصلاح', 'إرجاع بعد الإصلاح', 'مطالبة', 'إرجاع إلى البائع'])
+    fireEvent.click(screen.getByRole('option', { name: 'مطالبة' }))
+    expect(screen.getByLabelText(/^سبب التصدير لدى DHL/)).toBeTruthy()
+    // Next with an empty item: field errors, blocked
+    next()
+    expect(await screen.findByText('وصف البند مطلوب.')).toBeTruthy()
+    for (const m of ['قيمة البند رقم أكبر من صفر.', 'وزن البند رقم أكبر من صفر.', 'اختر بلد الصنع.', 'رمز HS للتصدير مطلوب.', 'رمز HS للاستيراد مطلوب.', 'اختر سبب التصدير لدى DHL.']) {
+      expect(screen.getByText(m)).toBeTruthy()
+    }
+    fireEvent.change(screen.getByLabelText(/^سبب التصدير لدى DHL/), { target: { value: 'return' } })
+    const card = within(document.querySelector('[data-item="0"]') as HTMLElement)
+    const d = card.getByLabelText(/^ما هو البند؟/) as HTMLInputElement
+    fireEvent.change(d, { target: { value: 'x'.repeat(200) } })
+    expect(d.value).toHaveLength(170)
+    fireEvent.change(d, { target: { value: 'قميص' } })
+    expect(card.getByText('الوصف بالإنجليزية فقط (DHL تقبل الأحرف اللاتينية).')).toBeTruthy()
+    fireEvent.change(d, { target: { value: "Men's cotton T-shirt" } })
+    fireEvent.change(card.getByLabelText(/^الكمية/), { target: { value: '0' } })
+    expect(card.getByText('الكمية رقم صحيح من 1 فأكثر.')).toBeTruthy()
+    fireEvent.change(card.getByLabelText(/^الكمية/), { target: { value: '2' } })
+    const unit = card.getByLabelText(/^الوحدة/)
+    fireEvent.focus(unit)
+    fireEvent.click(screen.getByRole('option', { name: /أزواج \(PRS\)/ }))
+    fireEvent.change(card.getByLabelText(/^القيمة \(لكل بند\)/), { target: { value: '10' } })
+    fireEvent.change(card.getByLabelText(/^الوزن \(لكل بند\)/), { target: { value: '0.5' } })
+    expect(card.getByText('1.102 LB')).toBeTruthy()
+    const origin = card.getByLabelText(/^أين صُنع البند؟/)
+    fireEvent.focus(origin)
+    fireEvent.change(origin, { target: { value: 'CN' } })
+    fireEvent.keyDown(origin, { key: 'Enter' })
+    fireEvent.change(card.getByLabelText(/للتصدير/), { target: { value: '6109.10' } })
+    fireEvent.change(card.getByLabelText(/للاستيراد/), { target: { value: '6109.10' } })
+    // totals
+    const totals = screen.getByTestId('item-totals')
+    expect(totals.textContent).toContain('2')
+    expect(totals.textContent).toContain('1.000 kg')
+    expect(totals.textContent).toContain('2.205 LB')
+    expect(totals.textContent).toContain('20.00 SAR')
+    // charges → invoice total
+    fireEvent.click(screen.getByRole('button', { name: /إضافة رسوم/ }))
+    fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '25' } })
+    expect(screen.getByTestId('invoice-total').textContent).toBe('45.00 SAR')
+    expect((screen.getByLabelText(/رسوم وضرائب محسوبة مسبقًا/) as HTMLInputElement).disabled).toBe(true)
+    // add / copy / remove items; insurance
+    fireEvent.click(card.getByRole('button', { name: 'نسخ البند 1' }))
+    expect(screen.getByText('2. وصف البند')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'حذف البند 2' }))
+    fireEvent.click(screen.getByLabelText('أرغب في تأمين شحنتي'))
+    expect(screen.getByText(/غير مربوطة بعد/)).toBeTruthy()
+    // switching to Documents and back keeps everything
+    fireEvent.click(screen.getByRole('radio', { name: /مستندات/ }))
+    expect(screen.queryByText('1. وصف البند')).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: /طرود \/ بضائع/ }))
+    expect((within(document.querySelector('[data-item="0"]') as HTMLElement).getByLabelText(/^ما هو البند؟/) as HTMLInputElement).value).toBe("Men's cotton T-shirt")
+    // the draft: DHL items + purpose; the extras apart
+    svc.updateDraft.mockResolvedValue(shipment())
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    const sent = svc.updateDraft.mock.calls[0][1]
+    expect(sent).toMatchObject({ customs_required: true, shipment_purpose: 'claim', export_reason_type: 'return' })
+    expect(sent.items).toEqual([expect.objectContaining({ description: "Men's cotton T-shirt", quantity: '2', unit: 'PRS', unit_value: '10', country_of_origin: 'CN', unit_net_weight_kg: '0.5' })])
+    expect(sent.details_extra).toMatchObject({ insurance: true, charges: [{ type: 'freight', amount: 25 }] })
+    next()
+    expect(await screen.findByText('الفاتورة الجمركية')).toBeTruthy()
+  })
+
+  it('Create Description: a deterministic English helper (no AI) fills the item description', async () => {
+    await openDetails('AE')
+    fireEvent.click(await screen.findByRole('radio', { name: /طرود \/ بضائع/ }))
+    fireEvent.click(screen.getByRole('button', { name: /إنشاء وصف/ }))
+    const h = within(await screen.findByTestId('description-helper'))
+    fireEvent.change(h.getByLabelText(/^ما هو البند؟/), { target: { value: 'T-shirt' } })
+    fireEvent.change(h.getByLabelText(/^المادة/), { target: { value: "Men's 100% cotton" } })
+    fireEvent.change(h.getByLabelText(/^الاستخدام/), { target: { value: 'personal use' } })
+    expect(h.getByTestId('description-preview').textContent).toBe("Men's 100% cotton T-shirt for personal use")
+    fireEvent.click(h.getByRole('button', { name: /استخدام الوصف/ }))
+    expect((within(document.querySelector('[data-item="0"]') as HTMLElement).getByLabelText(/^ما هو البند؟/) as HTMLInputElement).value).toBe("Men's 100% cotton T-shirt for personal use")
   })
 
 })

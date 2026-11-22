@@ -4,6 +4,7 @@
  * previous request aborted, and an older answer can never replace a newer one
  * (sequence check). `key` null = nothing to look up.
  */
+import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../utils/apiClient';
 
@@ -35,6 +36,18 @@ export function useLookup<T>(key: string | null, fetcher: (q: string, signal: Ab
     return () => { window.clearTimeout(h); ctrl.abort(); };
   }, [key, fetcher, delayMs]);
   return state.key === key ? state : (IDLE as LookupState<T>);
+}
+
+/** Closes a dropdown on a click / tap outside `ref`. */
+export function useOutside(ref: React.RefObject<HTMLElement>, onOutside: () => void) {
+  const cb = useRef(onOutside);
+  useEffect(() => { cb.current = onOutside; }, [onOutside]);
+  useEffect(() => {
+    const h = (e: MouseEvent | TouchEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) cb.current(); };
+    document.addEventListener('mousedown', h);
+    document.addEventListener('touchstart', h);
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('touchstart', h); };
+  }, [ref]);
 }
 
 /** Arrow keys / Enter / Escape over a suggestion list. */

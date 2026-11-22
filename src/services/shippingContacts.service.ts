@@ -33,6 +33,8 @@ export interface ContactFields {
 }
 export interface SavedContact extends ContactFields {
   id: number;
+  /** SHIPPEC alias (search / display only — never sent to DHL). */
+  saved_name: string;
   role: ContactRole;
   phone_normalized: string | null;
   created_by: number | null;
@@ -54,6 +56,8 @@ export interface LookupAddress {
   postal_code: string | null;
   country_code: string;
 }
+/** One locality for a postal code (Backend PostalLocality). */
+export interface PostalLocality { postal_code: string; city: string | null; province: string | null; province_name: string | null; country_code: string; provider: 'google' }
 export interface AddressSuggestion {
   id: string | null;
   main: string;
@@ -63,9 +67,9 @@ export interface AddressSuggestion {
   provider: 'spl' | 'google';
 }
 
-/** A save the Backend refused as a likely duplicate (409 CONTACT_DUPLICATE). */
+/** A save the Backend refused because the alias is taken (409 CONTACT_NAME_EXISTS): the contact holding it. */
 export function duplicatesOf(err: unknown): SavedContact[] | null {
-  if (!(err instanceof ApiError) || err.code !== 'CONTACT_DUPLICATE') return null;
+  if (!(err instanceof ApiError) || err.code !== 'CONTACT_NAME_EXISTS') return null;
   const body = err.body as { data?: { duplicates?: SavedContact[] } } | undefined;
   return body?.data?.duplicates ?? [];
 }
@@ -75,11 +79,11 @@ export const shippingContactsService = {
     const qp = new URLSearchParams({ q, role, limit: '8' });
     return api.get<SavedContact[]>(`/shipping-contacts?${qp}`, { signal });
   },
-  async create(role: 'sender' | 'receiver', contact: ContactFields): Promise<SavedContact> {
-    return api.post<SavedContact>('/shipping-contacts', { role, contact });
+  async create(role: 'sender' | 'receiver', savedName: string, contact: ContactFields): Promise<SavedContact> {
+    return api.post<SavedContact>('/shipping-contacts', { role, saved_name: savedName, contact });
   },
-  async update(id: number, role: 'sender' | 'receiver', contact: ContactFields): Promise<SavedContact> {
-    return api.put<SavedContact>(`/shipping-contacts/${id}`, { role, contact });
+  async update(id: number, role: 'sender' | 'receiver', savedName: string, contact: ContactFields): Promise<SavedContact> {
+    return api.put<SavedContact>(`/shipping-contacts/${id}`, { role, saved_name: savedName, contact });
   },
 };
 
@@ -91,6 +95,10 @@ export const addressLookupService = {
   async details(id: string, country: string, session: string): Promise<LookupAddress> {
     const qp = new URLSearchParams({ id, country, session });
     return api.get<LookupAddress>(`/address-lookup/details?${qp}`);
+  },
+  async postalCode(code: string, country: string, signal?: AbortSignal): Promise<PostalLocality[]> {
+    const qp = new URLSearchParams({ code, country });
+    return api.get<PostalLocality[]>(`/address-lookup/postal-code?${qp}`, { signal });
   },
   async shortAddress(code: string, signal?: AbortSignal): Promise<AddressSuggestion[]> {
     return api.get<AddressSuggestion[]>(`/address-lookup/short-address/${encodeURIComponent(code)}`, { signal });

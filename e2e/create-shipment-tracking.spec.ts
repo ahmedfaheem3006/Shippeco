@@ -140,10 +140,11 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByText('مؤسسة الخليج للتجارة').first()).toBeVisible()
       await shot(page, `01-from-to-${vp.name}`)
       await next.click()
-      await expect(page.getByText('نوع المحتوى')).toBeVisible()
+      await expect(page.getByText('ماذا تقوم بشحنه؟')).toBeVisible()
+      await expect(page.getByText('2. وصف البند')).toBeVisible() // the customs items live on Shipment Details
       await shot(page, `02-details-${vp.name}`)
       await next.click()
-      await expect(page.getByText('البند 2')).toBeVisible()
+      await expect(page.getByText('الفاتورة الجمركية').first()).toBeVisible()
       await shot(page, `03-customs-${vp.name}`)
       await next.click()
       await expect(page.getByText(/الطرد 1|طرد 1/).first()).toBeVisible()

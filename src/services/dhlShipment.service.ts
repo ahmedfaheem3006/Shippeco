@@ -49,7 +49,7 @@ export interface ItemInput {
   export_reason_type?: string | null;
 }
 
-export type ShipmentPurpose = 'commercial' | 'gift' | 'personal_not_for_resale' | 'sample' | 'return_for_repair' | 'return_after_repair';
+export type ShipmentPurpose = 'commercial' | 'gift' | 'personal_not_for_resale' | 'sample' | 'return_for_repair' | 'return_after_repair' | 'claim' | 'return_to_seller';
 export type TransportPayer = 'shipper' | 'receiver' | 'third_party';
 export type DutiesPayer = 'receiver' | 'shipper' | 'third_party';
 export type PickupOption = 'none' | 'schedule' | 'drop_off';
@@ -92,8 +92,22 @@ export interface DraftContent {
   receiver: Party & { national_address?: unknown };
   /** Parties-screen extras stored with the draft (never sent to DHL). */
   party_details?: { shipper: PartyDetailsContent | null; receiver: PartyDetailsContent | null } | null;
+  /** Shipment Details extras stored with the draft (never sent to DHL). */
+  details_extra?: DetailsExtraContent | null;
   packages: PackageInput[];
   items: ItemInput[];
+}
+
+/** Backend detailsExtraSchema (shipment_details_extra). */
+export interface DetailsExtraContent {
+  references: Array<{ type: string | null; value: string | null }>;
+  document_protection: boolean;
+  insurance: boolean;
+  estimated_duties: boolean;
+  precalculated_duties: boolean;
+  item_entry: 'describe' | 'upload';
+  charges: Array<{ type: 'freight' | 'insurance' | 'other'; description: string | null; amount: number | null }>;
+  items: Array<{ manufacturer_id: string | null; line_reference: string | null }>;
 }
 
 export type PhoneType = 'mobile' | 'office' | 'fax';

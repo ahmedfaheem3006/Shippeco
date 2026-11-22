@@ -9,12 +9,14 @@
  *   - Country/Territory: every country, searchable, sets the calling code;
  *   - Address 1: country-limited suggestions from the provider behind the
  *     SHIPPEC Backend (no invented results); Saudi Short Address lookup;
- *   - «حفظ في قاعدة البيانات» only on an explicit click, never a silent duplicate;
+ *   - US ZIP → city + state (Google Geocoding behind the Backend);
+ *   - «حفظ في قاعدة البيانات» asks for a SHIPPEC alias (never sent to DHL); only an
+ *     alias already in use is a conflict (update it / choose another name / cancel);
  *   - validation for Next is partiesGate() (wizardModel) — autofill never bypasses it.
  */
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, Building2, Check, Database, Eraser, Info, Loader2, MapPin, Plus, Search, Trash2, User, UserCheck, X,
+  ArrowLeftRight, Building2, Database, Eraser, Info, Loader2, MapPin, Plus, Search, Trash2, User, UserCheck, X,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '../../utils/apiClient';
@@ -22,17 +24,18 @@ import { describeApiError } from '../../utils/apiErrors';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { searchClients, type PhoneType } from '../../services/dhlShipment.service';
 import {
-  addressLookupService, duplicatesOf, shippingContactsService, type AddressSuggestion, type SavedContact,
+  addressLookupService, duplicatesOf, shippingContactsService, type AddressSuggestion, type PostalLocality, type SavedContact,
 } from '../../services/shippingContacts.service';
 import { Dialog } from '../shared/Dialog';
 import { Button, Field, Section, TextInput, inputCls } from './ui';
 import { useCsLang, type CsLang } from './csLang';
-import { listKeyHandler, useLookup, type LookupStatus } from './useLookup';
+import { listKeyHandler, useLookup, useOutside, type LookupStatus } from './useLookup';
+import { CountryCombobox, Dropdown } from './Combobox';
 import {
   applyAddress, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, SHORT_ADDRESS_RE, withCountry,
 } from './partiesModel';
 import {
-  allCountries, canShipment, countryName, emptyPhone, partiesGate, translateIssue, type FieldErrors, type PartyForm, type PhoneEntry,
+  canShipment, countryName, emptyPhone, partiesGate, translateIssue, type FieldErrors, type PartyForm, type PhoneEntry,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
 
@@ -40,15 +43,6 @@ type Who = 'shipper' | 'receiver';
 type T = (ar: string, en: string) => string;
 const newSession = () => (globalThis.crypto?.randomUUID?.() ?? `s-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
-// ── Shared dropdown ──
-function Dropdown({ id, children, label }: { id: string; children: React.ReactNode; label: string }) {
-  return (
-    <div id={id} role="listbox" aria-label={label}
-      className="absolute z-40 mt-1 inset-x-0 max-h-72 overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl ring-1 ring-black/5">
-      {children}
-    </div>
-  );
-}
 function StatusRow({ status, t, empty, unavailable }: { status: LookupStatus; t: T; empty: string; unavailable?: string }) {
   if (status === 'loading') return <div className="px-3 py-3 text-xs text-slate-500 flex items-center gap-2" role="status"><Loader2 size={14} className="animate-spin" /> {t('جاري البحث…', 'Searching…')}</div>;
   if (status === 'error') return <div className="px-3 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300" role="status">{t('تعذر البحث الآن — يمكنك الإدخال يدويًا.', 'Search is unavailable right now — you can enter it manually.')}</div>;
@@ -58,58 +52,6 @@ function StatusRow({ status, t, empty, unavailable }: { status: LookupStatus; t:
 }
 const optionCls = (active: boolean) =>
   `w-full text-start px-3 py-2.5 flex items-start gap-2 min-h-[44px] ${active ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'}`;
-
-/** Closes a dropdown on a click / tap outside `ref`. */
-function useOutside(ref: React.RefObject<HTMLElement>, onOutside: () => void) {
-  const cb = useRef(onOutside);
-  useEffect(() => { cb.current = onOutside; }, [onOutside]);
-  useEffect(() => {
-    const h = (e: MouseEvent | TouchEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) cb.current(); };
-    document.addEventListener('mousedown', h);
-    document.addEventListener('touchstart', h);
-    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('touchstart', h); };
-  }, [ref]);
-}
-
-// ── Country/Territory: every country, searchable, keyboard ──
-export function CountryCombobox({ id, value, onChange, error, lang, t }: { id: string; value: string; onChange: (code: string) => void; error?: string | null; lang: CsLang; t: T }) {
-  const box = useRef<HTMLDivElement>(null);
-  const listId = useId();
-  const [query, setQuery] = useState<string | null>(null);
-  const [active, setActive] = useState(0);
-  const open = query !== null;
-  const q = (query ?? '').trim().toLowerCase();
-  const digits = q.replace(/\D/g, '');
-  const list = allCountries(lang).filter((c) => !q || c.ar.toLowerCase().includes(q) || c.en.toLowerCase().includes(q) || c.code.toLowerCase() === q || (!!digits && c.dial.startsWith(digits)));
-  const close = () => setQuery(null);
-  useOutside(box, close);
-  const pick = (i: number) => { const c = list[i]; if (c) { onChange(c.code); close(); } };
-  const selected = value ? countryName(value, lang) : '';
-  return (
-    <div ref={box} className="relative">
-      <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      <input id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-invalid={!!error} autoComplete="off"
-        aria-activedescendant={open && list[active] ? `${listId}-${list[active].code}` : undefined}
-        value={open ? query! : selected} placeholder={t('ابحث عن البلد', 'Search country')}
-        onFocus={() => { setQuery(''); setActive(0); }}
-        onChange={(e) => { setQuery(e.target.value); setActive(0); }}
-        onKeyDown={listKeyHandler({ open, count: list.length, active, setActive, onPick: pick, onClose: close })}
-        className={`${inputCls(error)} ps-9`} />
-      {open && (
-        <Dropdown id={listId} label={t('البلدان', 'Countries')}>
-          {list.length ? list.map((c, i) => (
-            <button key={c.code} id={`${listId}-${c.code}`} type="button" role="option" aria-selected={c.code === value} tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)} className={optionCls(i === active)}>
-              <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{c.name}</span>
-              <span className="text-[11px] text-slate-400 tabular-nums shrink-0" dir="ltr">{c.code} · +{c.dial}</span>
-              {c.code === value && <Check size={14} className="text-indigo-600 shrink-0" />}
-            </button>
-          )) : <div className="px-3 py-3 text-xs text-slate-500">{t('لا يوجد بلد مطابق.', 'No matching country.')}</div>}
-        </Dropdown>
-      )}
-    </div>
-  );
-}
 
 // ── Name → SHIPPEC saved contacts ──
 const ROLE_BADGE: Record<SavedContact['role'], [string, string]> = { sender: ['مرسل محفوظ', 'Saved Sender'], receiver: ['مستلم محفوظ', 'Saved Receiver'], both: ['مرسل ومستلم', 'Sender & Receiver'] };
@@ -143,11 +85,10 @@ function ContactNameInput({ id, who, value, onChange, onPick, error, placeholder
               <button key={c.id} id={`${listId}-${c.id}`} type="button" role="option" aria-selected={i === active} tabIndex={-1}
                 onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)} className={optionCls(i === active)} data-contact-id={c.id}>
                 <User size={16} className="mt-0.5 text-indigo-500 shrink-0" />
-                <span className="flex-1 min-w-0" dir="ltr">
-                  <span className="block text-sm font-extrabold text-slate-900 dark:text-white truncate text-start">{c.name}</span>
-                  {c.company && <span className="block text-[11px] text-slate-600 dark:text-slate-300 truncate text-start">{c.company}</span>}
-                  <span className="block text-[11px] text-slate-500 truncate text-start">
-                    {[ph?.number ? `+${ph.code ?? ''} ${ph.number}` : null, [c.city, countryName(c.country_code, lang)].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+                <span className="flex-1 min-w-0" dir="auto">
+                  <span className="block text-sm font-extrabold text-slate-900 dark:text-white truncate text-start" data-saved-name>{c.saved_name || c.name}</span>
+                  <span className="block text-[11px] text-slate-500 truncate text-start" dir="ltr">
+                    {[c.name, c.company, ph?.number ? `+${ph.code ?? ''} ${ph.number}` : null, [c.city, countryName(c.country_code, lang)].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
                   </span>
                 </span>
                 <span className="shrink-0 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300">{t(...ROLE_BADGE[c.role])}</span>
@@ -207,7 +148,10 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
               </span>
               {s.short_address && <span className="shrink-0 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 font-mono" dir="ltr">{s.short_address}</span>}
             </button>
-          )) : (
+          )).concat(r.items.some((x) => x.provider === 'google')
+            // Google Maps Platform attribution for predictions shown without a map
+            ? [<div key="google-attribution" className="px-3 py-1.5 border-t border-slate-100 dark:border-slate-700 text-end text-[10px] font-semibold text-slate-400" dir="ltr" data-testid="google-attribution">Powered by Google</div>]
+            : []) : (
             <StatusRow status={r.status} t={t}
               empty={country === 'SA' ? t('لم يتم العثور على عنوان وطني مطابق.', 'No matching national address was found.') : t('لم يتم العثور على عنوان مطابق.', 'No matching address was found.')}
               unavailable={t('البحث التلقائي عن العناوين غير مفعّل — أدخل العنوان يدويًا.', 'Address suggestions are not enabled — enter the address manually.')} />
@@ -255,6 +199,51 @@ function ShortAddressInput({ id, value, onChange, onPick, error, t }: {
           )) : (
             <StatusRow status={r.status} t={t} empty={t('لم يتم العثور على عنوان وطني مطابق.', 'No matching national address was found.')}
               unavailable={t('البحث في العنوان الوطني غير مفعّل — أدخل العنوان يدويًا.', 'National Address lookup is not enabled — enter the address manually.')} />
+          )}
+        </Dropdown>
+      )}
+    </div>
+  );
+}
+
+// ── Postal code → city + state (US ZIP; Google Geocoding behind the Backend) ──
+const US_ZIP_RE = /^(\d{5})(-\d{4})?$/;
+function PostalCodeInput({ id, value, country, onChange, onPick, error, required, t }: {
+  id: string; value: string; country: string; onChange: (v: string) => void; onPick: (l: PostalLocality) => void; error?: string | null; required?: boolean; t: T;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const fetcher = useCallback((k: string, signal: AbortSignal) => { const [cc, code] = k.split('|'); return addressLookupService.postalCode(code, cc, signal); }, []);
+  const zip = US_ZIP_RE.exec(value.trim());
+  // only a complete ZIP is asked (never on every digit); other countries: typed by hand for now
+  const key = open && country === 'US' && zip ? `US|${zip[1]}` : null;
+  const r = useLookup<PostalLocality>(key, fetcher, 300);
+  useOutside(box, () => setOpen(false));
+  const pick = (i: number) => { const l = r.items[i]; if (l) { onPick(l); setOpen(false); } };
+  const show = !!key && r.status !== 'idle';
+  return (
+    <div ref={box} className="relative">
+      <TextInput id={id} value={value} ltr autoComplete="postal-code" inputMode={country === 'US' ? 'numeric' : undefined} error={error} aria-required={required}
+        role="combobox" aria-expanded={show} aria-controls={listId}
+        onValue={(v) => { onChange(country === 'US' ? v.replace(/[^\d-]/g, '').slice(0, 10) : v); setOpen(true); setActive(0); }}
+        onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: pick, onClose: () => setOpen(false) })} />
+      {r.status === 'loading' && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
+      {show && (
+        <Dropdown id={listId} label={t('المدن المطابقة للرمز البريدي', 'Cities for this postal code')}>
+          {r.status === 'done' && r.items.length ? r.items.map((l, i) => (
+            <button key={`${l.city}-${l.province}-${i}`} type="button" role="option" aria-selected={i === active} tabIndex={-1} data-postal-option={i}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)} className={optionCls(i === active)}>
+              <MapPin size={16} className="mt-0.5 text-indigo-500 shrink-0" />
+              <span className="flex-1 min-w-0 text-start" dir="ltr">
+                <span className="block text-sm font-bold text-slate-900 dark:text-white truncate">{[l.city?.toUpperCase(), l.province].filter(Boolean).join(', ')} {l.postal_code}</span>
+                {l.province_name && <span className="block text-[11px] text-slate-500 truncate">{l.province_name}</span>}
+              </span>
+            </button>
+          )) : (
+            <StatusRow status={r.status} t={t} empty={t('لم يتم العثور على مدينة مطابقة لهذا الرمز البريدي.', 'No matching city was found for this postal code.')}
+              unavailable={t('البحث بالرمز البريدي غير مفعّل — أدخل المدينة والولاية يدويًا.', 'Postal code lookup is not enabled — enter the city and state manually.')} />
           )}
         </Dropdown>
       )}
@@ -348,37 +337,55 @@ const Check2 = ({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   </label>
 );
 
-// ── Duplicate contact dialog ──
-function DuplicateDialog({ open, duplicates, busy, error, canUpdate, onUse, onUpdate, onCancel, t, lang }: {
-  open: boolean; duplicates: SavedContact[]; busy: boolean; error: string | null; canUpdate: (c: SavedContact) => boolean;
-  onUse: (c: SavedContact) => void; onUpdate: (c: SavedContact) => void; onCancel: () => void; t: T; lang: CsLang;
+// ── «حفظ في قاعدة البيانات»: a SHIPPEC alias, then save; an alias in use → update / another name / cancel ──
+function SaveContactDialog({ open, initialName, onClose, onSave, conflict, busy, error, canUpdate, onUpdate, onChooseAnother, t, dir }: {
+  open: boolean; initialName: string; onClose: () => void; onSave: (savedName: string) => void; conflict: SavedContact | null; busy: boolean; error: string | null;
+  canUpdate: (c: SavedContact) => boolean; onUpdate: (c: SavedContact, savedName: string) => void; onChooseAnother: () => void; t: T; dir: 'rtl' | 'ltr';
 }) {
   const hid = useId();
-  const [sel, setSel] = useState(0);
-  const c = duplicates[Math.min(sel, Math.max(0, duplicates.length - 1))];
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState(initialName);
+  const [touched, setTouched] = useState(false);
+  const missing = !name.trim();
   return (
-    <Dialog open={open} onRequestClose={onCancel} labelledBy={hid} panelClassName="sm:max-w-md">
-      <div className="p-5 space-y-4" dir={lang === 'en' ? 'ltr' : 'rtl'} data-testid="contact-duplicate-dialog">
+    <Dialog open={open} onRequestClose={onClose} labelledBy={hid} panelClassName="sm:max-w-md" initialFocusRef={inputRef as React.RefObject<HTMLElement>}>
+      <form className="p-5 space-y-4" dir={dir} data-testid="save-contact-dialog"
+        onSubmit={(ev) => { ev.preventDefault(); setTouched(true); if (!missing && !busy) onSave(name.trim()); }}>
         <div className="flex items-start justify-between gap-3">
-          <h2 id={hid} className="text-lg font-extrabold text-slate-900 dark:text-white">{t('توجد جهة اتصال محفوظة مشابهة بالفعل.', 'A similar saved contact already exists.')}</h2>
-          <button type="button" onClick={onCancel} aria-label={t('إغلاق', 'Close')} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X size={18} /></button>
+          <h2 id={hid} className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2"><Database size={18} className="text-indigo-600" /> {t('حفظ جهة الاتصال', 'Save contact')}</h2>
+          <button type="button" onClick={onClose} aria-label={t('إغلاق', 'Close')} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"><X size={18} /></button>
         </div>
-        <div className="space-y-2" role="radiogroup" aria-label={t('جهات الاتصال المشابهة', 'Similar contacts')}>
-          {duplicates.map((d, i) => (
-            <button key={d.id} type="button" role="radio" aria-checked={i === sel} onClick={() => setSel(i)}
-              className={`w-full text-start rounded-2xl border p-3 ${i === sel ? 'border-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900/40' : 'border-slate-200 dark:border-slate-700'}`}>
-              <span className="block text-sm font-extrabold text-slate-900 dark:text-white" dir="ltr">{d.name}</span>
-              <span className="block text-[11px] text-slate-500" dir="ltr">{[d.company, d.phones?.[0]?.number ? `+${d.phones[0].code ?? ''} ${d.phones[0].number}` : null, d.email, d.short_address, [d.city, countryName(d.country_code, lang)].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</span>
-            </button>
-          ))}
-        </div>
-        {error && <p className="rounded-2xl bg-red-50 dark:bg-red-900/15 p-3 text-xs font-bold text-red-700 dark:text-red-300" role="alert">{error}</p>}
-        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
-          <Button variant="secondary" onClick={onCancel}>{t('إلغاء', 'Cancel')}</Button>
-          {c && canUpdate(c) && <Button variant="secondary" loading={busy} onClick={() => onUpdate(c)}>{t('تحديث البيانات', 'Update existing')}</Button>}
-          {c && <Button onClick={() => onUse(c)} disabled={busy}>{t('استخدام الموجود', 'Use existing')}</Button>}
-        </div>
-      </div>
+        {conflict ? (
+          <div className="space-y-3" data-testid="save-contact-conflict">
+            <p className="rounded-2xl bg-amber-50 dark:bg-amber-900/15 p-3 text-sm font-bold text-amber-800 dark:text-amber-300" role="alert">{t('توجد جهة اتصال محفوظة بهذا الاسم بالفعل.', 'A saved contact with this name already exists.')}</p>
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-3">
+              <span className="block text-sm font-extrabold text-slate-900 dark:text-white" dir="auto">{conflict.saved_name}</span>
+              <span className="block text-[11px] text-slate-500" dir="ltr">{[conflict.name, conflict.company, conflict.city, conflict.country_code].filter(Boolean).join(' · ')}</span>
+            </div>
+            {!canUpdate(conflict) && <p className="text-[11px] text-slate-500">{t('تحديث جهة اتصال حفظها مستخدم آخر متاح للمدير أو المسؤول فقط.', 'Updating a contact saved by another user is for a manager or admin only.')}</p>}
+            {error && <p className="text-xs font-bold text-red-600" role="alert">{error}</p>}
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+              <Button variant="secondary" onClick={onClose}>{t('إلغاء', 'Cancel')}</Button>
+              <Button variant="secondary" onClick={() => { onChooseAnother(); window.setTimeout(() => inputRef.current?.select(), 0); }}>{t('اختيار اسم آخر', 'Choose Another Name')}</Button>
+              {canUpdate(conflict) && <Button loading={busy} onClick={() => onUpdate(conflict, name.trim())}>{t('تحديث الموجود', 'Update Existing')}</Button>}
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-slate-700 dark:text-slate-200">{t('بأي اسم تريد حفظ هذه البيانات؟', 'What name would you like to save this contact as?')}</p>
+            <Field label={t('اسم الحفظ', 'Saved name')} required error={touched && missing ? t('اسم الحفظ مطلوب.', 'The saved name is required.') : null}
+              hint={t('للبحث داخل SHIPPEC فقط — لا يُرسل إلى DHL.', 'For searching in SHIPPEC only — never sent to DHL.')}>
+              {(id) => <input ref={inputRef} id={id} value={name} onChange={(e) => setName(e.target.value.slice(0, 255))} dir="auto" aria-invalid={touched && missing}
+                className={inputCls(touched && missing ? 'x' : null)} placeholder={t('مثال: سلوى — أمريكا', 'e.g. Salwa USA Address')} />}
+            </Field>
+            {error && <p className="text-xs font-bold text-red-600" role="alert">{error}</p>}
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+              <Button variant="secondary" onClick={onClose}>{t('إلغاء', 'Cancel')}</Button>
+              <Button type="submit" loading={busy}><Database size={15} /> {t('حفظ', 'Save')}</Button>
+            </div>
+          </>
+        )}
+      </form>
     </Dialog>
   );
 }
@@ -393,8 +400,9 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
   const canWrite = canShipment(role, 'contacts_write');
   const canManage = canShipment(role, 'contacts_manage');
   const [saving, setSaving] = useState(false);
-  const [dups, setDups] = useState<SavedContact[] | null>(null);
-  const [dupError, setDupError] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [conflict, setConflict] = useState<SavedContact | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const set = <K extends keyof PartyForm>(k: K, v: PartyForm[K]) => onChange({ ...value, [k]: v });
   const e = (k: string) => err(`${who}.${k}`);
@@ -411,34 +419,41 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
     }
   };
 
-  const save = async () => {
+  const openSave = () => {
     if (!value.contact.trim() || !value.country_code) {
       toast.error(t('أدخل الاسم والبلد قبل الحفظ في قاعدة البيانات.', 'Enter the name and country before saving to the database.'));
       return;
     }
+    setConflict(null);
+    setSaveError(null);
+    setSaveOpen(true);
+  };
+  const saved = (id: number) => {
+    onChange({ ...value, saved_contact_id: id });
+    setSaveOpen(false);
+    setConflict(null);
+    toast.success(t('تم حفظ جهة الاتصال في قاعدة البيانات بنجاح.', 'Contact saved to database successfully.'));
+  };
+  const save = async (savedName: string) => {
     setSaving(true);
+    setSaveError(null);
     try {
-      const c = await shippingContactsService.create(contactRole, contactFieldsOf(value));
-      onChange({ ...value, saved_contact_id: c.id });
-      toast.success(t('تم حفظ جهة الاتصال في قاعدة البيانات.', 'Contact saved to the database.'));
+      saved((await shippingContactsService.create(contactRole, savedName, contactFieldsOf(value))).id);
     } catch (x) {
       const d = duplicatesOf(x);
-      if (d) { setDupError(null); setDups(d); }
-      else toast.error(describeApiError(x, t('تعذر حفظ جهة الاتصال.', 'Could not save the contact.')));
+      if (d) setConflict(d[0] ?? null);
+      else setSaveError(describeApiError(x, t('تعذر حفظ جهة الاتصال.', 'Could not save the contact.')));
     } finally {
       setSaving(false);
     }
   };
-  const updateExisting = async (c: SavedContact) => {
+  const updateExisting = async (c: SavedContact, savedName: string) => {
     setSaving(true);
-    setDupError(null);
+    setSaveError(null);
     try {
-      const u = await shippingContactsService.update(c.id, contactRole, contactFieldsOf(value));
-      onChange({ ...value, saved_contact_id: u.id });
-      setDups(null);
-      toast.success(t('تم تحديث جهة الاتصال المحفوظة.', 'The saved contact was updated.'));
+      saved((await shippingContactsService.update(c.id, contactRole, savedName || c.saved_name, contactFieldsOf(value))).id);
     } catch (x) {
-      setDupError(describeApiError(x, t('تعذر تحديث جهة الاتصال.', 'Could not update the contact.')));
+      setSaveError(describeApiError(x, t('تعذر تحديث جهة الاتصال.', 'Could not update the contact.')));
     } finally {
       setSaving(false);
     }
@@ -483,7 +498,11 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
         <Field label={t('الضاحية', 'Suburb')} error={sa ? null : e('address_line3')}>{(id) => <TextInput id={id} value={value.suburb} onValue={(v) => set('suburb', v)} ltr error={sa ? null : e('address_line3')} />}</Field>
         <Field label={t('المدينة', 'City')} required error={e('city')}>{(id) => <TextInput id={id} value={value.city} onValue={(v) => set('city', v)} error={e('city')} ltr autoComplete="address-level2" />}</Field>
         <Field label={t('الولاية / المنطقة', 'State')} required={value.country_code === 'US'} error={e('province')}>{(id) => <TextInput id={id} value={value.province} onValue={(v) => set('province', v)} error={e('province')} ltr />}</Field>
-        <Field label={t('الرمز البريدي', 'Postal Code')} required={sa || value.country_code === 'US'} error={e('postal_code')}>{(id) => <TextInput id={id} value={value.postal_code} onValue={(v) => set('postal_code', v)} error={e('postal_code')} ltr inputMode="numeric" autoComplete="postal-code" />}</Field>
+        <Field label={t('الرمز البريدي', 'Postal Code')} required={sa || value.country_code === 'US'} error={e('postal_code')}>{(id) => (
+          <PostalCodeInput id={id} value={value.postal_code} country={value.country_code} error={e('postal_code')} required={sa || value.country_code === 'US'} t={t}
+            onChange={(v) => set('postal_code', v)}
+            onPick={(l) => onChange({ ...value, city: l.city ?? value.city, province: l.province ?? value.province, postal_code: value.postal_code.trim() || l.postal_code })} />
+        )}</Field>
       </div>
       <Check2 checked={value.residential} onChange={(v) => set('residential', v)} label={t('عنوان سكني', 'Residential Address')} />
 
@@ -516,17 +535,20 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
           <Eraser size={14} /> {t('مسح العنوان', 'Clear Address')}
         </button>
         {canWrite && (
-          <Button variant="secondary" className="ms-auto" loading={saving && !dups} onClick={() => void save()}>
+          <Button variant="secondary" className="ms-auto" onClick={openSave}>
             <Database size={15} /> {t('حفظ في قاعدة البيانات', 'Save to Database')}
           </Button>
         )}
       </div>
 
-      <DuplicateDialog open={!!dups} duplicates={dups ?? []} busy={saving} error={dupError} t={t} lang={lang}
-        canUpdate={(c) => canManage || (c.created_by != null && c.created_by === userId)}
-        onCancel={() => setDups(null)}
-        onUse={(c) => { onChange(applyContact(value, c)); setDups(null); }}
-        onUpdate={(c) => void updateExisting(c)} />
+      {saveOpen && (
+        <SaveContactDialog open={saveOpen} initialName={value.contact} conflict={conflict} busy={saving} error={saveError} t={t} dir={lang === 'en' ? 'ltr' : 'rtl'}
+          canUpdate={(c) => canManage || (c.created_by != null && c.created_by === userId)}
+          onClose={() => { setSaveOpen(false); setConflict(null); }}
+          onSave={(n) => void save(n)}
+          onChooseAnother={() => { setConflict(null); setSaveError(null); }}
+          onUpdate={(c, n) => void updateExisting(c, n)} />
+      )}
     </div>
   );
 }
