@@ -638,6 +638,7 @@ export function routeIssuesText(issues: Issue[], lang: CsLang = 'ar'): string {
 
 /** DHL refusals (validateDataOnly / create) that an employee can act on — the DHL code stays visible. */
 const DHL_TRANSLATIONS: Array<[RegExp, string]> = [
+  [/commodity\s*code|commodityCodes|\bHS\s*code|harmoni[sz]ed|tariff\s*code/i, 'DHL تطلب رمز HS لهذا البند على هذا المسار — أدخله قبل الإنشاء'],
   [/destination location is invalid/i, 'DHL لم تتعرف على عنوان المستلم — تحقق من المدينة والرمز البريدي والدولة'],
   [/origin location is invalid/i, 'DHL لم تتعرف على عنوان المرسل — تحقق من المدينة والرمز البريدي والدولة'],
   [/^7142\b|shipment data validation has failed/i, 'رفضت DHL بيانات الشحنة دون سبب محدد — راجع البيانات أو أعد المحاولة لاحقًا'],
@@ -646,8 +647,10 @@ const DHL_TRANSLATIONS: Array<[RegExp, string]> = [
 /** Backend / DHL message in the page language: Arabic for the common rules; English = as the Backend wrote it. */
 export function translateIssue(message: string, lang: CsLang = 'ar'): string {
   if (lang === 'en') return message;
+  // DHL's own refusals ("998 : …") first: their DHL code stays visible.
+  const code = /^(\d{3,6})\s*:/.exec(message)?.[1];
+  if (code) for (const [re, ar] of DHL_TRANSLATIONS) if (re.test(message)) return `${ar} (DHL ${code})`;
   for (const [re, ar] of TRANSLATIONS) if (re.test(message)) return ar;
-  const code = /^(\d{4,6})\s*:/.exec(message)?.[1];
   for (const [re, ar] of DHL_TRANSLATIONS) if (re.test(message)) return code ? `${ar} (DHL ${code})` : ar;
   return message;
 }
@@ -698,6 +701,9 @@ export function partiesGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
 /** Latin only (DHL); the same rule as the Backend's findNonLatinStrings, for one text. */
 export const isLatin = (v: string) => !/[^\t\n\r -\u024F\u2018-\u201F\u2013\u2014]/.test(v);
 export const ITEM_DESCRIPTION_MAX = 170;
+/** DHL's commodity-code format as the Backend checks it (letters, digits or dots, 2–18); the inputs take digits and dots. */
+export const HS_CODE_MAX = 18;
+export const HS_CODE_RE = /^[A-Za-z0-9.]{2,18}$/;
 /** Purposes DHL documents no export reason for: the person chooses DHL's export reason type. */
 export const PURPOSES_NEEDING_REASON: ShipmentPurpose[] = ['return_for_repair', 'return_after_repair', 'claim', 'return_to_seller'];
 const positive = (v: string) => { const n = num(v); return n != null && n > 0; };
@@ -706,7 +712,8 @@ const positive = (v: string) => { const n = num(v); return n != null && n > 0; }
  * The Shipment Details gate (Next / stepper): field key → message; empty = Next allowed.
  * Documents: a contents description; a value, when typed, positive.
  * International packages: purpose (+ DHL export reason when needed), currency, at least one item
- * with an English description (≤ 170), quantity, unit, value, weight, origin and both HS codes.
+ * with an English description (≤ 170), quantity, unit, value, weight and origin. HS codes are
+ * optional (only their format is checked) — DHL's validation decides when a route needs one.
  */
 export function detailsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
   const e: FieldErrors = {};
@@ -733,8 +740,10 @@ export function detailsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
       if (!positive(it.unit_value)) e[k('unit_value')] = T('قيمة البند رقم أكبر من صفر.', 'The item value must be greater than zero.');
       if (!positive(it.unit_net_weight_kg)) e[k('unit_net_weight_kg')] = T('وزن البند رقم أكبر من صفر.', 'The item weight must be greater than zero.');
       if (!it.country_of_origin) e[k('country_of_origin')] = T('اختر بلد الصنع.', 'Choose where the item was made.');
-      if (!it.outbound_hs_code.trim()) e[k('outbound_hs_code')] = T('رمز HS للتصدير مطلوب.', 'The export HS code is required.');
-      if (!it.inbound_hs_code.trim()) e[k('inbound_hs_code')] = T('رمز HS للاستيراد مطلوب.', 'The import HS code is required.');
+      // HS codes are optional; one that is typed must have DHL's basic format (Backend HS_FORMAT).
+      for (const hs of ['outbound_hs_code', 'inbound_hs_code'] as const) {
+        if (it[hs].trim() && !HS_CODE_RE.test(it[hs].trim())) e[k(hs)] = T('رمز HS: من 2 إلى 18 رقمًا أو نقطة.', 'HS code: 2–18 digits or dots.');
+      }
     });
     f.charges.forEach((c, i) => { if (c.amount.trim() && (num(c.amount) == null || (num(c.amount) as number) < 0)) e[`charges.${i}`] = T('المبلغ رقم صفر أو أكثر.', 'The amount must be zero or more.'); });
   }

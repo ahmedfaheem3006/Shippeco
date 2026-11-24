@@ -50,7 +50,12 @@ describe('Shipment Details gate', () => {
     expect(detailsGate({ ...intlGoods(), shipment_purpose: 'claim', export_reason_type: 'return' })).toEqual({});
     expect(detailsGate({ ...intlGoods(), currency: '' })).toHaveProperty('currency');
     const e = detailsGate({ ...intlGoods(), items: [emptyItem()] });
-    for (const k of ['description', 'unit_value', 'unit_net_weight_kg', 'country_of_origin', 'outbound_hs_code', 'inbound_hs_code']) expect(e).toHaveProperty([`items.0.${k}`]);
+    for (const k of ['description', 'unit_value', 'unit_net_weight_kg', 'country_of_origin']) expect(e).toHaveProperty([`items.0.${k}`]);
+    // HS codes are optional: blank export and import codes never block Next; a typed one keeps DHL's basic format
+    for (const k of ['outbound_hs_code', 'inbound_hs_code']) expect(e).not.toHaveProperty([`items.0.${k}`]);
+    expect(detailsGate({ ...intlGoods(), items: [{ ...goodItem(), outbound_hs_code: '', inbound_hs_code: '' }] })).toEqual({});
+    expect(detailsGate({ ...intlGoods(), items: [{ ...goodItem(), outbound_hs_code: '6' }] }, 'en')).toEqual({ 'items.0.outbound_hs_code': 'HS code: 2–18 digits or dots.' });
+    expect(detailsGate({ ...intlGoods(), items: [{ ...goodItem(), inbound_hs_code: '6109.10.0012' }] })).toEqual({});
     expect(detailsGate({ ...intlGoods(), items: [{ ...goodItem(), description: 'x'.repeat(171) }] })).toHaveProperty(['items.0.description']);
     expect(detailsGate({ ...intlGoods(), items: [{ ...goodItem(), quantity: '1.5' }] })).toHaveProperty(['items.0.quantity']);
     // a blank extra card is ignored, not an error
@@ -119,11 +124,15 @@ describe('item upload (CSV / Excel rows)', () => {
     expect(r.items[0]).toMatchObject({ description: 'Cotton T-shirt', unit: 'PCS', country_of_origin: 'CN', line_reference: 'L1', show_reference: true, manufacturer_id: 'MID' });
   })
   it('row-level errors name the file row (header = 1); blank rows skipped; valid rows kept', () => {
-    const r = parseItemRows([row, {}, { ...row, description: 'قميص', quantity: '0', unit: 'XYZ', country_of_origin: 'ZZ', hs_code_import: '' }], 'en');
+    const r = parseItemRows([row, {}, { ...row, description: 'قميص', quantity: '0', unit: 'XYZ', country_of_origin: 'ZZ', hs_code_import: '6' }], 'en');
     expect(r.items).toHaveLength(1);
     expect(r.errors).toHaveLength(1);
     expect(r.errors[0]).toMatch(/^Row 4: /);
-    for (const m of ['description', 'quantity', 'unsupported unit (XYZ)', 'country_of_origin', 'hs_code_import']) expect(r.errors[0]).toContain(m);
+    for (const m of ['description', 'quantity', 'unsupported unit (XYZ)', 'country_of_origin', 'hs_code_import: 2–18 digits or dots']) expect(r.errors[0]).toContain(m);
+    // no HS codes in the file: still a valid item (the codes are optional)
+    const noHs = parseItemRows([{ ...row, hs_code_export: '', hs_code_import: '' }], 'en');
+    expect(noHs.errors).toEqual([]);
+    expect(noHs.items[0]).toMatchObject({ outbound_hs_code: '', inbound_hs_code: '' });
     expect(parseItemRows([{ ...row, gross_weight_kg: '0.4' }], 'ar').errors[0]).toMatch(/^السطر 2: /);
     expect(parseItemRows([], 'ar').errors).toEqual(['الملف لا يحتوي بنودًا.']);
   })

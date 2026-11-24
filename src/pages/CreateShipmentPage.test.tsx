@@ -1067,9 +1067,11 @@ describe('«إنشاء شحنة» wizard', () => {
     // Next with an empty item: field errors, blocked
     next()
     expect(await screen.findByText('وصف البند مطلوب.')).toBeTruthy()
-    for (const m of ['قيمة البند رقم أكبر من صفر.', 'وزن البند رقم أكبر من صفر.', 'اختر بلد الصنع.', 'رمز HS للتصدير مطلوب.', 'رمز HS للاستيراد مطلوب.', 'اختر سبب التصدير لدى DHL.']) {
+    for (const m of ['قيمة البند رقم أكبر من صفر.', 'وزن البند رقم أكبر من صفر.', 'اختر بلد الصنع.', 'اختر سبب التصدير لدى DHL.']) {
       expect(screen.getByText(m)).toBeTruthy()
     }
+    // HS codes are optional: never part of the blocked-Next errors
+    expect(screen.queryByText(/رمز HS .*مطلوب/)).toBeNull()
     fireEvent.change(screen.getByLabelText(/^سبب التصدير لدى DHL/), { target: { value: 'return' } })
     const card = within(document.querySelector('[data-item="0"]') as HTMLElement)
     const d = card.getByLabelText(/^ما هو البند؟/) as HTMLInputElement
@@ -1125,6 +1127,50 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(sent.details_extra).toMatchObject({ insurance: true, charges: [{ type: 'freight', amount: 25 }] })
     next()
     expect(await screen.findByText('الفاتورة الجمركية')).toBeTruthy()
+  })
+
+  it('HS codes are optional (AR + EN): no required star, Next works with both blank, a typed code persists, a DHL route-specific «HS required» refusal lands on that item field', async () => {
+    const intl = shipment({
+      customs_required: true, content_type: 'goods', is_domestic: false, receiver_country_code: 'AE', receiver_city: 'Dubai', receiver_postal_code: null,
+      currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt",
+      items: [{ line_number: 1, description: "Men's cotton T-shirt", quantity: 2, unit: 'PCS', unit_value: '10.000', currency: 'SAR', country_of_origin: 'CN',
+        outbound_hs_code: null, inbound_hs_code: null, unit_net_weight_kg: '0.200', unit_gross_weight_kg: null, line_gross_weight_kg: '0.400' }],
+    })
+    svc.get.mockResolvedValue(intl)
+    await openDetails()
+    const card = () => within(document.querySelector('[data-item="0"]') as HTMLElement)
+    const labelOf = (el: HTMLElement) => (document.querySelector(`label[for="${el.id}"]`) as HTMLElement).textContent ?? ''
+    const exp = card().getByLabelText(/^رمز HS للتصدير \/ Schedule B/) as HTMLInputElement
+    const imp = card().getByLabelText(/^رمز HS للاستيراد في بلد الوجهة/) as HTMLInputElement
+    expect([exp.value, imp.value]).toEqual(['', ''])
+    for (const el of [exp, imp]) expect(labelOf(el)).not.toContain('*')
+    // Next with both codes blank: allowed (no gate summary, the next step opens)
+    next()
+    await waitFor(() => expect(screen.queryByTestId('details-step')).toBeNull())
+    expect(screen.queryByTestId('parties-gate-summary')).toBeNull()
+    // a typed code stays in the draft; the blank one is sent as null (omitted by the Backend), never a placeholder
+    goStep(/تفاصيل الشحنة/)
+    await screen.findByTestId('details-step')
+    fireEvent.change(card().getByLabelText(/^رمز HS للتصدير/), { target: { value: '6109.10' } })
+    svc.updateDraft.mockResolvedValue(intl)
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(svc.updateDraft.mock.calls[0][1].items[0]).toMatchObject({ outbound_hs_code: '6109.10', inbound_hs_code: null })
+    // DHL's validateDataOnly says this route needs the import code of line 1 → shown at that item field
+    svc.validate.mockResolvedValue({ ok: false, issues: [{ field: 'items[1].inbound_hs_code', message: '998 : Commodity code is mandatory for this destination' }], warnings: [],
+      dhl_validation: { status: 'failed', message: 'x' }, shipment: intl })
+    goStep(/المراجعة/)
+    await waitFor(() => expect(svc.validate).toHaveBeenCalled())
+    goStep(/تفاصيل الشحنة/)
+    await screen.findByTestId('details-step')
+    expect(card().getByText('DHL تطلب رمز HS لهذا البند على هذا المسار — أدخله قبل الإنشاء (DHL 998)')).toBeTruthy()
+    // English: the same labels without a star, DHL's own text, the data unchanged
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    const expEn = card().getByLabelText(/^Schedule B \/ export HS code/) as HTMLInputElement
+    const impEn = card().getByLabelText(/^HS code \(import, destination\)/) as HTMLInputElement
+    for (const el of [expEn, impEn]) expect(labelOf(el)).not.toContain('*')
+    expect(expEn.value).toBe('6109.10')
+    expect(card().getByText('998 : Commodity code is mandatory for this destination')).toBeTruthy()
   })
 
   it('Create Description: a deterministic English helper (no AI) fills the item description', async () => {

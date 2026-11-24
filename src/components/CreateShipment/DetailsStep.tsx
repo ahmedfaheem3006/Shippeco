@@ -22,7 +22,7 @@ import { Button, Field, Note, Section, SelectInput, TextInput } from './ui';
 import { CountryCombobox, OptionCombobox } from './Combobox';
 import { useCsLang, type CsLang } from './csLang';
 import {
-  countryName, currencyOptions, derivedContents, detailsGate, DHL_EXPORT_REASONS, DOCUMENT_DESCRIPTIONS, emptyItem, exportReasonLabel,
+  countryName, currencyOptions, derivedContents, detailsGate, DHL_EXPORT_REASONS, DOCUMENT_DESCRIPTIONS, emptyItem, exportReasonLabel, HS_CODE_MAX,
   invoiceTotals, isInternational, isLatin, ITEM_DESCRIPTION_MAX, ITEM_UNITS, itemTotals, kgToLb, PURPOSE_ORDER, purposeLabel, PURPOSES_NEEDING_REASON,
   translateIssue, UNIT_LABELS, type ChargeType, type FieldErrors, type ItemForm, type ReferenceForm, type WizardForm,
 } from './wizardModel';
@@ -162,7 +162,6 @@ function ItemCard({ it, i, count, form, onChange, onRemove, onCopy, err, t, lang
   const set = <K extends keyof ItemForm>(k: K, v: ItemForm[K]) => onChange({ ...it, [k]: v });
   const e = (k: string) => err(`items.${i}.${k}`);
   const kg = num(it.unit_net_weight_kg);
-  const scheduleB = form.shipper.country_code === 'US';
   const unitOptions = ITEM_UNITS.map((u) => ({ value: u, label: `${t(...UNIT_LABELS[u])} (${u})`, keywords: UNIT_LABELS[u].join(' ') }));
   return (
     <article className="rounded-2xl border border-slate-200 dark:border-slate-700 p-3 sm:p-4 space-y-3" data-item={i}>
@@ -184,12 +183,13 @@ function ItemCard({ it, i, count, form, onChange, onRemove, onCopy, err, t, lang
         )}
       </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label={scheduleB ? t('Schedule B / رمز HS للتصدير', 'Schedule B / export HS code') : t('رمز HS / السلعة (للتصدير)', 'HS / Commodity Code (export)')} required error={e('outbound_hs_code')}
+        {/* Optional (MyDHL schema): an empty code is left out of the DHL request; DHL's validation says when a route needs one. */}
+        <Field label={t('رمز HS للتصدير / Schedule B', 'Schedule B / export HS code')} error={e('outbound_hs_code')}
           hint={t('يُدخل يدويًا — لا توجد خدمة بحث رموز مربوطة بعد.', 'Entered manually — no code lookup service is connected yet.')}>
-          {(id) => <TextInput id={id} value={it.outbound_hs_code} onValue={(v) => set('outbound_hs_code', v.replace(/[^\d.]/g, '').slice(0, 15))} error={e('outbound_hs_code')} ltr placeholder="6109.10" />}
+          {(id) => <TextInput id={id} value={it.outbound_hs_code} onValue={(v) => set('outbound_hs_code', v.replace(/[^\d.]/g, '').slice(0, HS_CODE_MAX))} error={e('outbound_hs_code')} ltr placeholder="6109.10" />}
         </Field>
-        <Field label={t('رمز HS للاستيراد (بلد الوصول)', 'HS code (import, destination)')} required error={e('inbound_hs_code')}>
-          {(id) => <TextInput id={id} value={it.inbound_hs_code} onValue={(v) => set('inbound_hs_code', v.replace(/[^\d.]/g, '').slice(0, 15))} error={e('inbound_hs_code')} ltr placeholder="6109.10" />}
+        <Field label={t('رمز HS للاستيراد في بلد الوجهة', 'HS code (import, destination)')} error={e('inbound_hs_code')}>
+          {(id) => <TextInput id={id} value={it.inbound_hs_code} onValue={(v) => set('inbound_hs_code', v.replace(/[^\d.]/g, '').slice(0, HS_CODE_MAX))} error={e('inbound_hs_code')} ltr placeholder="6109.10" />}
         </Field>
       </div>
       <Field label={t('معرّف المُصنِّع', "Manufacturer's ID")}>{(id) => <TextInput id={id} value={it.manufacturer_id} onValue={(v) => set('manufacturer_id', v.slice(0, 50))} ltr />}</Field>

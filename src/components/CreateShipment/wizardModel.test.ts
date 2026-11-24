@@ -162,6 +162,11 @@ describe('wizard model', () => {
     // the customs lines are entered on Shipment Details
     expect(locateIssue('items[2].country_of_origin')).toEqual({ step: 'details', key: 'items.1.country_of_origin' });
     expect(locateIssue('customs.lineItems[1].hsCode')).toEqual({ step: 'details', key: 'items.0.outbound_hs_code' });
+    // DHL requiring an HS code on this route (Backend commodityCodeField) → that item's field on «تفاصيل الشحنة»
+    expect(locateIssue('items[2].outbound_hs_code')).toEqual({ step: 'details', key: 'items.1.outbound_hs_code' });
+    expect(locateIssue('items[1].inbound_hs_code')).toEqual({ step: 'details', key: 'items.0.inbound_hs_code' });
+    expect(translateIssue('998 : Commodity code is mandatory for this destination')).toBe('DHL تطلب رمز HS لهذا البند على هذا المسار — أدخله قبل الإنشاء (DHL 998)');
+    expect(translateIssue('998 : Commodity code is mandatory for this destination', 'en')).toBe('998 : Commodity code is mandatory for this destination');
     expect(locateIssue('packages[1]')).toEqual({ step: 'packages', key: 'packages.0' });
     expect(locateIssue('incoterm')).toEqual({ step: 'payment', key: 'incoterm' });
     expect(locateIssue('pickup_latest_time')).toEqual({ step: 'pickup', key: 'pickup_latest_time' });
