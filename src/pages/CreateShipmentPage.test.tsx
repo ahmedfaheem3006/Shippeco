@@ -551,43 +551,120 @@ describe('«إنشاء شحنة» wizard', () => {
     expect((addr as HTMLInputElement).value).toBe('Tahrir Square 1')
   })
 
-  it('Saudi Short Address: normalized to upper case, asked only when well-formed; selecting fills the DHL National Address lines, city, region and postal code', async () => {
-    lookup.shortAddress.mockResolvedValue([{ id: null, main: '2519 Prince Mohammed Bin Fahd Road', secondary: '7531 Al Faisaliyah Dist, DAMMAM', short_address: 'KUDA2519', provider: 'spl',
-      address: { address_line1: '2519 Prince Mohammed Bin Fahd Road', address_line2: '7531 Al Faisaliyah Dist', short_address: 'KUDA2519', building_number: '2519', street: 'Prince Mohammed Bin Fahd Road',
-        additional_number: '7531', district: 'Al Faisaliyah Dist', city: 'DAMMAM', province: 'EASTERN PROVINCE', postal_code: '32272', country_code: 'SA' } }])
+  const KUDA = { id: null, main: '2519 Prince Mohammed Bin Fahd Road', secondary: '7531 Al Faisaliyah Dist, DAMMAM, EASTERN PROVINCE, 32272, Saudi Arabia', short_address: 'KUDA2519', provider: 'spl',
+    address: { address_line1: '2519 Prince Mohammed Bin Fahd Road', address_line2: '7531 Al Faisaliyah Dist', short_address: 'KUDA2519', building_number: '2519', street: 'Prince Mohammed Bin Fahd Road',
+      additional_number: '7531', district: 'Al Faisaliyah Dist', city: 'DAMMAM', province: 'EASTERN PROVINCE', province_name: 'EASTERN PROVINCE', postal_code: '32272', country_code: 'SA' } }
+  const rfga = (building: string, additional: string) => ({ id: null, main: `${building} King Saud Road`, secondary: '', short_address: 'RFGA4056', provider: 'spl',
+    address: { address_line1: `${building} King Saud Road`, address_line2: `${additional} Al Rawdah Dist`, short_address: 'RFGA4056', building_number: building, street: 'King Saud Road',
+      additional_number: additional, district: 'Al Rawdah Dist', city: 'KHOBAR', province: 'Eastern Province', province_name: 'Eastern Province', postal_code: '34421', country_code: 'SA' } })
+
+  it('Saudi Short Address: first in the Saudi form; normalized («kuda 2519» → KUDA2519), asked only when complete; one exact result fills the whole National Address at once — nothing stale, +966, still editable', async () => {
+    lookup.shortAddress.mockResolvedValue([KUDA])
     renderAt()
     await screen.findByTestId('parties-surface')
     pickCountry(1, 'SA')
     const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    // order: Short Address, then Address 1
+    const labels = Array.from(toPanel().querySelectorAll('label')).map((l) => l.textContent ?? '')
+    expect(labels.findIndex((l) => l.startsWith('العنوان المختصر'))).toBeLessThan(labels.findIndex((l) => l.startsWith('العنوان 1')))
+    // an earlier, manually typed address — replaced entirely by the SPL answer
+    for (const [l, x] of [[/^عنوان 2/, 'old line 2'], [/^المدينة/, 'Riyadh'], [/^الولاية/, 'Riyadh Region'], [/^الرمز البريدي/, '11111'], [/^الضاحية/, 'Old District']] as const) {
+      fireEvent.change(t.getByLabelText(l), { target: { value: x } })
+    }
+    await new Promise((r) => setTimeout(r, 450))
+    const googleBefore = lookup.cities.mock.calls.length + lookup.autocomplete.mock.calls.length
     const short = t.getByLabelText(/^العنوان المختصر/) as HTMLInputElement
     fireEvent.change(short, { target: { value: 'kuda' } })
     expect(short.value).toBe('KUDA')
-    await new Promise((r) => setTimeout(r, 400))
-    expect(lookup.shortAddress).not.toHaveBeenCalled() // obviously incomplete: no provider call
-    fireEvent.change(short, { target: { value: 'kuda2519' } })
+    await new Promise((r) => setTimeout(r, 450))
+    expect(lookup.shortAddress).not.toHaveBeenCalled() // incomplete: no SPL call
+    fireEvent.change(short, { target: { value: ' kuda 2519 ' } })
     expect(short.value).toBe('KUDA2519')
-    const option = await screen.findByRole('option', { name: /2519 Prince Mohammed Bin Fahd Road/ })
+    await waitFor(() => expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Bin Fahd Road'))
     expect(lookup.shortAddress).toHaveBeenCalledTimes(1)
     expect(lookup.shortAddress.mock.calls[0][0]).toBe('KUDA2519')
-    fireEvent.click(option)
-    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
-    expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Bin Fahd Road')
     expect(v(/^عنوان 2/)).toBe('7531 Al Faisaliyah Dist')
     expect(v(/^العنوان المختصر/)).toBe('KUDA2519')
+    expect(v(/^الضاحية/)).toBe('Al Faisaliyah Dist')
     expect(v(/^المدينة/)).toBe('DAMMAM')
     expect(v(/^الولاية/)).toBe('EASTERN PROVINCE')
     expect(v(/^الرمز البريدي/)).toBe('32272')
+    expect(v(/^البلد\/الإقليم/)).toMatch(/السعودية/)
     expect(v(/^الرمز\*?$/)).toBe('966')
-    // a well-formed code without a match → the national-address no-result message; manual entry stays
+    expect(t.getByTestId('spl-autofill-note').textContent).toMatch(/تمت تعبئة العنوان الوطني من SPL للعنوان المختصر KUDA2519/)
+    expect(screen.queryByRole('option', { name: /KUDA2519/ })).toBeNull() // no needless click
+    await new Promise((r) => setTimeout(r, 450))
+    expect(lookup.cities.mock.calls.length + lookup.autocomplete.mock.calls.length).toBe(googleBefore) // SPL already gave the city — no Google call
+    // still editable; a hand edit ends the «filled from SPL» note
+    fireEvent.change(t.getByLabelText(/^العنوان 1/), { target: { value: '2519 Prince Mohammed Road' } })
+    expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Road')
+    expect(t.queryByTestId('spl-autofill-note')).toBeNull()
+  })
+
+  it('Saudi Short Address: several SPL results → «RFGA4056 / line 1 / Address 2 · city · region · postal code» choices; no result / SPL failure explained, manual entry kept; an older answer never wins', async () => {
+    const resolvers: Record<string, (v: unknown) => void> = {}
+    lookup.shortAddress.mockImplementation((code: string) => new Promise((r) => { resolvers[code] = r }))
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'SA')
+    const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    const short = t.getByLabelText(/^العنوان المختصر/) as HTMLInputElement
+    fireEvent.change(short, { target: { value: 'KUDA2519' } })
+    await waitFor(() => expect(lookup.shortAddress).toHaveBeenCalledTimes(1))
+    fireEvent.change(short, { target: { value: 'rfga4056' } })
+    await waitFor(() => expect(lookup.shortAddress).toHaveBeenCalledTimes(2))
+    await act(async () => { resolvers.RFGA4056([rfga('4056', '8123'), rfga('4058', '8124')]) })
+    await act(async () => { resolvers.KUDA2519([KUDA]) }) // late, older
+    const opts = await screen.findAllByRole('option', { name: /RFGA4056/ })
+    expect(opts.map((o) => o.textContent)).toEqual([
+      'RFGA40564056 King Saud Road8123 Al Rawdah Dist · KHOBAR · Eastern Province · 34421',
+      'RFGA40564058 King Saud Road8124 Al Rawdah Dist · KHOBAR · Eastern Province · 34421',
+    ])
+    expect(v(/^العنوان 1/)).toBe('') // never the older KUDA answer, nothing chosen for the person
+    fireEvent.click(opts[1])
+    expect(v(/^العنوان 1/)).toBe('4058 King Saud Road')
+    expect(v(/^عنوان 2/)).toBe('8124 Al Rawdah Dist')
+    expect(v(/^المدينة/)).toBe('KHOBAR')
+    expect(v(/^الولاية/)).toBe('Eastern Province')
+    expect(v(/^الرمز البريدي/)).toBe('34421')
+    expect(v(/^العنوان المختصر/)).toBe('RFGA4056')
+    lookup.shortAddress.mockReset()
     lookup.shortAddress.mockResolvedValueOnce([])
     fireEvent.change(short, { target: { value: 'ABCD1234' } })
     expect(await screen.findByText('لم يتم العثور على عنوان وطني مطابق.')).toBeTruthy()
-    expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Bin Fahd Road')
-    // provider failure: explained, nothing cleared
+    expect(v(/^العنوان 1/)).toBe('4058 King Saud Road') // nothing erased
     lookup.shortAddress.mockRejectedValueOnce(new ApiError('down', 502, 'ADDRESS_PROVIDER_ERROR'))
     fireEvent.change(short, { target: { value: 'ABCD1235' } })
-    expect(await screen.findByText(/تعذر البحث الآن/)).toBeTruthy()
-    expect(v(/^المدينة/)).toBe('DAMMAM')
+    expect(await screen.findByText('البحث في العنوان الوطني غير متاح مؤقتًا — أدخل العنوان يدويًا.')).toBeTruthy()
+    lookup.shortAddress.mockRejectedValueOnce(new ApiError('busy', 503, 'ADDRESS_PROVIDER_BUSY'))
+    fireEvent.change(short, { target: { value: 'ABCD1236' } })
+    expect(await screen.findByText('البحث في العنوان الوطني غير متاح مؤقتًا — أدخل العنوان يدويًا.')).toBeTruthy()
+    expect(v(/^المدينة/)).toBe('KHOBAR')
+    fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'Dammam' } })
+    expect(v(/^المدينة/)).toBe('Dammam') // manual entry
+  })
+
+  it('Saudi Arabia: a Google Address 1 chosen after an SPL short address drops that short address (it is no longer verified) and the SPL note', async () => {
+    lookup.shortAddress.mockResolvedValue([KUDA])
+    lookup.autocomplete.mockResolvedValue([{ id: 'ChIJ_khobar_place_01', main: '12 King Fahd Road', secondary: 'Khobar, Saudi Arabia', short_address: null, address: null, provider: 'google' }])
+    lookup.details.mockResolvedValue({ address_line1: '12 King Fahd Road', address_line2: null, short_address: null, building_number: '12', street: 'King Fahd Road', additional_number: null,
+      district: 'Al Ulaya', city: 'Khobar', province: 'Eastern Province', province_name: 'Eastern Province', postal_code: '34447', country_code: 'SA' })
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'SA')
+    const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    fireEvent.change(t.getByLabelText(/^العنوان المختصر/), { target: { value: 'KUDA2519' } })
+    await waitFor(() => expect(t.getByTestId('spl-autofill-note')).toBeTruthy())
+    fireEvent.change(t.getByLabelText(/^العنوان 1/), { target: { value: '12 King Fahd' } })
+    fireEvent.click(await screen.findByRole('option', { name: /12 King Fahd Road/ }))
+    await waitFor(() => expect(v(/^المدينة/)).toBe('Khobar'))
+    expect(v(/^العنوان المختصر/)).toBe('')
+    expect(v(/^عنوان 2/)).toBe('')
+    expect(v(/^الرمز البريدي/)).toBe('34447')
+    expect(t.queryByTestId('spl-autofill-note')).toBeNull()
   })
 
   it('«مسح العنوان» clears only the address (name, company, e-mail, phones, VAT/Tax ID, EORI stay)', async () => {

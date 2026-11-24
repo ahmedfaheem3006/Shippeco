@@ -8,7 +8,13 @@
  *     (all stay editable; nothing is re-created by selecting);
  *   - Country/Territory: every country, searchable, sets the calling code;
  *   - Address 1: country-limited suggestions from the provider behind the
- *     SHIPPEC Backend (no invented results); Saudi Short Address lookup;
+ *     SHIPPEC Backend (no invented results);
+ *   - Saudi Arabia: Short Address first (SPL National Address, authoritative —
+ *     one exact result fills the whole National Address, several are offered),
+ *     then Address 1, then the fields by hand; a Google address chosen later
+ *     drops the old short address;
+ *   - a lookup only runs for text typed in that field (a value filled by another
+ *     lookup never starts a new request);
  *   - City: Google city suggestions inside the country (2+ characters); a choice
  *     fills City + State (US: the 2-letter code sent, the state name shown);
  *   - Postal code: country rules (addressRules); a complete US ZIP / ZIP+4 →
@@ -48,9 +54,9 @@ type Who = 'shipper' | 'receiver';
 type T = (ar: string, en: string) => string;
 const newSession = () => (globalThis.crypto?.randomUUID?.() ?? `s-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
-function StatusRow({ status, t, empty, unavailable }: { status: LookupStatus; t: T; empty: string; unavailable?: string }) {
+function StatusRow({ status, t, empty, unavailable, failed }: { status: LookupStatus; t: T; empty: string; unavailable?: string; failed?: string }) {
   if (status === 'loading') return <div className="px-3 py-3 text-xs text-slate-500 flex items-center gap-2" role="status"><Loader2 size={14} className="animate-spin" /> {t('جاري البحث…', 'Searching…')}</div>;
-  if (status === 'error') return <div className="px-3 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300" role="status">{t('تعذر البحث الآن — يمكنك الإدخال يدويًا.', 'Search is unavailable right now — you can enter it manually.')}</div>;
+  if (status === 'error') return <div className="px-3 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300" role="status">{failed ?? t('تعذر البحث الآن — يمكنك الإدخال يدويًا.', 'Search is unavailable right now — you can enter it manually.')}</div>;
   if (status === 'unavailable') return <div className="px-3 py-3 text-xs font-semibold text-slate-500" role="status">{unavailable ?? t('البحث غير متاح — أدخل البيانات يدويًا.', 'Search is not available — enter the details manually.')}</div>;
   if (status === 'done') return <div className="px-3 py-3 text-xs text-slate-500" role="status">{empty}</div>;
   return null;
@@ -67,10 +73,12 @@ function ContactNameInput({ id, who, value, onChange, onPick, error, placeholder
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const [open, setOpen] = useState(false);
+  /** The text the person last typed here — the only text ever looked up. */
+  const [mine, setMine] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const role = who === 'shipper' ? 'sender' : 'receiver';
   const fetcher = useCallback((q: string, signal: AbortSignal) => shippingContactsService.search(q, role, signal), [role]);
-  const key = open && canSearch && value.trim().length >= 2 ? value.trim() : null;
+  const key = open && value === mine && canSearch && value.trim().length >= 2 ? value.trim() : null;
   const r = useLookup<SavedContact>(key, fetcher, 300);
   useOutside(box, () => setOpen(false));
   const pick = (i: number) => { const c = r.items[i]; if (c) { onPick(c); setOpen(false); } };
@@ -79,7 +87,7 @@ function ContactNameInput({ id, who, value, onChange, onPick, error, placeholder
     <div ref={box} className="relative">
       <TextInput id={id} value={value} ltr autoComplete="off" placeholder={placeholder} error={error} role="combobox" aria-expanded={show} aria-controls={listId} aria-autocomplete="list"
         aria-activedescendant={show && r.items[active] ? `${listId}-${r.items[active].id}` : undefined}
-        onValue={(v) => { onChange(v); setOpen(true); setActive(0); }}
+        onValue={(v) => { onChange(v); setMine(v); setOpen(true); setActive(0); }}
         onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: pick, onClose: () => setOpen(false) })} />
       {r.status === 'loading' && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
       {show && (
@@ -113,6 +121,8 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const [open, setOpen] = useState(false);
+  /** The text the person last typed here — the only text ever looked up. */
+  const [mine, setMine] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [picking, setPicking] = useState(false);
   const session = useRef(newSession());
@@ -121,7 +131,7 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
     return addressLookupService.autocomplete(rest.join('|'), cc, session.current, signal);
   }, []);
   const typed = value.trim();
-  const key = open && country && typed.length >= 3 ? `${country}|${typed}` : null;
+  const key = open && value === mine && country && typed.length >= 3 ? `${country}|${typed}` : null;
   const r = useLookup<AddressSuggestion>(key, fetcher, 350);
   useOutside(box, () => setOpen(false));
   const pick = async (i: number) => {
@@ -138,7 +148,7 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
     <div ref={box} className="relative">
       <TextInput id={id} value={value} ltr autoComplete="off" error={error} role="combobox" aria-expanded={show} aria-controls={listId} aria-autocomplete="list"
         aria-activedescendant={show && r.items[active] ? `${listId}-${active}` : undefined}
-        onValue={(v) => { onChange(v); setOpen(true); setActive(0); }}
+        onValue={(v) => { onChange(v); setMine(v); setOpen(true); setActive(0); }}
         onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: (i) => void pick(i), onClose: () => setOpen(false) })} />
       {(r.status === 'loading' || picking) && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
       {noCountry && <p className="mt-1 text-[11px] text-slate-500">{t('اختر البلد/الإقليم أولًا لعرض العناوين المقترحة.', 'Choose the country first to see suggested addresses.')}</p>}
@@ -159,7 +169,7 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
             ? [<div key="google-attribution" className="px-3 py-1.5 border-t border-slate-100 dark:border-slate-700 text-end text-[10px] font-semibold text-slate-400" dir="ltr" data-testid="google-attribution">Powered by Google</div>]
             : []) : (
             <StatusRow status={r.status} t={t}
-              empty={country === 'SA' ? t('لم يتم العثور على عنوان وطني مطابق.', 'No matching national address was found.') : t('لم يتم العثور على عنوان مطابق.', 'No matching address was found.')}
+              empty={country === 'SA' ? t('لم يتم العثور على عنوان وطني مطابق.', 'No matching National Address was found.') : t('لم يتم العثور على عنوان مطابق.', 'No matching address was found.')}
               unavailable={t('البحث التلقائي عن العناوين غير مفعّل — أدخل العنوان يدويًا.', 'Address suggestions are not enabled — enter the address manually.')} />
           )}
         </Dropdown>
@@ -175,6 +185,8 @@ function CityInput({ id, value, onChange, country, onPick, error, t }: {
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const [open, setOpen] = useState(false);
+  /** The text the person last typed here — the only text ever looked up. */
+  const [mine, setMine] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [picking, setPicking] = useState(false);
   const session = useRef(newSession());
@@ -184,7 +196,7 @@ function CityInput({ id, value, onChange, country, onPick, error, t }: {
   }, []);
   const typed = value.trim();
   // only while the person types here (a value filled by another lookup never asks Google again)
-  const key = open && country && typed.length >= 2 ? `${country}|${typed}` : null;
+  const key = open && value === mine && country && typed.length >= 2 ? `${country}|${typed}` : null;
   const r = useLookup<AddressSuggestion>(key, fetcher, 300);
   useOutside(box, () => setOpen(false));
   const pick = async (i: number) => {
@@ -200,7 +212,7 @@ function CityInput({ id, value, onChange, country, onPick, error, t }: {
     <div ref={box} className="relative">
       <TextInput id={id} value={value} ltr autoComplete="off" error={error} role="combobox" aria-expanded={show} aria-controls={listId} aria-autocomplete="list"
         aria-activedescendant={show && r.items[active] ? `${listId}-${active}` : undefined}
-        onValue={(v) => { onChange(v); setOpen(true); setActive(0); }}
+        onValue={(v) => { onChange(v); setMine(v); setOpen(true); setActive(0); }}
         onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: (i) => void pick(i), onClose: () => setOpen(false) })} />
       {(r.status === 'loading' || picking) && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
       {noCountry && <p className="mt-1 text-[11px] text-slate-500">{t('اختر البلد/الإقليم أولًا لعرض المدن المقترحة.', 'Choose the country first to see suggested cities.')}</p>}
@@ -225,42 +237,70 @@ function CityInput({ id, value, onChange, country, onPick, error, t }: {
   );
 }
 
-// ── Saudi Short Address (KUDA2519) → National Address ──
+// ── Saudi Short Address (KUDA2519) → National Address (SPL, behind the Backend) ──
+/** SPL result rows: the code, then the address lines exactly as SPL sent them (nothing invented). */
+const splLines = (s: AddressSuggestion) => {
+  const a = s.address;
+  return {
+    line: a?.address_line1 ?? s.main,
+    place: [a?.address_line2 ?? a?.district, a?.city, a?.province_name ?? a?.province, a?.postal_code].filter(Boolean).join(' · '),
+  };
+};
 function ShortAddressInput({ id, value, onChange, onPick, error, t }: {
-  id: string; value: string; onChange: (v: string) => void; onPick: (s: AddressSuggestion) => void; error?: string | null; t: T;
+  id: string; value: string; onChange: (v: string) => void; onPick: (s: AddressSuggestion, auto: boolean) => void; error?: string | null; t: T;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const [open, setOpen] = useState(false);
+  /** The text the person last typed here — the only text ever looked up. */
+  const [mine, setMine] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const fetcher = useCallback((code: string, signal: AbortSignal) => addressLookupService.shortAddress(code, signal), []);
   const valid = SHORT_ADDRESS_RE.test(value);
-  // never asked for an obviously invalid code
-  const r = useLookup<AddressSuggestion>(open && valid ? value : null, fetcher, 300);
+  // only a complete code (4 Latin letters + 4 digits), only while the person types here
+  const key = open && value === mine && valid ? value : null;
+  const r = useLookup<AddressSuggestion>(key, fetcher, 350);
   useOutside(box, () => setOpen(false));
-  const pick = (i: number) => { const s = r.items[i]; if (s) { onPick(s); setOpen(false); } };
-  const show = open && valid && r.status !== 'idle';
+  const pick = (i: number) => { const s = r.items[i]; if (s) { onPick(s, false); setOpen(false); } };
+  // exactly one National Address for the code → filled at once (still editable); several → the person chooses
+  const autoKey = useRef<string | null>(null);
+  const pickRef = useRef(onPick);
+  useEffect(() => { pickRef.current = onPick; }, [onPick]);
+  const only = r.status === 'done' && r.items.length === 1 && r.items[0].address ? r.items[0] : null;
+  useEffect(() => {
+    if (!key) { autoKey.current = null; return; }
+    if (only && autoKey.current !== key) {
+      autoKey.current = key;
+      pickRef.current(only, true);
+      setOpen(false);
+    }
+  }, [key, only]);
+  const show = !!key && r.status !== 'idle' && !only;
   return (
     <div ref={box} className="relative">
       <TextInput id={id} value={value} ltr autoComplete="off" error={error} placeholder="KUDA2519" maxLength={8} role="combobox" aria-expanded={show} aria-controls={listId}
-        className="font-mono uppercase"
-        onValue={(v) => { onChange(normalizeShortAddress(v)); setOpen(true); setActive(0); }}
+        aria-autocomplete="list" className="font-mono uppercase"
+        onValue={(v) => { const nv = normalizeShortAddress(v); onChange(nv); setMine(nv); setOpen(true); setActive(0); }}
         onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: pick, onClose: () => setOpen(false) })} />
       {r.status === 'loading' && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
       {value.length === 8 && !valid && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">{t('العنوان المختصر: 4 أحرف لاتينية ثم 4 أرقام، مثل KUDA2519.', 'Short address: 4 Latin letters then 4 digits, e.g. KUDA2519.')}</p>}
       {show && (
         <Dropdown id={listId} label={t('العناوين الوطنية', 'National addresses')}>
-          {r.status === 'done' && r.items.length ? r.items.map((s, i) => (
-            <button key={i} type="button" role="option" aria-selected={i === active} tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)} className={optionCls(i === active)} data-short-option={i}>
-              <MapPin size={16} className="mt-0.5 text-indigo-500 shrink-0" />
-              <span className="flex-1 min-w-0 text-start" dir="ltr">
-                <span className="block text-sm font-bold text-slate-900 dark:text-white truncate">{s.main}</span>
-                <span className="block text-[11px] text-slate-500 truncate">{s.secondary}</span>
-              </span>
-              {s.short_address && <span className="shrink-0 font-mono text-[10px] font-bold text-indigo-700 dark:text-indigo-300" dir="ltr">{s.short_address}</span>}
-            </button>
-          )) : (
-            <StatusRow status={r.status} t={t} empty={t('لم يتم العثور على عنوان وطني مطابق.', 'No matching national address was found.')}
+          {r.status === 'done' && r.items.length ? r.items.map((s, i) => {
+            const l = splLines(s);
+            return (
+              <button key={i} type="button" role="option" aria-selected={i === active} tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)} className={optionCls(i === active)} data-short-option={i}>
+                <MapPin size={16} className="mt-0.5 text-indigo-500 shrink-0" />
+                <span className="flex-1 min-w-0 text-start" dir="ltr">
+                  <span className="block text-sm font-extrabold font-mono text-indigo-700 dark:text-indigo-300">{s.short_address ?? value}</span>
+                  <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">{l.line}</span>
+                  {l.place && <span className="block text-[11px] text-slate-500 truncate">{l.place}</span>}
+                </span>
+              </button>
+            );
+          }) : (
+            <StatusRow status={r.status} t={t} empty={t('لم يتم العثور على عنوان وطني مطابق.', 'No matching National Address was found.')}
+              failed={t('البحث في العنوان الوطني غير متاح مؤقتًا — أدخل العنوان يدويًا.', 'National Address lookup is temporarily unavailable — enter the address manually.')}
               unavailable={t('البحث في العنوان الوطني غير مفعّل — أدخل العنوان يدويًا.', 'National Address lookup is not enabled — enter the address manually.')} />
           )}
         </Dropdown>
@@ -276,13 +316,15 @@ function PostalCodeInput({ id, value, country, onChange, onPick, error, required
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const [open, setOpen] = useState(false);
+  /** The text the person last typed here — the only text ever looked up. */
+  const [mine, setMine] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
   const [active, setActive] = useState(0);
   const fetcher = useCallback((k: string, signal: AbortSignal) => { const [cc, code] = k.split('|'); return addressLookupService.postalCode(code, cc, signal); }, []);
   const rule = postalRule(country);
   const code = postalLookupCode(country, value);
   // only a complete code of a country with a lookup is asked (never on every digit, never half-typed)
-  const key = open && code ? `${country}|${code}` : null;
+  const key = open && value === mine && code ? `${country}|${code}` : null;
   const r = useLookup<PostalLocality>(key, fetcher, 300);
   useOutside(box, () => setOpen(false));
   const pick = (i: number) => { const l = r.items[i]; if (l) { onPick(l, false); setOpen(false); } };
@@ -306,7 +348,7 @@ function PostalCodeInput({ id, value, country, onChange, onPick, error, required
       <TextInput id={id} value={value} ltr autoComplete="postal-code" inputMode={rule?.numeric ? 'numeric' : undefined} error={error} aria-required={required}
         role="combobox" aria-expanded={show} aria-controls={listId}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-        onValue={(v) => { onChange(rule?.sanitize ? rule.sanitize(v) : v); setOpen(true); setActive(0); }}
+        onValue={(v) => { const nv = rule?.sanitize ? rule.sanitize(v) : v; onChange(nv); setMine(nv); setOpen(true); setActive(0); }}
         onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: pick, onClose: () => setOpen(false) })} />
       {r.status === 'loading' && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
       {formatIssue && !error && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300" data-testid="postal-format">{t(`صيغة الرمز البريدي: ${formatIssue[0]}`, `Postal code format: ${formatIssue[1]}`)}</p>}
@@ -512,6 +554,16 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
     }
   };
   const stateName = subdivisionName(value.country_code, value.province);
+  // Short Address → the whole Saudi National Address (SPL is authoritative; the old address never stays)
+  const [splFilled, setSplFilled] = useState<PartyForm | null>(null);
+  const pickShort = (s: AddressSuggestion) => {
+    if (!s.address) return;
+    const next = applyAddress(value, { ...s.address, short_address: s.address.short_address ?? (value.short_address || null), country_code: 'SA' }, true);
+    onChange(next);
+    setSplFilled(next);
+  };
+  const splNote = splFilled && (['short_address', 'address_line1', 'address_line2', 'city', 'province', 'postal_code'] as const)
+    .every((k) => splFilled[k] === value[k]) ? splFilled.short_address : null;
   // Postal code → City + State (the ZIP typed is kept, e.g. ZIP+4); the note stays while those fields are unchanged
   const [filled, setFilled] = useState<{ postal_code: string; city: string; province: string } | null>(null);
   const pickPostal = (l: PostalLocality) => {
@@ -583,19 +635,25 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
 
       {sa && <SaudiNotice t={t} />}
 
+      {sa && (
+        <Field label={t('العنوان المختصر', 'Short Address')} error={e('address_line3')}
+          hint={t('أدخل العنوان المختصر (مثل KUDA2519) لتعبئة العنوان الوطني تلقائيًا.', 'Enter the short address (e.g. KUDA2519) to fill the National Address automatically.')}>{(id) => (
+          <ShortAddressInput id={id} value={value.short_address} error={e('address_line3')} t={t}
+            onChange={(v) => set('short_address', v)} onPick={pickShort} />
+        )}</Field>
+      )}
+      {sa && splNote && (
+        <p className="-mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1" role="status" data-testid="spl-autofill-note">
+          <MapPin size={12} /> {t(`تمت تعبئة العنوان الوطني من SPL للعنوان المختصر ${splNote}.`, `National Address filled from SPL for short address ${splNote}.`)}
+        </p>
+      )}
+
       <Field label={t('العنوان 1', 'Address 1')} required error={e('address_line1')}>{(id) => (
         <Address1Input id={id} value={value.address_line1} country={value.country_code} error={e('address_line1')} t={t}
           onChange={(v) => set('address_line1', v)} onPick={pickAddress} />
       )}</Field>
       {lookupError && <p className="-mt-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300" role="status">{lookupError}</p>}
       <Field label={t('عنوان 2', 'Address 2')} required={sa} error={e('address_line2')}>{(id) => <TextInput id={id} value={value.address_line2} onValue={(v) => set('address_line2', v)} error={e('address_line2')} ltr />}</Field>
-      {sa && (
-        <Field label={t('العنوان المختصر', 'Short Address')} error={e('address_line3')}>{(id) => (
-          <ShortAddressInput id={id} value={value.short_address} error={e('address_line3')} t={t}
-            onChange={(v) => set('short_address', v)}
-            onPick={(s) => { if (s.address) onChange(applyAddress({ ...value, short_address: s.short_address ?? value.short_address }, s.address)); }} />
-        )}</Field>
-      )}
       <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
         <Field label={t('الضاحية', 'Suburb')} error={sa ? null : e('address_line3')}>{(id) => <TextInput id={id} value={value.suburb} onValue={(v) => set('suburb', v)} ltr error={sa ? null : e('address_line3')} />}</Field>
         <Field label={t('المدينة', 'City')} required error={e('city')}>{(id) => (
