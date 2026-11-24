@@ -7,7 +7,7 @@
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
 import type {
   CustomsDocument, CustomsInvoiceMode, DetailsExtraContent, DhlShipment, DraftContent, DutiesPayer, Issue, ItemInput, Party, PartyDetailsContent, PhoneEntry, PhoneType,
-  PickupOption, ShipmentPurpose, TransportPayer,
+  PickupOption, RateQuote, ShipmentPurpose, TransportPayer,
 } from '../../services/dhlShipment.service';
 import { tr, type CsLang } from './csLang';
 
@@ -73,6 +73,7 @@ export function allCountries(lang: CsLang = 'ar'): CountryOption[] {
 export const countryName = (code: string | null | undefined, lang: CsLang = 'ar') => (code ? allCountries(lang).find((c) => c.code === code)?.name ?? code : '—');
 /** Backend ORIGIN_GMT_OFFSETS: origins with one fixed time zone. */
 export const FIXED_OFFSET_COUNTRIES = ['SA', 'KW', 'BH', 'QA', 'IQ', 'JO', 'YE', 'AE', 'OM'];
+const FIXED_OFFSETS: Record<string, string> = { SA: '+03:00', KW: '+03:00', BH: '+03:00', QA: '+03:00', IQ: '+03:00', JO: '+03:00', YE: '+03:00', AE: '+04:00', OM: '+04:00' };
 
 // ── Form shapes ──
 export interface NationalAddress { building_number: string; street: string; additional_number: string; district: string; short_address: string }
@@ -641,6 +642,8 @@ const TRANSLATIONS: Array<[RegExp, string]> = [
   [/Paperless Trade upload is turned off/i, 'رفع Paperless Trade متوقف على هذا الخادم — ألغِ الخيار أو راجع المسؤول'],
   [/An invoice date only goes with an invoice number/i, 'تاريخ الفاتورة يُرسل مع رقم الفاتورة فقط'],
   [/Latest pickup time must be after/i, 'آخر وقت للاستلام يجب أن يكون بعد أبكر وقت'],
+  [/DHL does not offer the optional service/i, 'DHL لا تعرض هذه الخدمة الاختيارية لهذه الخدمة — ألغِ اختيارها أو حدّث الخدمات والأسعار'],
+  [/the optional services are not priced/i, 'حدّث أسعار DHL — الخدمات الاختيارية لم تُسعَّر للخدمة المختارة'],
   [/DHL picks up from/i, 'أبكر وقت يسبق نافذة استلام DHL'],
   [/DHL picks up until/i, 'آخر وقت يتجاوز نافذة استلام DHL'],
   [/earliest pickup time today has already passed/i, 'أبكر وقت للاستلام اليوم قد مضى'],
@@ -931,15 +934,142 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
   return miss;
 }
 
+// ── Service step (MyDHL+ «I'm sending my shipment on» / rates / optional services) ──
+/** DHL accepts a planned shipping date at most this many days ahead (Backend MAX_DAYS_AHEAD). */
+export const SHIP_DATE_MAX_DAYS = 10;
+const ymdPlus = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+/** The sender's time zone (±HH:MM): the fixed one of its country, else the one typed; null when unknown. */
+export function originOffset(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>): string | null {
+  const fixed = FIXED_OFFSETS[f.shipper.country_code];
+  if (fixed) return fixed;
+  return /^[+-]\d{2}:\d{2}$/.test(f.origin_gmt_offset.trim()) ? f.origin_gmt_offset.trim() : null;
+}
+/** "Today" at the sender (its time zone; the browser's own date when it is unknown). */
+export function originToday(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>, now = new Date()): string {
+  const off = originOffset(f);
+  if (!off) return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const m = /^([+-])(\d{2}):(\d{2})$/.exec(off)!;
+  const minutes = (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+  return new Date(now.getTime() + minutes * 60_000).toISOString().slice(0, 10);
+}
+/**
+ * The dates the person may choose: from the sender's today up to DHL's limit (counted from the
+ * Backend's UTC today, which is never later than the sender's — a past or too-far date is never offered).
+ */
+export function shipDateRange(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>, now = new Date()): { min: string; max: string } {
+  const min = originToday(f, now);
+  const utc = now.toISOString().slice(0, 10);
+  return { min, max: ymdPlus(utc < min ? utc : min, SHIP_DATE_MAX_DAYS) };
+}
+export interface DateCard { ymd: string; rel: 'today' | 'tomorrow' | null }
+/** The next `count` dates as MyDHL+ shows them (Today, Tomorrow, then weekdays) — never past the limit. */
+export function shipDateCards(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>, count = 7, now = new Date()): DateCard[] {
+  const { min, max } = shipDateRange(f, now);
+  const out: DateCard[] = [];
+  for (let i = 0; i < count; i++) {
+    const ymd = ymdPlus(min, i);
+    if (ymd > max) break;
+    out.push({ ymd, rel: i === 0 ? 'today' : i === 1 ? 'tomorrow' : null });
+  }
+  return out;
+}
+const DATE_LOCALE: Record<CsLang, string> = { ar: 'ar-u-ca-gregory-nu-latn', en: 'en-US' };
+/** Month / day / weekday of a YYYY-MM-DD date (Gregorian, Latin digits) in the page language. */
+export function dateParts(ymd: string, lang: CsLang = 'ar') {
+  const d = new Date(`${ymd.slice(0, 10)}T12:00:00Z`);
+  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(DATE_LOCALE[lang], { timeZone: 'UTC', ...o }).format(d);
+  return { month: fmt({ month: 'long' }), day: String(d.getUTCDate()), weekday: fmt({ weekday: 'long' }) };
+}
+/** A DHL local date-time (YYYY-MM-DDTHH:MM…): its date, its time, and DHL's "end of day" (23:59). */
+export function dhlDateTime(iso: string | null | undefined): { date: string; time: string | null; eod: boolean } | null {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return null;
+  const time = iso.length >= 16 ? iso.slice(11, 16) : null;
+  return { date: iso.slice(0, 10), time, eod: time === '23:59' };
+}
+
+export interface ChargeRow { key: string; label: string; dhlName: string | null; code: string | null; amount: number | null; currency: string | null; category: string }
+/** DHL's upper-case charge name in title case (still DHL's own description). */
+const titleCase = (s: string) => s.toLowerCase().replace(/(^|[\s(/-])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
+/**
+ * DHL's quote as the MyDHL+ breakdown: every priced line DHL returned (its own name; the first is
+ * the transportation charge), then VAT / tax when DHL charged any, then DHL's total.
+ * With tax, the lines are DHL's amounts before tax (DHL's basePrice) — only when DHL stated it
+ * for every line; otherwise the lines stay as DHL priced them (tax included). The total is
+ * always DHL's own figure — nothing is added up here.
+ */
+export function chargeRows(q: Pick<RateQuote, 'breakdown' | 'amount' | 'currency' | 'taxTotal'>, lang: CsLang = 'ar') {
+  const tax = q.taxTotal != null && q.taxTotal > 0 ? q.taxTotal : null;
+  const net = tax != null && q.breakdown.every((b) => b.net != null);
+  const rows: ChargeRow[] = q.breakdown.map((b, i) => {
+    const dhlName = b.name ? titleCase(b.name) : null;
+    const label = i === 0
+      ? tr(lang, 'أجور النقل', 'Transportation Charges')
+      : lang === 'en' ? (dhlName ?? CHARGE_LABELS_EN[b.category]) : (b.category !== 'other' ? CHARGE_LABELS[b.category] : dhlName ?? CHARGE_LABELS.other);
+    return { key: `${i}-${b.serviceCode ?? ''}`, label, dhlName, code: b.serviceCode, amount: net ? b.net ?? null : b.amount, currency: b.currency ?? q.currency, category: b.category };
+  });
+  return { rows, tax: net ? tax : null, taxIncluded: !net ? tax : null, total: q.amount, currency: q.currency };
+}
+
+/**
+ * Optional services SHIPPEC can request with a plain service code — the MyDHL+ list. Shown ONLY when
+ * DHL listed the code for the chosen product (availability always comes from DHL); the texts are
+ * SHIPPEC's. Services DHL lists that need more data (insurance value, dangerous goods …) are not offered.
+ */
+export const OPTIONAL_SERVICES: Record<string, { ar: string; en: string; descAr: string; descEn: string; group?: string }> = {
+  FT: { ar: 'GoGreen Plus', en: 'GoGreen Plus', descAr: 'دعم النقل منخفض الانبعاثات باستخدام وقود الطيران المستدام.', descEn: 'Support low emission transportation services, facilitated by sustainable aviation fuel.' },
+  JD: { ar: 'إشعار هاتفي', en: 'Verbal Notification', descAr: 'تؤكد DHL التسليم هاتفيًا.', descEn: 'DHL confirms the delivery by phone.' },
+  LX: { ar: 'الحجز للاستلام', en: 'Hold for Collection', descAr: 'تُحفظ الشحنة في منشأة DHL في بلد الوجهة ليستلمها المستلم، وتُبلغه DHL عندما تصبح جاهزة.', descEn: 'Hold my shipment at the DHL delivery facility at the destination for consignee collection. DHL will notify the receiver when the shipment is ready to be collected.' },
+  NN: { ar: 'تسليم محايد', en: 'Neutral Delivery', descAr: 'تبقى القيمة المصرّح بها للشحنة سرية ولا تُكشف للمستلم.', descEn: 'Keep the declared value of my shipment confidential. Do not reveal to the receiver.' },
+  SD: { ar: 'توقيع شخص بالغ', en: 'Adult Signature', descAr: 'تحصل DHL على توقيع شخص بالغ عند التسليم في العنوان المحدد.', descEn: 'DHL will obtain a delivery signature from an adult at the stipulated delivery address.', group: 'signature' },
+  SF: { ar: 'توقيع مباشر', en: 'Direct Signature', descAr: 'تحصل DHL على توقيع المستلم أو من ينوب عنه في عنوان التسليم. إن لم يوجد أحد تعيد DHL المحاولة، ولا تُحوَّل الشحنة ولا تُترك في صندوق بريد أو لدى الجار.', descEn: "DHL will obtain a signature from the receiver or a representative at the delivery address. In case no one is at the delivery address, DHL will reattempt delivery. Direct Signature service makes sure your shipments can't be re-routed, dropped in a post box or left with the neighbor.", group: 'signature' },
+};
+export interface OptionalServiceRow { code: string; name: string; description: string; selected: boolean; price: number | null; currency: string | null; dhlName: string | null }
+/**
+ * The optional services to show for a quote: those DHL listed for the product (unpriced) or that DHL
+ * priced because they were requested — never a code DHL did not return. A GoGreen line DHL already
+ * charges by agreement hides the GoGreen Plus choice (it is in the quote already).
+ */
+export function optionalServiceRows(q: Pick<RateQuote, 'optionalServices' | 'breakdown' | 'currency'> | null, selected: string[], lang: CsLang = 'ar'): OptionalServiceRow[] {
+  if (!q) return [];
+  const priced = new Map(q.breakdown.filter((b) => b.serviceCode).map((b) => [b.serviceCode as string, b]));
+  const listed = new Map(q.optionalServices.map((s) => [s.serviceCode, s]));
+  const agreementGreen = q.breakdown.some((b) => b.category === 'gogreen' && b.serviceCode !== 'FT');
+  return Object.entries(OPTIONAL_SERVICES)
+    .filter(([code]) => listed.has(code) || (priced.has(code) && selected.includes(code)))
+    .filter(([code]) => !(code === 'FT' && agreementGreen && !selected.includes('FT')))
+    .map(([code, info]) => {
+      const line = selected.includes(code) ? priced.get(code) : undefined;
+      return {
+        code, name: tr(lang, info.ar, info.en), description: tr(lang, info.descAr, info.descEn), selected: selected.includes(code),
+        price: line?.amount ?? null, currency: line?.currency ?? q.currency, dhlName: listed.get(code)?.name ?? line?.name ?? null,
+      };
+    });
+}
+/** Ticking / unticking an optional service; one signature option at a time. WY / DD stay SHIPPEC's own. */
+export function toggleOptionalService(codes: string[], code: string): string[] {
+  if (codes.includes(code)) return codes.filter((c) => c !== code);
+  const group = OPTIONAL_SERVICES[code]?.group;
+  const kept = group ? codes.filter((c) => OPTIONAL_SERVICES[c]?.group !== group) : codes;
+  return [...kept, code];
+}
+/** GoGreen in this quote: DHL's priced GoGreen line, or GoGreen Plus offered for the product. */
+export function goGreenOf(q: Pick<RateQuote, 'optionalServices' | 'breakdown'> | null): { charged: RateQuote['breakdown'][number] | null; offered: boolean } | null {
+  if (!q) return null;
+  const charged = q.breakdown.find((b) => b.category === 'gogreen') ?? null;
+  const offered = q.optionalServices.some((s) => s.serviceCode === 'FT');
+  return charged || offered ? { charged, offered } : null;
+}
+
 /** What DHL's products / quotes depend on — a change here makes them stale (Backend routeFingerprint is final). */
 export function routeSnapshot(f: WizardForm): string {
-  const side = (p: PartyForm) => [p.country_code, p.city.trim().toLowerCase(), p.postal_code.trim()];
+  const side = (p: PartyForm) => [p.country_code, p.city.trim().toLowerCase(), p.postal_code.trim(), p.address_line1.trim()];
   return JSON.stringify({
     s: side(f.shipper), r: side(f.receiver), d: f.shipment_date, c: needsCustoms(f), cur: needsCustoms(f) ? f.currency : null,
     v: needsCustoms(f) ? itemTotals(f.items).value : null,
     p: f.packages.map((p) => [p.weight_kg, p.length_cm, p.width_cm, p.height_cm, p.quantity]),
     pay: [f.transport_payer, f.transport_payer_account, needsCustoms(f) ? f.duties_payer : 'receiver', f.duties_payer_account],
     wy: needsCustoms(f) && f.paperless_trade,
+    vas: f.service_codes.filter((s) => s !== 'WY' && s !== 'DD').sort(),
   });
 }
 

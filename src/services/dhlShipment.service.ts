@@ -173,6 +173,8 @@ export interface RateLine {
   currency: string | null;
   category: ChargeCategory;
   tax: number | null;
+  /** The line before tax as DHL states it (TAX basePrice), when given. */
+  net?: number | null;
   isCustomerAgreement: boolean | null;
 }
 export interface RateQuote {
@@ -188,9 +190,10 @@ export interface RateQuote {
   totalTransitDays: number | null;
   breakdown: RateLine[];
   weight: { volumetric: number | null; provided: number | null; unit: string | null } | null;
-  optionalServices: Array<{ serviceCode: string; name: string | null; serviceTypeCode: string | null; isCustomerAgreement: boolean | null }>;
+  optionalServices: Array<{ serviceCode: string; name: string | null; serviceTypeCode: string | null; isCustomerAgreement: boolean | null; isMarketedService?: boolean | null }>;
   pickupCapabilities: PickupCapabilities | null;
   deliveryCapabilities: DeliveryCapabilities | null;
+  pricingDate?: string | null;
 }
 
 export interface ShipmentDocument { id: number; document_type: string; content_type: string; size_bytes: number; sha256: string; origin?: string; created_at?: string }
@@ -298,7 +301,8 @@ export interface CostSummary {
   product: { code: string; name: string | null } | null;
   dhl: {
     total: number | null; currency: string | null; currency_type: string | null; tax_total: number | null; is_customer_agreement: boolean | null;
-    charges: Array<{ category: ChargeCategory; code: string | null; name: string | null; amount: number | null; currency: string | null; tax_included: number | null }>;
+    charges: Array<{ category: ChargeCategory; code: string | null; name: string | null; amount: number | null; net?: number | null; currency: string | null; tax_included: number | null }>;
+    optional_services?: Array<{ code: string; priced: number | null }>;
     weights: { physical_total_kg: number | null; dhl_volumetric_kg: number | null; dhl_provided_kg: number | null; chargeable_kg: null };
     delivery: { estimated: string; date: string; time: string | null; by_end_of_day: boolean; type_code: string | null; transit_days: number | null } | null;
     pickup_capabilities: PickupCapabilities | null;
@@ -383,7 +387,8 @@ export const dhlShipmentService = {
   checkProducts: (id: number) => api.post<{ products: ProductOption[] }>(`${BASE}/${id}/products`, {}),
   selectProduct: (id: number, product_code: string) => api.post<DhlShipment>(`${BASE}/${id}/product`, { product_code }),
   validate: (id: number) => api.post<ValidationResult>(`${BASE}/${id}/validate`, {}),
-  checkRates: (id: number) => api.post<{ quotes: RateQuote[] }>(`${BASE}/${id}/rates`, {}),
+  /** quoted_at: when SHIPPEC received the quote from DHL ("DHL rate estimate as of"). */
+  checkRates: (id: number) => api.post<{ quotes: RateQuote[]; quoted_at?: string | null }>(`${BASE}/${id}/rates`, {}),
   setPricing: (id: number, p: { selling_price: number; price_currency: string; dhl_cost_source: 'dhl_quote' | 'manual' | 'unknown'; dhl_cost?: number | null }) =>
     api.post<{ shipment: DhlShipment; warnings: string[] }>(`${BASE}/${id}/pricing`, p),
   confirm: (id: number) => api.post<DhlShipment & { replayed: boolean }>(`${BASE}/${id}/confirm`, {}),

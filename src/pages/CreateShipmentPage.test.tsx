@@ -200,11 +200,12 @@ describe('«إنشاء شحنة» wizard', () => {
     await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledWith(5))
     const card = (await screen.findByText('EXPRESS DOMESTIC')).closest('article') as HTMLElement
     expect(within(card).getByText('66.18 ر.س')).toBeTruthy()
-    expect(within(card).getByText(/بنهاية اليوم/)).toBeTruthy()
-    fireEvent.click(within(card).getByRole('button', { name: 'عرض التفاصيل' }))
-    expect(await screen.findByText('رسوم الوقود')).toBeTruthy()
-    expect(screen.getByText('رسوم الطلب')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'إغلاق' }))
+    expect(within(card).getByText('نهاية اليوم')).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: /التفاصيل/ }))
+    expect(await within(card).findByText('رسوم الوقود')).toBeTruthy()
+    expect(within(card).getByText('رسوم الطلب')).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: /التفاصيل/ }))
+    expect(within(card).queryByText('رسوم الوقود')).toBeNull()
     fireEvent.click(within(card).getByRole('button', { name: 'اختيار' }))
     await waitFor(() => expect(svc.selectProduct).toHaveBeenCalledWith(5, 'N'))
     fireEvent.change(screen.getByLabelText(/سعر البيع للعميل/), { target: { value: '100' } })
@@ -257,6 +258,100 @@ describe('«إنشاء شحنة» wizard', () => {
     await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledTimes(2))
     expect(svc.updateDraft).toHaveBeenCalled() // the changed shipment is saved first, then DHL is asked again
     await waitFor(() => expect(screen.queryByText('The shipment data changed')).toBeNull())
+  })
+
+  /** DHL TEST 2026-11-18 (domestic N), with DHL's lines before tax (basePrice). */
+  const NET_QUOTE = {
+    ...QUOTE, amount: 75.73, taxTotal: 9.88,
+    breakdown: [
+      { name: 'EXPRESS DOMESTIC', serviceCode: null, typeCode: null, amount: 57.56, currency: 'SAR', category: 'transportation', tax: 7.51, net: 50.05, isCustomerAgreement: null },
+      { name: 'DEMAND SURCHARGE', serviceCode: 'NX', typeCode: 'SCH', amount: 0.69, currency: 'SAR', category: 'demand_surcharge', tax: 0.09, net: 0.6, isCustomerAgreement: null },
+      { name: 'FUEL SURCHARGE', serviceCode: 'FF', typeCode: 'SCH', amount: 17.48, currency: 'SAR', category: 'fuel_surcharge', tax: 2.28, net: 15.2, isCustomerAgreement: null },
+    ],
+    optionalServices: ['SF', 'SD', 'NN', 'II', 'HE', 'CT'].map((serviceCode) => ({ serviceCode, name: serviceCode, serviceTypeCode: 'XCH', isCustomerAgreement: false, isMarketedService: true })),
+  }
+  const ymdOf = (el: Element) => el.getAttribute('data-date') as string
+
+  it('Service (EN, MyDHL+): «I\'m sending my shipment on» date cards (Today / Tomorrow / weekday, «More +» limited to DHL\'s range); a new date is saved and DHL asked again; the result card shows DHL\'s delivery date, delivered-by, price, product; Details shows the booking cut-off, latest pickup, code and DHL\'s breakdown with VAT and DHL\'s total; the rate time is DHL\'s quote time', async () => {
+    svc.get.mockResolvedValue(shipment({ rate_quotes: [NET_QUOTE], rates_checked_at: '2026-11-24T19:04:00Z' }))
+    svc.updateDraft.mockImplementation(async (_id: number, c: Record<string, unknown>) => shipment({ shipment_date: c.shipment_date }))
+    svc.checkProducts.mockResolvedValue({ products: PRODUCTS })
+    svc.checkRates.mockResolvedValue({ quotes: [NET_QUOTE], quoted_at: '2026-11-24T20:10:00Z' })
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Service/)
+    expect(await screen.findByText("I'm sending my shipment on")).toBeTruthy()
+    const dates = within(screen.getByRole('radiogroup', { name: "I'm sending my shipment on" })).getAllByRole('radio')
+    expect(dates).toHaveLength(7)
+    expect(dates[0].textContent).toContain('Today')
+    expect(dates[1].textContent).toContain('Tomorrow')
+    // «More +»: a calendar limited to the dates DHL accepts (no past date)
+    fireEvent.click(screen.getByTestId('ship-date-more'))
+    const cal = screen.getByLabelText(/^Shipment date/) as HTMLInputElement
+    expect(cal.min).toBe(ymdOf(dates[0]))
+    expect(cal.max > ymdOf(dates[6])).toBe(true)
+    expect(screen.getByText(/the saved shipment date has passed/i)).toBeTruthy()
+    // the card: DHL's estimated delivery 2026-11-22T23:59 → «November 22 · Sunday · End of Day», DHL's total
+    const card = (await screen.findByText('EXPRESS DOMESTIC')).closest('article') as HTMLElement
+    expect(within(card).getByTestId('delivery-date').textContent).toBe('November 22Sunday')
+    expect(within(card).getByTestId('delivered-by').textContent).toBe('End of Day')
+    expect(within(card).getByTestId('estimated-price').textContent).toBe('75.73 SAR')
+    expect(within(card).getByRole('button', { name: /Selected/ })).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: /Details/ }))
+    const details = within(within(card).getByTestId('service-details'))
+    expect(details.getByText('Book Shipment By').nextElementSibling?.textContent).toBe('November 19, 17:30')
+    expect(details.getByText('Latest Courier Pickup').nextElementSibling?.textContent).toBe('18:30')
+    expect(details.getByText('QDDF')).toBeTruthy()
+    const rows = [...card.querySelectorAll('[data-charge]')].map((r) => r.textContent)
+    expect(rows).toEqual(['Transportation ChargesExpress Domestic50.05 SAR', 'Demand Surcharge0.60 SAR', 'Fuel Surcharge15.20 SAR', 'VAT/Tax9.88 SAR', 'Total75.73 SAR'])
+    expect(screen.getByTestId('rate-timestamp').textContent).toMatch(/DHL rate estimate as of .*2026/)
+    // another date: saved with that date, then DHL's products and prices for it
+    fireEvent.click(dates[1])
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalledWith(5, expect.objectContaining({ shipment_date: ymdOf(dates[1]) })))
+    await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledTimes(1))
+    expect(svc.checkRates).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(within(screen.getByRole('radiogroup', { name: "I'm sending my shipment on" })).getAllByRole('radio')[1].getAttribute('aria-checked')).toBe('true'))
+    expect(screen.queryByText('The shipment data changed')).toBeNull()
+  })
+
+  it('Service (AR): optional services only as DHL lists them for the chosen product («السعر تحسبه DHL» until DHL prices it); ticking one saves it and DHL re-rates; one signature option; GoGreen only from DHL', async () => {
+    const withSf = { ...NET_QUOTE, amount: 100.73, optionalServices: NET_QUOTE.optionalServices.filter((s) => s.serviceCode !== 'SF'),
+      breakdown: [...NET_QUOTE.breakdown, { name: 'DIRECT SIGNATURE', serviceCode: 'SF', typeCode: 'XCH', amount: 25, currency: 'SAR', category: 'other', tax: 0, net: 25, isCustomerAgreement: false }] }
+    svc.get.mockResolvedValue(shipment({ rate_quotes: [NET_QUOTE] }))
+    svc.updateDraft.mockImplementation(async (_id: number, c: Record<string, unknown>) => shipment({ service_codes: c.service_codes }))
+    svc.checkProducts.mockResolvedValue({ products: PRODUCTS })
+    svc.checkRates.mockResolvedValueOnce({ quotes: [withSf], quoted_at: '2026-11-24T20:10:00Z' })
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/الخدمة/)
+    const list = within(await screen.findByTestId('optional-services'))
+    // DHL listed SF, SD, NN (offered here) and II / HE / CT (need more data or technical — not offered)
+    expect([...screen.getByTestId('optional-services').querySelectorAll('[data-service]')].map((e) => e.getAttribute('data-service'))).toEqual(['NN', 'SD', 'SF'])
+    expect(list.getByText('توقيع مباشر')).toBeTruthy()
+    expect(screen.getByTestId('service-price-SF').textContent).toBe('السعر تحسبه DHL')
+    expect(screen.queryByText(/0\.00/)).toBeNull()
+    expect(screen.queryByTestId('gogreen-card')).toBeNull()
+    fireEvent.click(list.getByRole('checkbox', { name: /توقيع مباشر/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalledWith(5, expect.objectContaining({ service_codes: ['SF'] })))
+    await waitFor(() => expect(svc.checkRates).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByTestId('service-price-SF').textContent).toBe('رسوم إضافية 25.00 ر.س'))
+    expect(((await screen.findByText('EXPRESS DOMESTIC')).closest('article') as HTMLElement).querySelector('[data-testid="estimated-price"]')?.textContent).toBe('100.73 ر.س')
+    // adult signature replaces direct signature (one signature option)
+    svc.checkRates.mockResolvedValueOnce({ quotes: [NET_QUOTE], quoted_at: '2026-11-24T20:12:00Z' })
+    fireEvent.click(within(screen.getByTestId('optional-services')).getByRole('checkbox', { name: /توقيع شخص بالغ/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({ service_codes: ['SD'] })))
+    await waitFor(() => expect(svc.checkRates).toHaveBeenCalledTimes(2))
+  })
+
+  it('Service: no optional services when DHL lists none; GoGreen card when DHL\'s quote has GoGreen', async () => {
+    const green = { ...NET_QUOTE, optionalServices: [], breakdown: [...NET_QUOTE.breakdown, { name: 'GOGREEN PLUS - CARBON REDUCED', serviceCode: 'FD', typeCode: 'SCH', amount: 3.12, currency: 'SAR', category: 'gogreen', tax: 0, net: 3.12, isCustomerAgreement: true }] }
+    svc.get.mockResolvedValue(shipment({ rate_quotes: [green] }))
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/الخدمة/)
+    expect(await screen.findByTestId('optional-services-none')).toBeTruthy()
+    expect(screen.getByTestId('gogreen-card').textContent).toMatch(/GoGreen Plus — شحن بانبعاثات كربونية أقل.*3\.12 ر\.س/)
   })
 
   it('pickup: three choices; service points that do not accept drop-off cannot be chosen', async () => {

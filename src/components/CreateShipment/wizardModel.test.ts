@@ -4,6 +4,7 @@ import {
   fromShipment, groupPieces, incotermAdvice, isOriginWeekend, issuesToErrors, maskAccount, needsUsExportFiling, paymentGate, suggestedIncoterm, suggestedInvoiceType,
   itemTotals, locateIssue, needsCustoms, nextBusinessDay, packageTotals, partiesGate, routeIssuesText, routeSnapshot, splitPhone, stepMissing, toContent, translateIssue,
   visibleSteps, type WizardForm,
+  chargeRows, dateParts, dhlDateTime, goGreenOf, optionalServiceRows, originToday, shipDateCards, shipDateRange, toggleOptionalService,
 } from './wizardModel';
 import { applyAddress, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, withCountry } from './partiesModel';
 import { canShipment } from '../../utils/dhlShipmentPermissions';
@@ -299,6 +300,79 @@ describe('wizard model', () => {
     expect(stepMissing({ ...intlGoods(), shipment_purpose: '' }, 'details')).toContain('غرض الشحنة');
     expect(stepMissing({ ...emptyForm(), pickup_option: 'drop_off' }, 'pickup')).toContain('نقطة الخدمة');
     expect(nextBusinessDay(new Date('2026-11-19T10:00:00Z'))).toBe('2026-11-22'); // Thu → Sun
+  });
+
+  it('Service: shipment dates at the sender (its time zone), Today / Tomorrow, never past and never beyond DHL\'s 10 days', () => {
+    const f = { ...emptyForm(), shipper: saParty() };
+    // 2026-11-24 22:30 UTC = 2026-11-25 01:30 in Riyadh
+    const late = new Date('2026-11-24T22:30:00Z');
+    expect(originToday(f, late)).toBe('2026-11-25');
+    expect(shipDateRange(f, late)).toEqual({ min: '2026-11-25', max: '2026-12-04' }); // counted from the Backend's (UTC) today
+    const cards = shipDateCards(f, 7, late);
+    expect(cards.map((c) => c.ymd)).toEqual(['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01']);
+    expect(cards.slice(0, 3).map((c) => c.rel)).toEqual(['today', 'tomorrow', null]);
+    expect(shipDateCards(f, 20, late).at(-1)?.ymd).toBe('2026-12-04');
+    // a sender in New York with its typed time zone
+    const ny = { ...emptyForm(), shipper: usParty(), origin_gmt_offset: '-05:00' };
+    expect(originToday(ny, new Date('2026-11-25T03:00:00Z'))).toBe('2026-11-24');
+    expect(dateParts('2026-11-25', 'en')).toEqual({ month: 'November', day: '25', weekday: 'Wednesday' });
+    expect(dateParts('2026-12-08', 'ar')).toMatchObject({ day: '8', month: 'ديسمبر', weekday: 'الثلاثاء' });
+    expect(dhlDateTime('2026-12-08T23:59:00')).toEqual({ date: '2026-12-08', time: '23:59', eod: true });
+    expect(dhlDateTime('2026-11-30T12:00:00')).toEqual({ date: '2026-11-30', time: '12:00', eod: false });
+    expect(dhlDateTime(null)).toBeNull();
+  });
+
+  it('Service: DHL\'s breakdown as MyDHL+ shows it — DHL\'s names, lines before tax + VAT only when DHL stated them, DHL\'s own total (never summed here)', () => {
+    const line = (name: string, code: string | null, amount: number, tax: number, net: number | null, category: string) => ({ name, serviceCode: code, typeCode: null, amount, currency: 'SAR', category: category as never, tax, net, isCustomerAgreement: null });
+    // DHL TEST 2026-11-18, domestic N: 57.56 (net 50.05) + 0.69 (0.60) + 17.48 (15.20), VAT 9.88, total 75.73
+    const q = { amount: 75.73, currency: 'SAR', taxTotal: 9.88, breakdown: [line('EXPRESS DOMESTIC', null, 57.56, 7.51, 50.05, 'transportation'), line('DEMAND SURCHARGE', 'NX', 0.69, 0.09, 0.6, 'demand_surcharge'), line('FUEL SURCHARGE', 'FF', 17.48, 2.28, 15.2, 'fuel_surcharge')] };
+    const en = chargeRows(q, 'en');
+    expect(en.rows.map((r) => [r.label, r.amount])).toEqual([['Transportation Charges', 50.05], ['Demand Surcharge', 0.6], ['Fuel Surcharge', 15.2]]);
+    expect([en.tax, en.taxIncluded, en.total]).toEqual([9.88, null, 75.73]);
+    expect(chargeRows(q, 'ar').rows.map((r) => r.label)).toEqual(['أجور النقل', 'رسوم الطلب', 'رسوم الوقود']);
+    // DHL without basePrice on a line → DHL's priced lines (tax included) and the tax as "of which"
+    const noNet = { ...q, breakdown: [q.breakdown[0], { ...q.breakdown[1], net: null }, q.breakdown[2]] };
+    expect(chargeRows(noNet, 'en').rows.map((r) => r.amount)).toEqual([57.56, 0.69, 17.48]);
+    expect(chargeRows(noNet, 'en')).toMatchObject({ tax: null, taxIncluded: 9.88, total: 75.73 });
+    // no tax (international): DHL's lines; an unknown DHL charge keeps DHL's name
+    const intl = { amount: 952.8, currency: 'SAR', taxTotal: 0, breakdown: [line('EXPRESS WORLDWIDE', null, 550.42, 0, 550.42, 'transportation'), line('GOGREEN PLUS - BASIC', 'FE', 52, 0, 52, 'gogreen'), line('REMOTE AREA DELIVERY', 'OO', 40, 0, 40, 'other')] };
+    expect(chargeRows(intl, 'en').rows.map((r) => r.label)).toEqual(['Transportation Charges', 'Gogreen Plus - Basic', 'Remote Area Delivery']);
+    expect(chargeRows(intl, 'ar').rows.map((r) => r.label)).toEqual(['أجور النقل', 'GoGreen', 'Remote Area Delivery']);
+    expect(chargeRows(intl, 'en')).toMatchObject({ tax: null, taxIncluded: null, total: 952.8 });
+  });
+
+  it('Service: optional services only where DHL listed them for the product; DHL\'s charge once requested; one signature option; GoGreen from DHL only', () => {
+    const quote = {
+      currency: 'SAR',
+      breakdown: [{ name: 'EXPRESS 12:00', serviceCode: null, typeCode: null, amount: 126.48, currency: 'SAR', category: 'transportation' as const, tax: 0, isCustomerAgreement: null }],
+      optionalServices: ['SF', 'SD', 'NN', 'JD', 'LX', 'FT', 'II', 'HE', 'CT'].map((serviceCode) => ({ serviceCode, name: serviceCode, serviceTypeCode: 'XCH', isCustomerAgreement: false })),
+    };
+    // insurance (needs a value), dangerous goods and technical codes are DHL-listed but not offered here
+    expect(optionalServiceRows(quote, [], 'en').map((r) => r.code)).toEqual(['FT', 'JD', 'LX', 'NN', 'SD', 'SF']);
+    expect(optionalServiceRows({ ...quote, optionalServices: [{ serviceCode: 'NN', name: 'NEUTRAL DELIVERY', serviceTypeCode: 'XCH', isCustomerAgreement: false }] }, [], 'ar'))
+      .toEqual([expect.objectContaining({ code: 'NN', name: 'تسليم محايد', selected: false, price: null })]);
+    expect(optionalServiceRows(null, ['SF'])).toEqual([]);
+    expect(optionalServiceRows({ ...quote, optionalServices: [] }, [])).toEqual([]);
+    // requested → DHL prices it (and no longer lists it as unpriced)
+    const priced = { ...quote, optionalServices: quote.optionalServices.filter((s) => s.serviceCode !== 'SF'), breakdown: [...quote.breakdown, { name: 'DIRECT SIGNATURE', serviceCode: 'SF', typeCode: 'XCH', amount: 25, currency: 'SAR', category: 'other' as const, tax: 0, isCustomerAgreement: false }] };
+    expect(optionalServiceRows(priced, ['SF'], 'en').find((r) => r.code === 'SF')).toMatchObject({ selected: true, price: 25, currency: 'SAR', name: 'Direct Signature' });
+    // a GoGreen charge DHL already applies by agreement: no second GoGreen choice
+    const agreement = { ...quote, breakdown: [...quote.breakdown, { name: 'GOGREEN PLUS - CARBON REDUCED', serviceCode: 'FD', typeCode: 'SCH', amount: 3.12, currency: 'SAR', category: 'gogreen' as const, tax: 0, isCustomerAgreement: true }] };
+    expect(optionalServiceRows(agreement, []).map((r) => r.code)).not.toContain('FT');
+    expect(goGreenOf(agreement)).toMatchObject({ charged: { amount: 3.12 }, offered: true });
+    expect(goGreenOf({ ...quote, optionalServices: [] })).toBeNull();
+    // one signature option at a time; others stay
+    expect(toggleOptionalService(['NN', 'SF'], 'SD')).toEqual(['NN', 'SD']);
+    expect(toggleOptionalService(['NN', 'SD'], 'SD')).toEqual(['NN']);
+    expect(toggleOptionalService(['WY'], 'JD')).toEqual(['WY', 'JD']);
+  });
+
+  it('Service: an optional service or the street line makes DHL\'s quote stale (Backend routeFingerprint)', () => {
+    const f = { ...emptyForm(), shipper: saParty(), receiver: saParty() };
+    const base = routeSnapshot(f);
+    expect(routeSnapshot({ ...f, service_codes: ['SF'] })).not.toBe(base);
+    expect(routeSnapshot({ ...f, receiver: { ...f.receiver, address_line1: '1 Other Road' } })).not.toBe(base);
+    expect(routeSnapshot({ ...f, service_codes: ['WY'] })).toBe(base); // Paperless follows its own flag
   });
 
   it('role map mirrors the Backend', () => {

@@ -11,7 +11,7 @@ import {
   dhlShipmentService, type CreateResult, type DhlShipment, type Issue, type ProductOption, type RateQuote, type ValidationResult,
 } from '../../services/dhlShipment.service';
 import {
-  emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, visibleSteps,
+  emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, toggleOptionalService, visibleSteps,
   type FieldErrors, type StepId, type WizardForm,
 } from './wizardModel';
 import { useCsLang } from './csLang';
@@ -51,6 +51,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   const [stepIssues, setStepIssues] = useState<Partial<Record<StepId, number>>>({});
   const [products, setProducts] = useState<ProductOption[] | null>(null);
   const [quotes, setQuotes] = useState<RateQuote[] | null>(null);
+  /** When SHIPPEC received the current DHL quotes (Backend rates_checked_at) — never the page time. */
+  const [quotedAt, setQuotedAt] = useState<string | null>(null);
   const [servicesSnapshot, setServicesSnapshot] = useState<string | null>(null);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [servicesError, setServicesError] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       applyShipment(sh, { resetForm: true, clientName: String(sh['client_name'] ?? '') });
       if (sh.available_products) setProducts(sh.available_products);
       if (sh.rate_quotes) setQuotes(sh.rate_quotes);
+      setQuotedAt(typeof sh['rates_checked_at'] === 'string' ? (sh['rates_checked_at'] as string) : null);
       if (sh.selling_price != null) {
         setPricing({ selling_price: String(Number(sh.selling_price)), cost_mode: (sh.dhl_cost_source ?? 'dhl_quote') as CostMode, manual_cost: sh.dhl_cost != null ? String(Number(sh.dhl_cost)) : '' });
       }
@@ -148,8 +151,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   }, [pricing, form.product_code, quotes, servicesStale]);
 
   /** Saves the draft when it changed (create on first save), then its SHIPPEC price. Returns the stored shipment. */
-  const saveContent = useCallback(async (quiet = true): Promise<DhlShipment | null> => {
-    const content = toContent(form);
+  const saveContent = useCallback(async (quiet = true, override?: WizardForm): Promise<DhlShipment | null> => {
+    const content = toContent(override ?? form);
     const json = JSON.stringify(content);
     if (shipment && json === savedJson) return shipment;
     setSaving(true);
@@ -179,27 +182,34 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     }
   }, [form, shipment, savedJson, showIssues]);
 
-  const save = useCallback(async (quiet = true): Promise<DhlShipment | null> => {
-    const sh = await saveContent(quiet);
+  const save = useCallback(async (quiet = true, override?: WizardForm): Promise<DhlShipment | null> => {
+    const sh = await saveContent(quiet, override);
     if (sh && sh.creation_status !== 'ready') await persistPrice(sh);
     return sh;
   }, [saveContent, persistPrice]);
 
-  /** DHL products + quotes for the current route (through the Backend). */
-  const fetchServices = useCallback(async () => {
+  /**
+   * DHL products + quotes for the current route (through the Backend). `next` = the form after a
+   * change that needs DHL again (a new shipment date, an optional service): it is applied, saved,
+   * and DHL is asked for that data — the old list never stays selectable.
+   */
+  const fetchServices = useCallback(async (next?: WizardForm) => {
+    const f = next ?? form;
+    if (next) setForm(next);
     setServicesLoading(true);
     setServicesError(null);
     try {
-      const sh = await save();
+      const sh = await save(true, f);
       if (!sh) return;
       const [p, r] = await Promise.allSettled([dhlShipmentService.checkProducts(sh.id), dhlShipmentService.checkRates(sh.id)]);
       if (p.status === 'rejected') throw p.reason;
       setProducts(p.value.products);
       setQuotes(r.status === 'fulfilled' ? r.value.quotes : []);
+      setQuotedAt(r.status === 'fulfilled' ? r.value.quoted_at ?? null : null);
       if (r.status === 'rejected') setServicesError(`${tRef.current('تعذر جلب الأسعار:', 'Could not load the prices:')} ${describeApiError(r.reason, tRef.current('أعد المحاولة', 'try again'))}`);
-      setServicesSnapshot(routeSnapshot(form));
-      const still = p.value.products.some((x) => x.productCode === form.product_code);
-      if (form.product_code && !still) setForm((f) => ({ ...f, product_code: '', local_product_code: '' }));
+      setServicesSnapshot(routeSnapshot(f));
+      const still = p.value.products.some((x) => x.productCode === f.product_code);
+      if (f.product_code && !still) setForm((x) => ({ ...x, product_code: '', local_product_code: '' }));
     } catch (err) {
       const issues = issuesOf(err);
       if (issues.length) showIssues(issues);
@@ -210,6 +220,16 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       setServicesLoading(false);
     }
   }, [save, form, showIssues]);
+
+  /** An optional DHL service ticked / unticked: saved, then DHL prices the shipment again with it. */
+  const toggleService = useCallback((code: string) => {
+    void fetchServices({ ...form, service_codes: toggleOptionalService(form.service_codes, code) });
+  }, [fetchServices, form]);
+  /** A new shipment date: saved, then DHL's products and prices for that date. */
+  const changeShipmentDate = useCallback((ymd: string) => {
+    if (!ymd || ymd === form.shipment_date) return;
+    void fetchServices({ ...form, shipment_date: ymd });
+  }, [fetchServices, form]);
 
   const chooseProduct = useCallback(async (code: string) => {
     setSelecting(code);
@@ -317,6 +337,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     setStepIssues({});
     setProducts(null);
     setQuotes(null);
+    setQuotedAt(null);
     setServicesSnapshot(null);
     setValidation(null);
     setValidatedJson(null);
@@ -329,7 +350,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
 
   return {
     form, update, shipment, setShipment, step, setStep, steps, loading, loadError, saving, dirty, errors, stepIssues,
-    save, products, quotes, quote, servicesLoading, servicesError, servicesStale, fetchServices, chooseProduct, selecting,
+    save, products, quotes, quote, quotedAt, servicesLoading, servicesError, servicesStale, fetchServices, toggleService, changeShipmentDate, chooseProduct, selecting,
     validate, validation, validating, validationCurrent: validatedJson === contentJson && !!validation,
     pricing, setPricing, dhlCost, create, createPhase, createError, result, setResult, reset, customs: needsCustoms(form),
   };

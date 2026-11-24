@@ -8,9 +8,11 @@ import { AlertTriangle, CheckCircle2, Loader2, Send, ShieldCheck, X } from 'luci
 import { Dialog } from '../shared/Dialog';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { Button, Note, Section, Stat } from './ui';
+import { ChargeTable } from './StepService';
 import { useCsLang } from './csLang';
 import {
-  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, maskAccount, money, packageTotals, purposeLabel, stepLabel, translateIssue, type StepId,
+  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, maskAccount, money, optionalServiceRows, packageTotals, purposeLabel, stepLabel,
+  translateIssue, type StepId,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
 
@@ -64,6 +66,13 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
   const priced = w.pricing.selling_price !== '' && Number.isFinite(sell) && sell > 0;
   const profit = priced && w.dhlCost != null ? Math.round((sell - w.dhlCost) * 100) / 100 : null;
   const est = quote?.deliveryCapabilities?.estimatedDeliveryDateAndTime ?? quote?.estimatedDelivery ?? null;
+  // the optional services as they go to DHL (WY / DD are SHIPPEC's own, shown elsewhere)
+  const chosen = form.service_codes.filter((c) => c !== 'WY' && c !== 'DD');
+  const rows = optionalServiceRows(quote, chosen, lang).filter((r) => r.selected);
+  const optional = chosen.map((c) => {
+    const r = rows.find((x) => x.code === c);
+    return r ? `${r.name}${r.price != null ? ` (${money(r.price, r.currency ?? 'SAR', lang)})` : ''}` : c;
+  });
   const issues = validation?.issues ?? [];
   const warnings = validation?.warnings ?? [];
   const grouped = issues.reduce<Record<string, string[]>>((acc, i) => {
@@ -150,7 +159,14 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
             <Stat label={t('التسليم المتوقع', 'Estimated delivery')} value={est ? `${est.slice(0, 10)}${est.slice(11, 16) === '23:59' ? t(' · بنهاية اليوم', ' · by end of day') : ` · ${est.slice(11, 16)}`}` : '—'} />
             <Stat label={t('تكلفة DHL', 'DHL cost')} value={m(w.dhlCost)} />
             <Stat label={t('تاريخ الشحن', 'Shipment date')} value={form.shipment_date} />
+            <div className="col-span-2"><Stat label={t('الخدمات الاختيارية', 'Optional services')} value={optional.length ? optional.join(lang === 'en' ? ', ' : '، ') : t('لا يوجد', 'None')} /></div>
           </div>
+          {quote && (
+            <details className="mt-4 text-sm" data-testid="review-quote">
+              <summary className="cursor-pointer text-xs font-extrabold text-indigo-700 dark:text-indigo-300">{t('عرض سعر DHL (التفاصيل)', 'DHL quote (details)')}</summary>
+              <div className="mt-2"><ChargeTable q={quote} testId="review-charges" /></div>
+            </details>
+          )}
         </Section>
         <section className="rounded-3xl border-2 border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-900/10 p-4 sm:p-6">
           <h2 className="text-base font-extrabold text-emerald-900 dark:text-emerald-300 mb-4">{t('تسعير SHIPPEC', 'SHIPPEC pricing')}</h2>
