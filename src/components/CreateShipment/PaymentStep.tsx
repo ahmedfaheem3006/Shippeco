@@ -14,7 +14,7 @@
  * "Remember these payment options" is not offered: SHIPPEC has no separate, secured store
  * for payment preferences, and account numbers are never saved into contacts.
  */
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Landmark, Scale, Wallet } from 'lucide-react';
 import { dhlShipmentService, type DutiesPayer, type ShipmentOptions, type TransportPayer } from '../../services/dhlShipment.service';
 import { Button, ChoiceCards, Field, Note, Section, SelectInput, TextInput } from './ui';
@@ -45,7 +45,9 @@ export function StepPayment({ w, showGate }: { w: Wizard; showGate: boolean }) {
     return () => { alive = false; };
   }, []);
   const shippecAccount = opts?.payment?.shipper_account_masked ?? null;
-  const accountLine = shippecAccount ? t(`حساب DHL: ${shippecAccount}`, `DHL account ${shippecAccount}`) : t('حساب SHIPPEC المعتمد لدى DHL.', "SHIPPEC's configured DHL account.");
+  const accountLine: React.ReactNode = shippecAccount
+    ? <>{t('حساب DHL:', 'DHL account')} <bdi dir="ltr" className="font-mono">{shippecAccount}</bdi></>
+    : t('حساب SHIPPEC المعتمد لدى DHL.', "SHIPPEC's configured DHL account.");
 
   const setTransport = (v: TransportPayer) => update((f) => (f.transport_payer === v ? f : { ...f, transport_payer: v, transport_payer_account: '' }));
   const setDuties = (v: DutiesPayer) => {
