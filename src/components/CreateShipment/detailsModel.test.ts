@@ -91,7 +91,7 @@ describe('draft content', () => {
     const c = toContent(f);
     expect(c).toMatchObject({ customer_reference: 'PO-1001', customs_required: false, declared_value: '150', currency: 'USD', items: [] });
     expect(c.details_extra).toEqual({ references: [{ type: 'CU', value: 'PO-1001' }, { type: 'CU', value: 'INTERNAL-7' }], document_protection: true, insurance: false,
-      estimated_duties: false, precalculated_duties: false, item_entry: 'describe', charges: [], items: [] });
+      estimated_duties: false, precalculated_duties: false, item_entry: 'describe', charges: [], items: [], customs_invoice_mode: null });
   })
   it('packages: items to DHL; manufacturer ID, line reference, charges, insurance and duty preferences only in details_extra; round trip', () => {
     const f: WizardForm = { ...intlGoods(), insurance: true, estimated_duties: true, precalculated_duties: true, item_entry: 'upload',

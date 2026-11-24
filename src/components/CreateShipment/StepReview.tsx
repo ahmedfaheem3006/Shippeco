@@ -128,7 +128,14 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
           {w.customs && <Stat label="Incoterm" value={form.incoterm || '—'} />}
           <Stat label={t('أجرة النقل على', 'Transportation paid by')} value={t(...PAYER[form.transport_payer])} />
           {w.customs && <Stat label={t('الرسوم والضرائب على', 'Duties & taxes paid by')} value={t(...PAYER[form.duties_payer])} />}
-          {w.customs && <Stat label="Paperless Trade" value={form.paperless_trade ? `${t('نعم', 'Yes')} (${form.dhl_invoice_type === 'proforma' ? 'Proforma' : 'Commercial'})` : t('لا', 'No')} />}
+          {w.customs && (
+            <Stat
+              label={t('الفاتورة الجمركية', 'Customs invoice')}
+              value={`${form.customs_invoice_mode === 'own' ? t('فاتورتي الخاصة', 'My own invoice') : `${t('تُنشئها DHL', 'Created by DHL')}${form.dhl_invoice_type ? ` (${form.dhl_invoice_type === 'proforma' ? 'Proforma' : 'Commercial'})` : ''}`}${
+                (form.customs_invoice_mode === 'own' || form.include_invoice_number) && form.customs_invoice_number.trim() ? ` · ${form.customs_invoice_number.trim()}` : ''}`}
+            />
+          )}
+          {w.customs && <Stat label="Paperless Trade" value={form.customs_invoice_mode === 'create' && form.paperless_trade ? `${t('نعم', 'Yes')} (${form.dhl_invoice_type === 'proforma' ? 'Proforma' : 'Commercial'})` : t('لا', 'No')} />}
           <Stat label={t('الاستلام', 'Pickup')} value={t(...PICKUP[form.pickup_option])} />
           {form.pickup_option === 'schedule' && <Stat label={t('موعد الاستلام', 'Pickup time')} value={`${form.shipment_date} · ${form.pickup_earliest_time || '—'}–${form.pickup_latest_time || '—'}`} />}
           {form.pickup_option === 'drop_off' && <Stat label={t('نقطة الخدمة', 'Service point')} value={form.service_point_name || '—'} />}

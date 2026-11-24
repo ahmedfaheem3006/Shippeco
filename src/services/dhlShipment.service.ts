@@ -72,6 +72,12 @@ export interface DraftContent {
   customs_invoice_number: string | null;
   customs_invoice_date: string | null;
   dhl_invoice_type: 'commercial' | 'proforma' | null;
+  /** exportDeclarations[].remarks (≤ 3 × 45). */
+  invoice_remarks: string[];
+  /** Declaration statement ids (exportDeclarations[].declarationNotes). */
+  declaration_statements: string[];
+  /** exportDeclarations[].customsDocuments (DHL type code + document ID). */
+  customs_documents: CustomsDocument[];
   shipment_date: string | null;
   origin_gmt_offset: string | null;
   shipment_purpose: ShipmentPurpose | null;
@@ -108,7 +114,11 @@ export interface DetailsExtraContent {
   item_entry: 'describe' | 'upload';
   charges: Array<{ type: 'freight' | 'insurance' | 'other'; description: string | null; amount: number | null }>;
   items: Array<{ manufacturer_id: string | null; line_reference: string | null }>;
+  /** Customs Invoice: DHL creates it (create) or the shipper's own (own); null on older drafts. */
+  customs_invoice_mode?: CustomsInvoiceMode | null;
 }
+export type CustomsInvoiceMode = 'create' | 'own';
+export interface CustomsDocument { type_code: string; value: string }
 
 export type PhoneType = 'mobile' | 'office' | 'fax';
 export interface PhoneEntry { type: PhoneType; code: string; number: string; extension: string; sms: boolean }
@@ -211,6 +221,9 @@ export interface DhlShipment {
   customs_invoice_number: string | null;
   customs_invoice_date: string | null;
   dhl_invoice_type: 'commercial' | 'proforma' | null;
+  invoice_remarks?: string[] | null;
+  declaration_statements?: string[] | null;
+  customs_documents?: CustomsDocument[] | null;
   shipment_date: string | null;
   origin_gmt_offset: string | null;
   shipment_purpose: ShipmentPurpose | null;
@@ -342,6 +355,10 @@ export interface ServicePoint {
 }
 
 export interface ShipmentOptions {
+  /** What may be offered right now (Paperless upload follows DHL_PROD_PAPERLESS_UPLOAD_ENABLED in Production). */
+  features?: { paperless_upload: boolean };
+  declaration_statements?: Array<{ id: string; supported: boolean }>;
+  customs_document_types?: string[];
   purposes: Array<{ value: ShipmentPurpose; label: string; dhl_export_reason_type: string | null; dhl_shipment_type: string | null }>;
   transport_payers: TransportPayer[];
   duties_payers: DutiesPayer[];

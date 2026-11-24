@@ -6,7 +6,8 @@
  */
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
 import type {
-  DetailsExtraContent, DhlShipment, DraftContent, DutiesPayer, Issue, ItemInput, Party, PartyDetailsContent, PhoneEntry, PhoneType, PickupOption, ShipmentPurpose, TransportPayer,
+  CustomsDocument, CustomsInvoiceMode, DetailsExtraContent, DhlShipment, DraftContent, DutiesPayer, Issue, ItemInput, Party, PartyDetailsContent, PhoneEntry, PhoneType,
+  PickupOption, ShipmentPurpose, TransportPayer,
 } from '../../services/dhlShipment.service';
 import { tr, type CsLang } from './csLang';
 
@@ -132,6 +133,16 @@ export interface WizardForm {
   customs_invoice_number: string;
   customs_invoice_date: string;
   dhl_invoice_type: 'commercial' | 'proforma' | '';
+  /** Customs Invoice (MyDHL+): «إنشاء فاتورة» (DHL generates it) or «استخدام فاتورتي الخاصة». */
+  customs_invoice_mode: CustomsInvoiceMode;
+  /** Create Invoice: «أرغب في إضافة رقم فاتورة» (the number is optional there). */
+  include_invoice_number: boolean;
+  /** "Additional Invoice Information (Remarks)" — one DHL remark per line (≤ 3 × 45). */
+  invoice_remarks: string;
+  /** Declaration statement ids (route-aware, see declarationOptions). */
+  declaration_statements: string[];
+  /** Additional customs documents: DHL type code + the document's ID (metadata only). */
+  customs_documents: CustomsDocument[];
   paperless_trade: boolean;
   incoterm: string;
   transport_payer: TransportPayer;
@@ -216,6 +227,7 @@ export function emptyForm(): WizardForm {
     client_id: null, client_name: '', content_kind: 'documents', content_description: '', references: [], declared_value: '', currency: 'SAR',
     document_protection: false, insurance: false, estimated_duties: false, precalculated_duties: false, item_entry: 'describe', charges: [],
     shipment_purpose: '', export_reason_type: '', customs_invoice_number: '', customs_invoice_date: '', dhl_invoice_type: '', paperless_trade: false,
+    customs_invoice_mode: 'create', include_invoice_number: false, invoice_remarks: '', declaration_statements: [], customs_documents: [],
     incoterm: 'DAP', transport_payer: 'shipper', transport_payer_account: '', duties_payer: 'receiver', duties_payer_account: '',
     shipment_date: nextBusinessDay(), origin_gmt_offset: '', product_code: '', local_product_code: '', service_codes: [],
     pickup_option: 'none', pickup_earliest_time: '', pickup_latest_time: '', pickup_location: '', pickup_location_type: '', pickup_instructions: '',
@@ -345,14 +357,18 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
   const refs = f.references.filter((r) => r.value.trim());
   const amountOf = (v: string) => { const n = num(v); return n == null ? null : Math.round(n * 100) / 100; };
   const services = f.service_codes.filter((s) => s !== 'WY' && s !== 'DD');
+  const createInvoice = customs && f.customs_invoice_mode === 'create';
+  const withNumber = customs && (f.customs_invoice_mode === 'own' || f.include_invoice_number);
+  const number = withNumber ? t(f.customs_invoice_number) : null;
+  const paperless = createInvoice && f.paperless_trade;
   return {
     client_id: f.client_id,
     customer_reference: t(refs[0]?.value),
     product_code: t(f.product_code),
     local_product_code: t(f.local_product_code),
-    service_codes: customs && f.paperless_trade ? [...services, 'WY'] : services,
+    service_codes: paperless ? [...services, 'WY'] : services,
     customs_required: customs,
-    paperless_trade: customs && f.paperless_trade,
+    paperless_trade: paperless,
     content_description: t(f.content_description) ?? (customs ? t(derivedContents(f)) : null),
     incoterm: customs ? t(f.incoterm) : null,
     currency: customs ? t(f.currency) : f.declared_value.trim() ? t(f.currency) : null,
@@ -360,9 +376,15 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
     shipment_purpose: customs && f.shipment_purpose ? f.shipment_purpose : null,
     export_reason_type: customs && t(f.export_reason_type) ? f.export_reason_type : null,
     shipment_type: null,
-    customs_invoice_number: customs ? t(f.customs_invoice_number) : null,
-    customs_invoice_date: customs ? t(f.customs_invoice_date) : null,
-    dhl_invoice_type: customs && f.dhl_invoice_type ? f.dhl_invoice_type : null,
+    customs_invoice_number: number,
+    customs_invoice_date: number ? t(f.customs_invoice_date) : null,
+    dhl_invoice_type: createInvoice && f.dhl_invoice_type ? f.dhl_invoice_type : null,
+    // remarks are printed on the invoice DHL creates (Create Invoice only)
+    invoice_remarks: createInvoice ? remarkLines(f.invoice_remarks) : [],
+    declaration_statements: createInvoice ? f.declaration_statements.filter((id) => declarationOptions(f).some((o) => o.id === id && o.supported)) : [],
+    customs_documents: customs
+      ? f.customs_documents.filter((d) => d.type_code || d.value.trim()).map((d) => ({ type_code: d.type_code, value: d.value.trim() }))
+      : [],
     shipment_date: t(f.shipment_date),
     origin_gmt_offset: needsOriginOffset(f) ? t(f.origin_gmt_offset) : null,
     transport_payer: f.transport_payer,
@@ -390,6 +412,7 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
       item_entry: f.item_entry,
       charges: customs ? f.charges.filter((c) => c.amount.trim()).map((c) => ({ type: c.type, description: t(c.description), amount: amountOf(c.amount) })) : [],
       items: sentItems.map((it) => ({ manufacturer_id: t(it.manufacturer_id), line_reference: it.show_reference ? t(it.line_reference) : null })),
+      customs_invoice_mode: customs ? f.customs_invoice_mode : null,
     },
     packages: f.packages.filter((p) => !blankPackage(p)).map((p) => ({
       weight_kg: p.weight_kg, length_cm: t(p.length_cm), width_cm: t(p.width_cm), height_cm: t(p.height_cm),
@@ -484,6 +507,12 @@ export function fromShipment(sh: DhlShipment, clientName = ''): WizardForm {
     shipment_purpose: sh.shipment_purpose ?? '', export_reason_type: s(sh.export_reason_type),
     customs_invoice_number: s(sh.customs_invoice_number), customs_invoice_date: s(sh.customs_invoice_date),
     dhl_invoice_type: sh.dhl_invoice_type ?? '', paperless_trade: !!sh.paperless_trade, incoterm: s(sh.incoterm) || 'DAP',
+    // older drafts (no stored mode): an invoice DHL renders = Create Invoice; an invoice number without one = the shipper's own
+    customs_invoice_mode: extra?.customs_invoice_mode ?? (sh.dhl_invoice_type ? 'create' : sh.customs_invoice_number ? 'own' : 'create'),
+    include_invoice_number: !!sh.customs_invoice_number,
+    invoice_remarks: (sh.invoice_remarks ?? []).join('\n'),
+    declaration_statements: Array.isArray(sh.declaration_statements) ? sh.declaration_statements : [],
+    customs_documents: (sh.customs_documents ?? []).map((d) => ({ type_code: s(d.type_code), value: s(d.value) })),
     transport_payer: sh.transport_payer ?? 'shipper', transport_payer_account: s(sh.transport_payer_account),
     duties_payer: sh.duties_payer ?? 'receiver', duties_payer_account: s(sh.duties_payer_account),
     shipment_date: s(sh.shipment_date) || f.shipment_date, origin_gmt_offset: s(sh.origin_gmt_offset),
@@ -555,6 +584,7 @@ export function locateIssue(field: string): { step: StepId; key: string } {
     content_description: 'details', customer_reference: 'details', customs_required: 'details', declared_value: 'details', shipment_purpose: 'details',
     export_reason_type: 'details', shipment_type: 'details',
     items: 'details', customs_invoice_number: 'customs', customs_invoice_date: 'customs', dhl_invoice_type: 'customs', paperless_trade: 'customs',
+    invoice_remarks: 'customs', declaration_statements: 'customs', customs_documents: 'customs',
     service_codes: 'customs', currency: 'details', customs: 'customs', details_extra: 'details',
     incoterm: 'payment', transport_payer: 'payment', transport_payer_account: 'payment', duties_payer: 'payment', duties_payer_account: 'payment',
     product_code: 'service', shipment_date: 'service', origin_gmt_offset: 'service', dhl: 'service',
@@ -606,6 +636,10 @@ const TRANSLATIONS: Array<[RegExp, string]> = [
   [/SHIPPEC's own DHL account/i, 'هذا رقم حساب SHIPPEC نفسه — اختر SHIPPEC كدافع'],
   [/no documented MyDHL export reason type/i, 'هذا الغرض ليس له سبب تصدير موثّق لدى DHL — اختر سبب التصدير من قائمة DHL'],
   [/Paperless Trade: choose the customs invoice/i, 'Paperless Trade: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
+  [/Create Invoice: choose the invoice type/i, 'إنشاء فاتورة: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
+  [/Paperless Trade with your own invoice/i, 'Paperless Trade مع فاتورتك الخاصة يتطلب رفع ملف فاتورتك إلى DHL — غير متاح في SHIPPEC بعد'],
+  [/Paperless Trade upload is turned off/i, 'رفع Paperless Trade متوقف على هذا الخادم — ألغِ الخيار أو راجع المسؤول'],
+  [/An invoice date only goes with an invoice number/i, 'تاريخ الفاتورة يُرسل مع رقم الفاتورة فقط'],
   [/Latest pickup time must be after/i, 'آخر وقت للاستلام يجب أن يكون بعد أبكر وقت'],
   [/DHL picks up from/i, 'أبكر وقت يسبق نافذة استلام DHL'],
   [/DHL picks up until/i, 'آخر وقت يتجاوز نافذة استلام DHL'],
@@ -750,6 +784,78 @@ export function detailsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
   return e;
 }
 
+// ── Customs Invoice (MyDHL+ workflow) ──
+/** "Additional Invoice Information (Remarks)": one DHL remark per non-empty line. */
+export const remarkLines = (v: string) => v.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+export const REMARKS_MAX_LINES = 3;
+export const REMARK_MAX = 45;
+export const CUSTOMS_DOCUMENT_ID_MAX = 35;
+/**
+ * Declaration statements SHIPPEC offers (Backend DECLARATION_STATEMENTS): route-aware.
+ * NAFTA / USMCA belongs to US / CA / MX routes only and is not wired (shown there as unavailable).
+ */
+export function declarationOptions(f: Pick<WizardForm, 'shipper' | 'receiver'>): Array<{ id: string; supported: boolean }> {
+  const na = ['US', 'CA', 'MX'];
+  const from = f.shipper.country_code; const to = f.receiver.country_code;
+  return [
+    { id: 'certificate_of_origin', supported: true },
+    ...(na.includes(from) && na.includes(to) && from !== to ? [{ id: 'usmca', supported: false }] : []),
+  ];
+}
+/** The exact statement printed on DHL's invoice (Backend declarationText — built from the item origins). */
+export function declarationPreview(id: string, f: Pick<WizardForm, 'items'>): string | null {
+  if (id !== 'certificate_of_origin') return null;
+  const origins = [...new Set(f.items.map((i) => i.country_of_origin).filter(Boolean))];
+  if (!origins.length) return null;
+  return `We hereby certify that the goods described in this invoice are of ${origins.map((c) => countryName(c, 'en')).join(', ')} origin.`;
+}
+/** "Electronic Export Filing" (US FTR 30.37(a)) exists only for US-origin exports. */
+export const needsUsExportFiling = (f: Pick<WizardForm, 'shipper'>) => f.shipper.country_code === 'US';
+/** DHL customs document types offered here (codes from the MyDHL enum; the code stays visible). */
+export const CUSTOMS_DOCUMENT_TYPES: Array<{ code: string; ar: string; en: string }> = [
+  { code: 'COO', ar: 'شهادة المنشأ', en: 'Certificate of Origin' },
+  { code: 'DEX', ar: 'بيان تصدير', en: 'Export declaration' },
+  { code: 'EXL', ar: 'رخصة تصدير', en: 'Export licence' },
+  { code: 'LIC', ar: 'ترخيص', en: 'Licence' },
+  { code: 'ATA', ar: 'دفتر ATA', en: 'ATA Carnet' },
+  { code: 'PHY', ar: 'شهادة صحة نباتية', en: 'Phytosanitary certificate' },
+  { code: 'VET', ar: 'شهادة بيطرية', en: 'Veterinary certificate' },
+  { code: 'HLC', ar: 'شهادة صحية', en: 'Health certificate' },
+];
+/** Purpose → the invoice DHL usually generates (a suggestion shown to the person — never chosen silently). */
+export function suggestedInvoiceType(p: ShipmentPurpose | ''): 'commercial' | 'proforma' | null {
+  if (p === 'commercial') return 'commercial';
+  if (p === 'gift' || p === 'personal_not_for_resale' || p === 'sample') return 'proforma';
+  return null;
+}
+/**
+ * The Customs Invoice gate (Next / stepper): field key → message; empty = Next allowed.
+ * Create Invoice: the invoice type; the number only when «include an invoice number» is ticked.
+ * Remarks ≤ 3 lines × 45, Latin; every customs document row complete (type + ID ≤ 35, Latin).
+ */
+export function customsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
+  const e: FieldErrors = {};
+  if (!needsCustoms(f)) return e;
+  const T = (ar: string, en: string) => tr(lang, ar, en);
+  if (f.customs_invoice_mode === 'create' && !f.dhl_invoice_type) e.dhl_invoice_type = T('اختر نوع الفاتورة التي تُنشئها DHL.', 'Choose the invoice type DHL creates.');
+  const number = f.customs_invoice_number.trim();
+  if (f.customs_invoice_mode === 'create' && f.include_invoice_number && !number) e.customs_invoice_number = T('أدخل رقم الفاتورة أو ألغِ الخيار.', 'Enter the invoice number or clear the option.');
+  if (number && (f.customs_invoice_mode === 'own' || f.include_invoice_number) && !isLatin(number)) e.customs_invoice_number = T('رقم الفاتورة بالأحرف اللاتينية فقط.', 'Latin characters only.');
+  const lines = f.customs_invoice_mode === 'create' ? remarkLines(f.invoice_remarks) : [];
+  if (lines.length > REMARKS_MAX_LINES) e.invoice_remarks = T(`${REMARKS_MAX_LINES} أسطر كحد أقصى (حد DHL).`, `At most ${REMARKS_MAX_LINES} lines (DHL limit).`);
+  else if (lines.some((l) => l.length > REMARK_MAX)) e.invoice_remarks = T(`كل سطر ${REMARK_MAX} حرفًا كحد أقصى (حد DHL).`, `Each line: at most ${REMARK_MAX} characters (DHL limit).`);
+  else if (lines.some((l) => !isLatin(l))) e.invoice_remarks = T('الملاحظات بالإنجليزية فقط (DHL تقبل الأحرف اللاتينية).', 'English only (DHL accepts Latin characters).');
+  f.customs_documents.forEach((d, i) => {
+    const v = d.value.trim();
+    if (!d.type_code && !v) return;
+    if (!d.type_code) e[`customs_documents.${i}`] = T('اختر نوع المستند.', 'Choose the document type.');
+    else if (!v) e[`customs_documents.${i}`] = T('أدخل رقم المستند.', 'Enter the document ID.');
+    else if (v.length > CUSTOMS_DOCUMENT_ID_MAX) e[`customs_documents.${i}`] = T(`رقم المستند ${CUSTOMS_DOCUMENT_ID_MAX} حرفًا كحد أقصى.`, `At most ${CUSTOMS_DOCUMENT_ID_MAX} characters.`);
+    else if (!isLatin(v)) e[`customs_documents.${i}`] = T('رقم المستند بالأحرف اللاتينية فقط.', 'Latin characters only.');
+  });
+  return e;
+}
+
 /** Light presence checks — which steps visibly still need input (the Backend decides validity). */
 export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): string[] {
   const miss: string[] = [];
@@ -768,7 +874,13 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
       if (g.items || Object.keys(g).some((k) => k.startsWith('items.'))) miss.push(T('بيانات البنود', 'Item details'));
       break;
     }
-    case 'customs': if (!f.customs_invoice_number.trim()) miss.push(T('رقم الفاتورة الجمركية', 'Customs invoice number')); break;
+    case 'customs': {
+      const g = customsGate(f, lang);
+      if (g.dhl_invoice_type) miss.push(T('نوع الفاتورة', 'Invoice type'));
+      if (g.customs_invoice_number) miss.push(T('رقم الفاتورة', 'Invoice number'));
+      if (Object.keys(g).some((k) => k.startsWith('customs_documents') || k === 'invoice_remarks')) miss.push(T('بيانات الفاتورة', 'Invoice details'));
+      break;
+    }
     case 'packages': if (!f.packages.length || f.packages.some((p) => !(num(p.weight_kg) ?? 0))) miss.push(T('وزن كل طرد', 'Weight of each package')); break;
     case 'service': if (!f.product_code) miss.push(T('خدمة DHL', 'DHL service')); break;
     case 'pickup': if (f.pickup_option === 'schedule' && (!f.pickup_earliest_time || !f.pickup_latest_time)) miss.push(T('وقت الاستلام', 'Pickup time')); if (f.pickup_option === 'drop_off' && !f.service_point_id) miss.push(T('نقطة الخدمة', 'Service point')); break;

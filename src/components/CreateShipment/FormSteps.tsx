@@ -1,7 +1,7 @@
 /**
- * Steps of «إنشاء شحنة»: customs invoice, packages, payment & terms (the
- * Parties screen lives in PartiesStep.tsx, Shipment Details in
- * DetailsStep.tsx), plus the pickup-address fields. Arabic or English (the page's own AR | EN). Field
+ * Steps of «إنشاء شحنة»: packages, payment & terms (the Parties screen
+ * lives in PartiesStep.tsx, Shipment Details in DetailsStep.tsx, the Customs
+ * Invoice in CustomsStep.tsx), plus the pickup-address fields. Arabic or English (the page's own AR | EN). Field
  * errors come from the Backend's validation (mapped by
  * wizardModel.locateIssue) — never re-implemented here.
  */
@@ -11,7 +11,7 @@ import { dhlShipmentService } from '../../services/dhlShipment.service';
 import { ChoiceCards, CountrySelect, Field, Note, Section, SelectInput, TextInput, Button } from './ui';
 import { useCsLang } from './csLang';
 import {
-  emptyPackage, isInternational, itemTotals, kg, packageTotals, translateIssue, type FieldErrors, type PartyForm, type WizardForm,
+  emptyPackage, isInternational, kg, packageTotals, translateIssue, type FieldErrors, type PartyForm, type WizardForm,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
 
@@ -80,50 +80,6 @@ function PartyFields({ who, value, onChange, errors, title, icon }: {
   );
 }
 export { PartyFields };
-
-// ── Customs ──
-/**
- * The customs invoice header (international goods). The items, purpose and
- * currency are entered on «تفاصيل الشحنة» (Shipment Details).
- */
-export function StepCustoms({ w }: Props) {
-  const { form, update, errors } = w;
-  const { t, lang } = useCsLang();
-  const err = useErr(errors);
-  const totals = itemTotals(form.items);
-  const pk = packageTotals(form.packages);
-  return (
-    <div className="space-y-4">
-      <Section title={t('الفاتورة الجمركية', 'Customs invoice')} description={t('بيانات الفاتورة التي تُرفق بالشحنة للجمارك.', 'The invoice that travels with the shipment for customs.')}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label={t('رقم الفاتورة', 'Invoice number')} required error={err('customs_invoice_number')}>{(id) => <TextInput id={id} value={form.customs_invoice_number} onValue={(v) => update((f) => ({ ...f, customs_invoice_number: v }))} error={err('customs_invoice_number')} ltr maxLength={35} />}</Field>
-          <Field label={t('تاريخ الفاتورة', 'Invoice date')} required error={err('customs_invoice_date')}>{(id) => <TextInput id={id} type="date" value={form.customs_invoice_date} onValue={(v) => update((f) => ({ ...f, customs_invoice_date: v }))} error={err('customs_invoice_date')} />}</Field>
-          <Field label={t('فاتورة تُنشئها DHL', 'Invoice created by DHL')} error={err('dhl_invoice_type')}>{(id) => (
-            <SelectInput id={id} value={form.dhl_invoice_type} onValue={(v) => update((f) => ({ ...f, dhl_invoice_type: v as WizardForm['dhl_invoice_type'] }))} error={err('dhl_invoice_type')}>
-              <option value="">{t('لا', 'No')}</option><option value="commercial">{t('فاتورة تجارية (Commercial)', 'Commercial invoice')}</option><option value="proforma">{t('فاتورة مبدئية (Proforma)', 'Proforma invoice')}</option>
-            </SelectInput>
-          )}</Field>
-        </div>
-        <label className="mt-3 flex items-start gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 p-3 cursor-pointer">
-          <input type="checkbox" className="mt-1 accent-indigo-600" checked={form.paperless_trade} onChange={(e) => update((f) => ({ ...f, paperless_trade: e.target.checked, dhl_invoice_type: e.target.checked && !f.dhl_invoice_type ? 'commercial' : f.dhl_invoice_type }))} />
-          <span>
-            <span className="block text-sm font-extrabold text-slate-900 dark:text-white">Paperless Trade (WY)</span>
-            <span className="block text-[11px] text-slate-500 dark:text-slate-400">{t('تُرفع فاتورة DHL إلكترونيًا إلى الشحنة بعد إنشائها بعشر دقائق — بدون نسخ ورقية. يتطلب اختيار نوع الفاتورة.', "DHL's invoice is uploaded electronically to the shipment ten minutes after it is created — no paper copies. Requires choosing the invoice type.")}</span>
-          </span>
-        </label>
-      </Section>
-      <Section title={t(`البنود (${form.items.length})`, `Items (${form.items.length})`)} description={t('البنود والعملة والغرض تُدخل في «تفاصيل الشحنة».', 'Items, currency and purpose are entered in «Shipment Details».')}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 p-3 text-xs">
-          <div><div className="font-bold text-slate-400">{t('القيمة الإجمالية', 'Total value')}</div><div className="font-extrabold tabular-nums" dir="ltr">{totals.value.toFixed(2)} {form.currency}</div></div>
-          <div><div className="font-bold text-slate-400">{t('الوزن الصافي', 'Net weight')}</div><div className="font-extrabold tabular-nums">{kg(totals.net, lang)}</div></div>
-          <div><div className="font-bold text-slate-400">{t('الوزن الإجمالي للبنود', 'Gross weight of the lines')}</div><div className="font-extrabold tabular-nums">{kg(totals.gross, lang)}</div></div>
-          <div><div className="font-bold text-slate-400">{t('وزن الطرود', 'Package weight')}</div><div className={`font-extrabold tabular-nums ${totals.gross != null && Math.abs(totals.gross - pk.weight) > 0.001 ? 'text-amber-600' : ''}`}>{kg(pk.weight, lang)}</div></div>
-        </div>
-        <p className="mt-2 text-[11px] text-slate-500">{t('الوزن الإجمالي للبنود يجب أن يساوي وزن الطرود، والإجمالي أكبر من الصافي.', 'The gross weight of the lines must equal the package weight, and gross must exceed net.')}</p>
-      </Section>
-    </div>
-  );
-}
 
 // ── Packages ──
 export function StepPackages({ w }: Props) {

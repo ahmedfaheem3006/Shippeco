@@ -1126,13 +1126,13 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(sent.items).toEqual([expect.objectContaining({ description: "Men's cotton T-shirt", quantity: '2', unit: 'PRS', unit_value: '10', country_of_origin: 'CN', unit_net_weight_kg: '0.5' })])
     expect(sent.details_extra).toMatchObject({ insurance: true, charges: [{ type: 'freight', amount: 25 }] })
     next()
-    expect(await screen.findByText('الفاتورة الجمركية')).toBeTruthy()
+    expect(await screen.findByText('تفاصيل الفاتورة الجمركية')).toBeTruthy()
   })
 
   it('HS codes are optional (AR + EN): no required star, Next works with both blank, a typed code persists, a DHL route-specific «HS required» refusal lands on that item field', async () => {
     const intl = shipment({
       customs_required: true, content_type: 'goods', is_domestic: false, receiver_country_code: 'AE', receiver_city: 'Dubai', receiver_postal_code: null,
-      currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt",
+      currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: 'proforma',
       items: [{ line_number: 1, description: "Men's cotton T-shirt", quantity: 2, unit: 'PCS', unit_value: '10.000', currency: 'SAR', country_of_origin: 'CN',
         outbound_hs_code: null, inbound_hs_code: null, unit_net_weight_kg: '0.200', unit_gross_weight_kg: null, line_gross_weight_kg: '0.400' }],
     })
@@ -1171,6 +1171,130 @@ describe('«إنشاء شحنة» wizard', () => {
     for (const el of [expEn, impEn]) expect(labelOf(el)).not.toContain('*')
     expect(expEn.value).toBe('6109.10')
     expect(card().getByText('998 : Commodity code is mandatory for this destination')).toBeTruthy()
+  })
+
+  const intlDraft = (over: Record<string, unknown> = {}) => shipment({
+    customs_required: true, content_type: 'goods', is_domestic: false, receiver_country_code: 'AE', receiver_city: 'Dubai', receiver_postal_code: null,
+    currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: null, customs_invoice_number: null,
+    items: [{ line_number: 1, description: "Men's cotton T-shirt", quantity: 2, unit: 'PCS', unit_value: '10.000', currency: 'SAR', country_of_origin: 'CN',
+      outbound_hs_code: null, inbound_hs_code: null, unit_net_weight_kg: '0.200', unit_gross_weight_kg: null, line_gross_weight_kg: '0.400' }],
+    ...over,
+  })
+  const OPTIONS = (paperless: boolean) => ({ purposes: [], transport_payers: [], duties_payers: [], pickup_options: [], document_refetch_types: [], features: { paperless_upload: paperless },
+    declaration_statements: [{ id: 'certificate_of_origin', supported: true }, { id: 'usmca', supported: false }], customs_document_types: ['COO'] })
+  const openCustoms = async (draft: ReturnType<typeof shipment>) => {
+    svc.get.mockResolvedValue(draft)
+    renderAt('/create-shipment?draft=5'); await screen.findByText('عميل الاختبار')
+    goStep(/الجمارك/)
+    return screen.findByTestId('customs-step')
+  }
+
+  it('Customs Invoice (AR): Create Invoice by default; invoice type required (suggested from the purpose, never silent); optional invoice number; remarks; Certificate of Origin; documents; no US filing / USMCA for a Saudi origin; saved in the draft', async () => {
+    svc.options.mockResolvedValue(OPTIONS(true))
+    const step = within(await openCustoms(intlDraft()))
+    expect(step.getByText('تفاصيل الفاتورة الجمركية')).toBeTruthy()
+    expect(step.getByRole('radio', { name: /إنشاء فاتورة/ }).getAttribute('aria-checked')).toBe('true')
+    expect(step.getByRole('radio', { name: /استخدام فاتورتي الخاصة/ }).getAttribute('aria-checked')).toBe('false')
+    // the invoice type is not chosen silently: a suggestion from «هدية» → Proforma, and Next is blocked until chosen
+    expect(step.getByRole('radio', { name: /فاتورة مبدئية/ }).getAttribute('aria-checked')).toBe('false')
+    expect(step.getByTestId('invoice-type-suggestion').textContent).toMatch(/هدية.*فاتورة مبدئية/)
+    next()
+    expect(await screen.findByText('اختر نوع الفاتورة التي تُنشئها DHL.')).toBeTruthy()
+    expect(screen.getByTestId('customs-step')).toBeTruthy()
+    fireEvent.click(step.getByRole('button', { name: 'استخدامها' }))
+    expect(step.getByRole('radio', { name: /فاتورة مبدئية/ }).getAttribute('aria-checked')).toBe('true')
+    // the invoice number: hidden until «أرغب في إضافة رقم فاتورة»; then required for Next
+    expect(step.queryByLabelText(/^رقم الفاتورة/)).toBeNull()
+    fireEvent.click(step.getByLabelText('أرغب في إضافة رقم فاتورة'))
+    next()
+    expect(await screen.findByText('أدخل رقم الفاتورة أو ألغِ الخيار.')).toBeTruthy()
+    fireEvent.change(step.getByLabelText(/^رقم الفاتورة/), { target: { value: 'INV-2026-77' } })
+    fireEvent.change(step.getByLabelText(/^معلومات إضافية على الفاتورة/), { target: { value: 'Goods for exhibition\nReturn within 30 days' } })
+    // declarations: Certificate of Origin with the exact printed text; no NAFTA / USMCA, no US export filing on SA → AE
+    expect(step.getByTestId('declaration-certificate_of_origin').textContent).toContain('We hereby certify that the goods described in this invoice are of China origin.')
+    expect(step.queryByTestId('declaration-usmca')).toBeNull()
+    expect(step.queryByText(/NAFTA/)).toBeNull()
+    expect(step.queryByTestId('us-export-filing')).toBeNull()
+    expect(step.queryByText(/30\.37/)).toBeNull()
+    fireEvent.click(within(step.getByTestId('declaration-certificate_of_origin')).getByRole('checkbox'))
+    // additional parties: «No», «Yes» unavailable (not wired)
+    const parties = within(step.getByTestId('additional-parties'))
+    expect((parties.getByRole('radio', { name: 'نعم' }) as HTMLInputElement).disabled).toBe(true)
+    expect((parties.getByRole('radio', { name: 'لا' }) as HTMLInputElement).checked).toBe(true)
+    // additional customs documents
+    fireEvent.click(step.getByRole('button', { name: /إضافة مستند آخر/ }))
+    const doc = within(step.getByTestId('customs-documents').querySelector('[data-document="0"]') as HTMLElement)
+    fireEvent.change(doc.getByLabelText('نوع المستند'), { target: { value: 'COO' } })
+    fireEvent.change(doc.getByLabelText('رقم المستند'), { target: { value: 'COO-2026-118' } })
+    // Paperless (the server may upload): selectable
+    const wy = within(step.getByTestId('paperless-box')).getByRole('checkbox') as HTMLInputElement
+    await waitFor(() => expect(wy.disabled).toBe(false))
+    fireEvent.click(wy)
+    // summary from Details / Packages (read only)
+    expect(step.getByTestId('customs-summary').textContent).toContain('20.00 SAR')
+    // saved: what DHL receives
+    svc.updateDraft.mockResolvedValue(intlDraft())
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({
+      dhl_invoice_type: 'proforma', customs_invoice_number: 'INV-2026-77', invoice_remarks: ['Goods for exhibition', 'Return within 30 days'],
+      declaration_statements: ['certificate_of_origin'], customs_documents: [{ type_code: 'COO', value: 'COO-2026-118' }], paperless_trade: true, service_codes: ['WY'],
+      details_extra: expect.objectContaining({ customs_invoice_mode: 'create' }),
+    })
+    next()
+    await waitFor(() => expect(screen.queryByTestId('customs-step')).toBeNull())
+  })
+
+  it('Customs Invoice: Paperless follows the server switch (unavailable → cannot be chosen, never pretended); Use My Own Invoice (EN) asks «My Invoice Number» and drops DHL-invoice fields; AR ↔ EN keeps the data', async () => {
+    svc.options.mockResolvedValue(OPTIONS(false))
+    const step = within(await openCustoms(intlDraft({ dhl_invoice_type: 'commercial' })))
+    const wy = within(step.getByTestId('paperless-box')).getByRole('checkbox') as HTMLInputElement
+    await waitFor(() => expect(step.getByTestId('paperless-unavailable').textContent).toMatch(/غير مفعّل على هذا الخادم/))
+    expect(wy.disabled).toBe(true)
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(step.getByText('Customs Invoice Details')).toBeTruthy()
+    expect(step.getByText(/use your own customs invoice/)).toBeTruthy()
+    fireEvent.change(step.getByLabelText(/^Additional Invoice Information/), { target: { value: 'Keep dry' } })
+    fireEvent.click(step.getByRole('radio', { name: /Use My Own Invoice/ }))
+    expect(step.queryByTestId('create-invoice')).toBeNull()
+    expect(step.queryByLabelText(/^Additional Invoice Information/)).toBeNull()
+    expect(step.queryByTestId('declaration-statements')).toBeNull()
+    expect(step.getByText('Additional Parties')).toBeTruthy()
+    expect(step.getByRole('button', { name: /Add Another/ })).toBeTruthy()
+    fireEvent.change(step.getByLabelText(/^My Invoice Number/), { target: { value: 'ACME-5501' } })
+    // back to Arabic and back to Create Invoice: what was typed is still there
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'AR' }))
+    expect((step.getByLabelText(/^رقم فاتورتي/) as HTMLInputElement).value).toBe('ACME-5501')
+    svc.updateDraft.mockResolvedValue(intlDraft())
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({
+      customs_invoice_number: 'ACME-5501', dhl_invoice_type: null, paperless_trade: false, invoice_remarks: [], declaration_statements: [],
+      details_extra: expect.objectContaining({ customs_invoice_mode: 'own' }),
+    })
+    fireEvent.click(step.getByRole('radio', { name: /إنشاء فاتورة/ }))
+    expect((step.getByLabelText(/^معلومات إضافية على الفاتورة/) as HTMLTextAreaElement).value).toBe('Keep dry')
+  })
+
+  it('Customs Invoice: a US-origin shipment shows Electronic Export Filing (not wired, says so); a US → CA route lists NAFTA / USMCA as unavailable; a reloaded draft shows its stored choices', async () => {
+    svc.options.mockResolvedValue(OPTIONS(true))
+    const us = intlDraft({
+      shipper_country_code: 'US', shipper_city: 'Newark', shipper_postal_code: '19711', shipper_province: 'DE', shipper_address_line1: '742 Test Lane', shipper_address_line2: null,
+      shipper_address_line3: null, shipper_phone: '+13025550100', receiver_country_code: 'CA', receiver_city: 'Toronto', receiver_postal_code: 'M5V 2T6',
+      customs_invoice_number: 'INV-9', dhl_invoice_type: 'commercial', invoice_remarks: ['Line A'], declaration_statements: ['certificate_of_origin'],
+      customs_documents: [{ type_code: 'EXL', value: 'EL-4471' }], shipment_details_extra: { customs_invoice_mode: 'create' },
+    })
+    const step = within(await openCustoms(us))
+    expect(step.getByTestId('us-export-filing').textContent).toMatch(/30\.37\(a\).*غير مربوط/)
+    const usmca = within(step.getByTestId('declaration-usmca')).getByRole('checkbox') as HTMLInputElement
+    expect(usmca.disabled).toBe(true)
+    expect(usmca.checked).toBe(false)
+    // reloaded: Create Invoice, number shown, remarks, statement, document
+    expect((step.getByLabelText('أرغب في إضافة رقم فاتورة') as HTMLInputElement).checked).toBe(true)
+    expect((step.getByLabelText(/^رقم الفاتورة/) as HTMLInputElement).value).toBe('INV-9')
+    expect((step.getByLabelText(/^معلومات إضافية على الفاتورة/) as HTMLTextAreaElement).value).toBe('Line A')
+    expect((within(step.getByTestId('declaration-certificate_of_origin')).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+    expect((within(step.getByTestId('customs-documents')).getByLabelText('رقم المستند') as HTMLInputElement).value).toBe('EL-4471')
   })
 
   it('Create Description: a deterministic English helper (no AI) fills the item description', async () => {
