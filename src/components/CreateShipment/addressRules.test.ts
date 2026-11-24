@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { citySecondary, subdivisionName } from './addressRules';
+import { citySecondary, postalFormatIssue, postalLookupCode, postalRule, subdivisionName } from './addressRules';
 import { applyCity } from './partiesModel';
 import { emptyParty } from './wizardModel';
 
@@ -19,6 +19,32 @@ describe('state / province names (the code is sent, the name is shown)', () => {
     expect(citySecondary('Cairo Governorate, Egypt', 'EG')).toBe('Cairo Governorate, Egypt');
     expect(citySecondary('ON, Canada', 'CA')).toBe('Ontario, Canada');
     expect(citySecondary('', 'US')).toBe('United States of America');
+  });
+});
+
+describe('country-aware postal rules', () => {
+  it('US: a complete 5-digit ZIP or ZIP+4 is looked up by its 5 digits; anything incomplete is never sent', () => {
+    expect(postalLookupCode('US', '48126')).toBe('48126');
+    expect(postalLookupCode('US', '48126-1234')).toBe('48126');
+    expect(postalLookupCode('US', '481261234')).toBe('48126');
+    expect(postalLookupCode('us', ' 48126 ')).toBe('48126');
+    for (const bad of ['', '4812', '48126-', '48126-12', '481266', 'ABCDE']) expect([bad, postalLookupCode('US', bad)]).toEqual([bad, null]);
+  });
+  it('other countries: no lookup is pretended (even for a well-formed code); unknown countries have no rule', () => {
+    for (const [cc, code] of [['SA', '32256'], ['EG', '11511'], ['GB', 'SW1A 1AA'], ['CA', 'K1A 0B1']]) {
+      expect(postalRule(cc)?.lookup).toBe(false);
+      expect(postalLookupCode(cc, code)).toBeNull();
+      expect(postalFormatIssue(cc, code)).toBeNull();
+    }
+    expect(postalRule('AE')).toBeNull();
+    expect(postalFormatIssue('AE', 'anything')).toBeNull();
+  });
+  it('format notes and typing filters', () => {
+    expect(postalFormatIssue('US', '4812')?.[1]).toBe('5 digits or ZIP+4, e.g. 48126 or 48126-1234');
+    expect(postalFormatIssue('US', '')).toBeNull();
+    expect(postalFormatIssue('SA', '322')?.[1]).toBe('5 digits, e.g. 32256');
+    expect(postalRule('US')!.sanitize!('48126-12ab34')).toBe('48126-1234');
+    expect(postalRule('SA')!.sanitize!('32 256 9')).toBe('32256');
   });
 });
 

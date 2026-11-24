@@ -11,7 +11,9 @@
  *     SHIPPEC Backend (no invented results); Saudi Short Address lookup;
  *   - City: Google city suggestions inside the country (2+ characters); a choice
  *     fills City + State (US: the 2-letter code sent, the state name shown);
- *   - US ZIP → city + state (Google Geocoding behind the Backend);
+ *   - Postal code: country rules (addressRules); a complete US ZIP / ZIP+4 →
+ *     city + state (Google Geocoding behind the Backend) — one locality fills
+ *     straight away, several are offered; other countries are typed by hand;
  *   - «حفظ في قاعدة البيانات» asks for a SHIPPEC alias (never sent to DHL); only an
  *     alias already in use is a conflict (update it / choose another name / cancel);
  *   - validation for Next is partiesGate() (wizardModel) — autofill never bypasses it.
@@ -33,7 +35,7 @@ import { Button, Field, Section, TextInput, inputCls } from './ui';
 import { useCsLang, type CsLang } from './csLang';
 import { listKeyHandler, useLookup, useOutside, type LookupStatus } from './useLookup';
 import { CountryCombobox, Dropdown } from './Combobox';
-import { citySecondary, subdivisionName } from './addressRules';
+import { citySecondary, postalFormatIssue, postalLookupCode, postalRule, subdivisionName } from './addressRules';
 import {
   applyAddress, applyCity, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, SHORT_ADDRESS_RE, withCountry,
 } from './partiesModel';
@@ -266,30 +268,47 @@ function ShortAddressInput({ id, value, onChange, onPick, error, t }: {
   );
 }
 
-// ── Postal code → city + state (US ZIP; Google Geocoding behind the Backend) ──
-const US_ZIP_RE = /^(\d{5})(-\d{4})?$/;
+// ── Postal code → city + state (country rules in addressRules; US ZIP via Google Geocoding behind the Backend) ──
 function PostalCodeInput({ id, value, country, onChange, onPick, error, required, t }: {
-  id: string; value: string; country: string; onChange: (v: string) => void; onPick: (l: PostalLocality) => void; error?: string | null; required?: boolean; t: T;
+  id: string; value: string; country: string; onChange: (v: string) => void; onPick: (l: PostalLocality, auto: boolean) => void; error?: string | null; required?: boolean; t: T;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [active, setActive] = useState(0);
   const fetcher = useCallback((k: string, signal: AbortSignal) => { const [cc, code] = k.split('|'); return addressLookupService.postalCode(code, cc, signal); }, []);
-  const zip = US_ZIP_RE.exec(value.trim());
-  // only a complete ZIP is asked (never on every digit); other countries: typed by hand for now
-  const key = open && country === 'US' && zip ? `US|${zip[1]}` : null;
+  const rule = postalRule(country);
+  const code = postalLookupCode(country, value);
+  // only a complete code of a country with a lookup is asked (never on every digit, never half-typed)
+  const key = open && code ? `${country}|${code}` : null;
   const r = useLookup<PostalLocality>(key, fetcher, 300);
   useOutside(box, () => setOpen(false));
-  const pick = (i: number) => { const l = r.items[i]; if (l) { onPick(l); setOpen(false); } };
-  const show = !!key && r.status !== 'idle';
+  const pick = (i: number) => { const l = r.items[i]; if (l) { onPick(l, false); setOpen(false); } };
+  // exactly one locality → filled straight away (once per lookup); several → the person chooses
+  const autoKey = useRef<string | null>(null);
+  const pickRef = useRef(onPick);
+  useEffect(() => { pickRef.current = onPick; }, [onPick]);
+  const only = r.status === 'done' && r.items.length === 1 ? r.items[0] : null;
+  useEffect(() => {
+    if (!key) { autoKey.current = null; return; }
+    if (only && autoKey.current !== key) {
+      autoKey.current = key;
+      pickRef.current(only, true);
+      setOpen(false);
+    }
+  }, [key, only]);
+  const show = !!key && r.status !== 'idle' && !only;
+  const formatIssue = !focused ? postalFormatIssue(country, value) : null;
   return (
     <div ref={box} className="relative">
-      <TextInput id={id} value={value} ltr autoComplete="postal-code" inputMode={country === 'US' ? 'numeric' : undefined} error={error} aria-required={required}
+      <TextInput id={id} value={value} ltr autoComplete="postal-code" inputMode={rule?.numeric ? 'numeric' : undefined} error={error} aria-required={required}
         role="combobox" aria-expanded={show} aria-controls={listId}
-        onValue={(v) => { onChange(country === 'US' ? v.replace(/[^\d-]/g, '').slice(0, 10) : v); setOpen(true); setActive(0); }}
+        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        onValue={(v) => { onChange(rule?.sanitize ? rule.sanitize(v) : v); setOpen(true); setActive(0); }}
         onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: pick, onClose: () => setOpen(false) })} />
       {r.status === 'loading' && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
+      {formatIssue && !error && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300" data-testid="postal-format">{t(`صيغة الرمز البريدي: ${formatIssue[0]}`, `Postal code format: ${formatIssue[1]}`)}</p>}
       {show && (
         <Dropdown id={listId} label={t('المدن المطابقة للرمز البريدي', 'Cities for this postal code')}>
           {r.status === 'done' && r.items.length ? r.items.map((l, i) => (
@@ -297,8 +316,10 @@ function PostalCodeInput({ id, value, country, onChange, onPick, error, required
               onMouseDown={(e) => e.preventDefault()} onClick={() => pick(i)} className={optionCls(i === active)}>
               <MapPin size={16} className="mt-0.5 text-indigo-500 shrink-0" />
               <span className="flex-1 min-w-0 text-start" dir="ltr">
-                <span className="block text-sm font-bold text-slate-900 dark:text-white truncate">{[l.city?.toUpperCase(), l.province].filter(Boolean).join(', ')} {l.postal_code}</span>
-                {l.province_name && <span className="block text-[11px] text-slate-500 truncate">{l.province_name}</span>}
+                <span className="block text-sm font-bold text-slate-900 dark:text-white truncate font-mono">{l.postal_code}</span>
+                <span className="block text-[11px] text-slate-500 truncate">
+                  {[l.city, l.province_name ?? subdivisionName(l.country_code, l.province) ?? l.province, countryName(l.country_code, 'en')].filter(Boolean).join(' · ')}
+                </span>
               </span>
             </button>
           )) : (
@@ -489,6 +510,14 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
     }
   };
   const stateName = subdivisionName(value.country_code, value.province);
+  // Postal code → City + State (the ZIP typed is kept, e.g. ZIP+4); the note stays while those fields are unchanged
+  const [filled, setFilled] = useState<{ postal_code: string; city: string; province: string } | null>(null);
+  const pickPostal = (l: PostalLocality) => {
+    const next = { ...value, city: l.city ?? value.city, province: l.province ?? value.province, postal_code: value.postal_code.trim() || l.postal_code };
+    onChange(next);
+    setFilled({ postal_code: next.postal_code, city: next.city, province: next.province });
+  };
+  const postalFilled = filled && filled.postal_code === value.postal_code && filled.city === value.city && filled.province === value.province ? filled : null;
 
   const openSave = () => {
     if (!value.contact.trim() || !value.country_code) {
@@ -575,10 +604,14 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
           hint={stateName ? <span dir="ltr" data-testid="state-name">{stateName}</span> : undefined}>{(id) => <TextInput id={id} value={value.province} onValue={(v) => set('province', v)} error={e('province')} ltr />}</Field>
         <Field label={t('الرمز البريدي', 'Postal Code')} required={sa || value.country_code === 'US'} error={e('postal_code')}>{(id) => (
           <PostalCodeInput id={id} value={value.postal_code} country={value.country_code} error={e('postal_code')} required={sa || value.country_code === 'US'} t={t}
-            onChange={(v) => set('postal_code', v)}
-            onPick={(l) => onChange({ ...value, city: l.city ?? value.city, province: l.province ?? value.province, postal_code: value.postal_code.trim() || l.postal_code })} />
+            onChange={(v) => set('postal_code', v)} onPick={pickPostal} />
         )}</Field>
       </div>
+      {postalFilled && (
+        <p className="-mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1" role="status" data-testid="postal-autofill-note">
+          <MapPin size={12} /> {t(`تمت تعبئة المدينة والولاية تلقائيًا من الرمز البريدي ${postalFilled.postal_code}.`, `City and state were filled automatically from postal code ${postalFilled.postal_code}.`)}
+        </p>
+      )}
       <Check2 checked={value.residential} onChange={(v) => set('residential', v)} label={t('عنوان سكني', 'Residential Address')} />
 
       <Field label={t('عنوان البريد الإلكتروني', 'Email address')} error={e('email')}>{(id) => (

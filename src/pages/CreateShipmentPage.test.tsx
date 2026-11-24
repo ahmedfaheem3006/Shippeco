@@ -615,32 +615,88 @@ describe('«إنشاء شحنة» wizard', () => {
     expect((within(toPanel()).getByLabelText(/^Country\/Territory/) as HTMLInputElement).value).toBe('United States of America')
   })
 
-  it('US ZIP → City + State: asked only for a complete ZIP (debounced), a choice fills City + State and keeps the ZIP; no result is explained', async () => {
-    lookup.postalCode.mockResolvedValue([{ postal_code: '48126', city: 'Dearborn', province: 'MI', province_name: 'Michigan', country_code: 'US', provider: 'google' }])
+  const DEARBORN_ZIP = { postal_code: '48126', city: 'Dearborn', province: 'MI', province_name: 'Michigan', country_code: 'US', provider: 'google' }
+  it('US ZIP 48126: asked only for a complete ZIP (debounced); exactly one locality → City + State filled straight away (with a note), ZIP kept; no result / failure explained, manual entry stays', async () => {
+    lookup.postalCode.mockResolvedValue([DEARBORN_ZIP])
     renderAt()
     await screen.findByTestId('parties-surface')
     pickCountry(1, 'USA')
     const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
     const zip = t.getByLabelText(/^الرمز البريدي/) as HTMLInputElement
     fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'typed city' } })
     fireEvent.change(zip, { target: { value: '4812' } })
     await new Promise((r) => setTimeout(r, 400))
     expect(lookup.postalCode).not.toHaveBeenCalled() // never on every digit
-    expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('typed city') // nothing overwritten by typing
+    expect(v(/^المدينة/)).toBe('typed city') // nothing overwritten by typing
     fireEvent.change(zip, { target: { value: '48126' } })
-    const opt = await screen.findByRole('option', { name: /DEARBORN, MI 48126/ })
+    await waitFor(() => expect(v(/^المدينة/)).toBe('Dearborn'))
     expect(lookup.postalCode).toHaveBeenCalledTimes(1)
     expect(lookup.postalCode.mock.calls[0].slice(0, 2)).toEqual(['48126', 'US'])
-    expect(opt.textContent).toContain('Michigan')
-    fireEvent.click(opt)
-    expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('Dearborn')
-    expect((t.getByLabelText(/^الولاية/) as HTMLInputElement).value).toBe('MI')
+    expect(v(/^الولاية/)).toBe('MI')
+    expect(t.getByTestId('state-name').textContent).toBe('Michigan')
     expect(zip.value).toBe('48126')
-    expect((t.getByLabelText(/^الرمز\*?$/) as HTMLInputElement).value).toBe('1')
+    expect(v(/^الرمز\*?$/)).toBe('1')
+    expect(v(/^البلد\/الإقليم/)).toBe('الولايات المتحدة الأمريكية')
+    expect(t.getByTestId('postal-autofill-note').textContent).toMatch(/تمت تعبئة المدينة والولاية تلقائيًا من الرمز البريدي 48126/)
+    expect(screen.queryByRole('option', { name: /48126/ })).toBeNull() // no needless click
+    // editing the city by hand: the note goes, the value stays the person's
+    fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'Dearborn MI' } })
+    expect(t.queryByTestId('postal-autofill-note')).toBeNull()
     lookup.postalCode.mockResolvedValueOnce([])
     fireEvent.change(zip, { target: { value: '00000' } })
     expect(await screen.findByText('لم يتم العثور على مدينة مطابقة لهذا الرمز البريدي.')).toBeTruthy()
-    expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('Dearborn') // kept
+    expect(v(/^المدينة/)).toBe('Dearborn MI') // kept
+    lookup.postalCode.mockRejectedValueOnce(new ApiError('down', 502, 'ADDRESS_PROVIDER_ERROR'))
+    fireEvent.change(zip, { target: { value: '00001' } })
+    expect(await screen.findByText(/تعذر البحث الآن/)).toBeTruthy()
+    fireEvent.change(t.getByLabelText(/^الولاية/), { target: { value: 'NY' } })
+    expect(v(/^الولاية/)).toBe('NY')
+    expect(zip.value).toBe('00001')
+  })
+
+  it('US ZIP with several localities → «48126 / Dearborn · Michigan · United States of America» choices; a choice fills City + State + ZIP; ZIP+4 is asked by its 5 digits and kept', async () => {
+    lookup.postalCode.mockResolvedValue([DEARBORN_ZIP, { ...DEARBORN_ZIP, city: 'Dearborn Heights' }])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'USA')
+    const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    const zip = t.getByLabelText(/^الرمز البريدي/) as HTMLInputElement
+    fireEvent.change(zip, { target: { value: '48126-1234' } })
+    const opts = await screen.findAllByRole('option', { name: /^48126/ })
+    expect(lookup.postalCode.mock.calls[0].slice(0, 2)).toEqual(['48126', 'US'])
+    expect(opts.map((o) => o.textContent)).toEqual(['48126Dearborn · Michigan · United States of America', '48126Dearborn Heights · Michigan · United States of America'])
+    expect(v(/^المدينة/)).toBe('') // several → nothing chosen for the person
+    fireEvent.keyDown(zip, { key: 'ArrowDown' })
+    fireEvent.keyDown(zip, { key: 'Enter' })
+    expect(v(/^المدينة/)).toBe('Dearborn Heights')
+    expect(v(/^الولاية/)).toBe('MI')
+    expect(zip.value).toBe('48126-1234')
+    expect(screen.queryByRole('option', { name: /^48126/ })).toBeNull()
+    // letters are never typed into a US ZIP; an incomplete ZIP+4 is never sent
+    fireEvent.change(zip, { target: { value: '48126-12ab' } })
+    expect(zip.value).toBe('48126-12')
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.postalCode).toHaveBeenCalledTimes(1)
+    fireEvent.blur(zip)
+    expect(t.getByTestId('postal-format').textContent).toMatch(/48126-1234/)
+  })
+
+  it('Postal code outside the US: no lookup is pretended (typed by hand, never sent); a format note never blocks', async () => {
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'EG')
+    const t = within(toPanel())
+    const zip = t.getByLabelText(/^الرمز البريدي/) as HTMLInputElement
+    fireEvent.change(zip, { target: { value: '11511' } })
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.postalCode).not.toHaveBeenCalled()
+    expect(zip.value).toBe('11511')
+    expect(screen.queryByRole('listbox', { name: /المدن المطابقة للرمز البريدي/ })).toBeNull()
+    fireEvent.change(zip, { target: { value: '115' } })
+    fireEvent.blur(zip)
+    expect(t.getByTestId('postal-format').textContent).toBe('صيغة الرمز البريدي: 5 أرقام، مثل 11511')
   })
 
   // ═════════ City autocomplete ═════════
