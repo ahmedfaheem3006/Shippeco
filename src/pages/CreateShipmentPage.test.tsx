@@ -213,6 +213,52 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.getByText('سعر البيع أقل من تكلفة DHL')).toBeTruthy()
   })
 
+  it('Service (regression, EN): only the products DHL returns (no hard-coded P), badges only from DHL, the exact DHL product code persists; a shipment-changing edit marks the list stale — no selection until «Refresh services and prices»', async () => {
+    const products = [
+      { productCode: 'U', localProductCode: 'U', productName: 'EXPRESS WORLDWIDE', isCustomerAgreement: false },
+      { productCode: '8', localProductCode: '8', productName: 'EXPRESS EASY', isCustomerAgreement: true },
+    ]
+    const green = { name: 'GOGREEN CLIMATE NEUTRAL', serviceCode: 'EE', typeCode: 'XCH', amount: 1.2, currency: 'SAR', category: 'gogreen', tax: 0, isCustomerAgreement: null }
+    const ww = { ...QUOTE, productCode: 'U', localProductCode: 'U', productName: 'EXPRESS WORLDWIDE', amount: 210.5, breakdown: [...QUOTE.breakdown, green] }
+    const easy = { ...QUOTE, productCode: '8', localProductCode: '8', productName: 'EXPRESS EASY', amount: 180, isCustomerAgreement: true }
+    const fresh = shipment({ available_products: null, rate_quotes: null, product_code: null, local_product_code: null, product_name: null, selling_price: null, dhl_cost: null })
+    svc.get.mockResolvedValue(fresh)
+    svc.updateDraft.mockResolvedValue(fresh)
+    svc.checkProducts.mockResolvedValue({ products })
+    svc.checkRates.mockResolvedValue({ quotes: [ww, easy] })
+    svc.selectProduct.mockResolvedValue(shipment({ product_code: '8', local_product_code: '8', product_name: 'EXPRESS EASY' }))
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Service/)
+    await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledTimes(1))
+    const cardOf = async (name: string) => (await screen.findByText(name)).closest('article') as HTMLElement
+    const wwCard = await cardOf('EXPRESS WORLDWIDE')
+    const easyCard = await cardOf('EXPRESS EASY')
+    // exactly DHL's list: nothing added (no Product P / EXPRESS DOMESTIC that DHL did not return)
+    expect(document.querySelectorAll('[data-product]').length).toBe(2)
+    expect(document.querySelector('[data-product="P"]')).toBeNull()
+    expect(screen.queryByText('EXPRESS DOMESTIC')).toBeNull()
+    // badges only where DHL says so: GoGreen from DHL's rate breakdown, the agreement from DHL's product flag
+    expect(within(wwCard).getByText('GoGreen')).toBeTruthy()
+    expect(within(wwCard).queryByText('DHL customer agreement')).toBeNull()
+    expect(within(easyCard).getByText('DHL customer agreement')).toBeTruthy()
+    expect(within(easyCard).queryByText('GoGreen')).toBeNull()
+    // the selection stores DHL's own code (the Backend checks it against its stored product list)
+    fireEvent.click(within(easyCard).getByRole('button', { name: 'Select' }))
+    await waitFor(() => expect(svc.selectProduct).toHaveBeenCalledWith(5, '8'))
+    // a shipment-changing edit (package weight) → the list is stale: no selection until refreshed
+    goStep(/Packages/)
+    fireEvent.change(screen.getAllByLabelText(/^Weight \(kg\)/)[0], { target: { value: '2.5' } })
+    goStep(/Service/)
+    expect(await screen.findByText('The shipment data changed')).toBeTruthy()
+    for (const b of within(await cardOf('EXPRESS WORLDWIDE')).getAllByRole('button', { name: /Select/ })) expect((b as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /Refresh services and prices/ }))
+    await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledTimes(2))
+    expect(svc.updateDraft).toHaveBeenCalled() // the changed shipment is saved first, then DHL is asked again
+    await waitFor(() => expect(screen.queryByText('The shipment data changed')).toBeNull())
+  })
+
   it('pickup: three choices; service points that do not accept drop-off cannot be chosen', async () => {
     svc.servicePoints.mockResolvedValue({ points: [
       { id: 'DHA014', name: 'DHL Express Service Point', localName: 'DHL SERVICE POINT - Ibn Khaldoun', type: 'STATION', address: { line1: 'IBN Khaldoun street', line2: null, line3: null, city: 'DAMMAM', postalCode: null, country: 'SA' }, distance: '0.13 km', distanceKm: 0.13, shippingCutoff: '17:00:00.000', openingHours: [{ day: 'SUNDAY', open: '09:00', close: '22:00' }], capabilities: { dropOff: true }, limits: { maxPieces: 5, maxShipmentWeightKg: 70, maxPieceWeightKg: 70, pieceSizeCm: [] } },
