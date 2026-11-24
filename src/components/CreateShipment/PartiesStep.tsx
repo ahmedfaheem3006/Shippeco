@@ -538,7 +538,7 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
     setLookupError(null);
     try {
       const addr = s.address ?? (s.id ? await addressLookupService.details(s.id, value.country_code, session) : null);
-      if (addr) onChange(applyAddress(value, addr, s.provider === 'spl'));
+      if (addr) onChange(applyAddress(value, addr, s.provider !== 'google'));
     } catch (x) {
       setLookupError(describeApiError(x, t('تعذر جلب تفاصيل العنوان — أكمل يدويًا.', 'Could not load the address details — complete it manually.')));
     }
@@ -644,7 +644,7 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
       )}
       {sa && splNote && (
         <p className="-mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1" role="status" data-testid="spl-autofill-note">
-          <MapPin size={12} /> {t(`تمت تعبئة العنوان الوطني من SPL للعنوان المختصر ${splNote}.`, `National Address filled from SPL for short address ${splNote}.`)}
+          <MapPin size={12} /> {t(`تمت تعبئة العنوان الوطني تلقائيًا من العنوان المختصر ${splNote}.`, `National Address filled automatically from short address ${splNote}.`)}
         </p>
       )}
 

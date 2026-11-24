@@ -67,7 +67,8 @@ export interface AddressSuggestion {
   secondary: string;
   short_address: string | null;
   address: LookupAddress | null;
-  provider: 'spl' | 'google';
+  /** spl (official) / myshortaddress (fallback): a complete Saudi National Address; google: details needed. */
+  provider: 'spl' | 'myshortaddress' | 'google';
 }
 
 /** A save the Backend refused because the alias is taken (409 CONTACT_NAME_EXISTS): the contact holding it. */

@@ -32,7 +32,7 @@ export function clearAddress(p: PartyForm): PartyForm {
  *     an earlier address;
  *   - City / State / Postal Code: what the provider returned; when it returned
  *     nothing for one, the current value is kept (only within the same country);
- *   - `authoritative` (a Saudi National Address from SPL): City / State / Postal
+ *   - `authoritative` (a Saudi National Address — SPL or its fallback): City / State / Postal
  *     Code are always replaced, even by an empty value;
  *   - a Google address in Saudi Arabia clears the old short address (it no longer
  *     describes the address chosen).

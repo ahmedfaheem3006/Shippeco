@@ -592,11 +592,11 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(v(/^الرمز البريدي/)).toBe('32272')
     expect(v(/^البلد\/الإقليم/)).toMatch(/السعودية/)
     expect(v(/^الرمز\*?$/)).toBe('966')
-    expect(t.getByTestId('spl-autofill-note').textContent).toMatch(/تمت تعبئة العنوان الوطني من SPL للعنوان المختصر KUDA2519/)
+    expect(t.getByTestId('spl-autofill-note').textContent).toMatch(/تمت تعبئة العنوان الوطني تلقائيًا من العنوان المختصر KUDA2519/)
     expect(screen.queryByRole('option', { name: /KUDA2519/ })).toBeNull() // no needless click
     await new Promise((r) => setTimeout(r, 450))
     expect(lookup.cities.mock.calls.length + lookup.autocomplete.mock.calls.length).toBe(googleBefore) // SPL already gave the city — no Google call
-    // still editable; a hand edit ends the «filled from SPL» note
+    // still editable; a hand edit ends the «filled automatically» note
     fireEvent.change(t.getByLabelText(/^العنوان 1/), { target: { value: '2519 Prince Mohammed Road' } })
     expect(v(/^العنوان 1/)).toBe('2519 Prince Mohammed Road')
     expect(t.queryByTestId('spl-autofill-note')).toBeNull()
@@ -644,6 +644,45 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(v(/^المدينة/)).toBe('KHOBAR')
     fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'Dammam' } })
     expect(v(/^المدينة/)).toBe('Dammam') // manual entry
+  })
+
+  it('Saudi Short Address answered by the fallback provider (MyShortAddress): the same autofill — City / Region / Postal Code, SA, +966, editable; null fields stay empty; typed in Address 1 it replaces the old address too', async () => {
+    const rcda = { id: null, main: '6608 Anas Ibn Malik Road', secondary: '', short_address: 'RCDA6608', provider: 'myshortaddress',
+      address: { address_line1: '6608 Anas Ibn Malik Road', address_line2: '2745 Al Aqiq', short_address: 'RCDA6608', building_number: '6608', street: 'Anas Ibn Malik Road',
+        additional_number: '2745', district: 'Al Aqiq', city: 'Riyadh', province: 'Riyadh', province_name: 'Riyadh', postal_code: '13515', country_code: 'SA' } }
+    lookup.shortAddress.mockResolvedValue([rcda])
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'SA')
+    const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    fireEvent.change(t.getByLabelText(/^الرمز البريدي/), { target: { value: '11111' } })
+    fireEvent.change(t.getByLabelText(/^العنوان المختصر/), { target: { value: 'rcda 6608' } })
+    await waitFor(() => expect(v(/^العنوان 1/)).toBe('6608 Anas Ibn Malik Road'))
+    expect(lookup.shortAddress.mock.calls[0][0]).toBe('RCDA6608')
+    expect(v(/^عنوان 2/)).toBe('2745 Al Aqiq')
+    expect(v(/^المدينة/)).toBe('Riyadh')
+    expect(v(/^الولاية/)).toBe('Riyadh')
+    expect(v(/^الرمز البريدي/)).toBe('13515')
+    expect(v(/^البلد\/الإقليم/)).toMatch(/السعودية/)
+    expect(v(/^الرمز\*?$/)).toBe('966')
+    expect(t.getByTestId('spl-autofill-note').textContent).toMatch(/تمت تعبئة العنوان الوطني تلقائيًا من العنوان المختصر RCDA6608/)
+    expect(t.getByTestId('spl-autofill-note').textContent).not.toMatch(/SPL/)
+    fireEvent.change(t.getByLabelText(/^المدينة/), { target: { value: 'Riyadh City' } })
+    expect(v(/^المدينة/)).toBe('Riyadh City')
+    // the provider sent no postal code / additional number → those stay empty (never invented, never stale)
+    lookup.shortAddress.mockResolvedValue([{ ...rcda, short_address: 'RCDA6609', address: { ...rcda.address, short_address: 'RCDA6609', postal_code: null, additional_number: null, address_line2: 'Al Aqiq' } }])
+    fireEvent.change(t.getByLabelText(/^العنوان المختصر/), { target: { value: 'RCDA6609' } })
+    await waitFor(() => expect(v(/^العنوان المختصر/)).toBe('RCDA6609'))
+    await waitFor(() => expect(v(/^الرمز البريدي/)).toBe(''))
+    expect(v(/^عنوان 2/)).toBe('Al Aqiq')
+    // a short address typed in Address 1 (Backend answers with the fallback) replaces the old address the same way
+    lookup.autocomplete.mockResolvedValue([rcda])
+    fireEvent.change(t.getByLabelText(/^الرمز البريدي/), { target: { value: '99999' } })
+    fireEvent.change(t.getByLabelText(/^العنوان 1/), { target: { value: 'RCDA6608' } })
+    fireEvent.click(await screen.findByRole('option', { name: /6608 Anas Ibn Malik Road/ }))
+    await waitFor(() => expect(v(/^الرمز البريدي/)).toBe('13515'))
+    expect(v(/^العنوان المختصر/)).toBe('RCDA6608')
   })
 
   it('Saudi Arabia: a Google Address 1 chosen after an SPL short address drops that short address (it is no longer verified) and the SPL note', async () => {
