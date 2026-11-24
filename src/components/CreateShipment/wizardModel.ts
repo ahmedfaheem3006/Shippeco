@@ -784,6 +784,42 @@ export function detailsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
   return e;
 }
 
+// ── Payment (MyDHL+ «How will you pay?») ──
+/** DHL account number contract (Backend dhlAccount): 6–12 digits. */
+export const DHL_ACCOUNT_RE = /^\d{6,12}$/;
+/** A DHL account number for display: its last 4 digits only. */
+export const maskAccount = (v: string | null | undefined) => {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  return s.length <= 4 ? '*'.repeat(s.length) : `${'*'.repeat(s.length - 4)}${s.slice(-4)}`;
+};
+/** The Incoterm that normally goes with the duties payer: the receiver pays → DAP; SHIPPEC / a third party pays → DDP. */
+export const suggestedIncoterm = (p: DutiesPayer): string => (p === 'receiver' ? 'DAP' : 'DDP');
+/** An Incoterm that does not fit the duties payer (the Backend refuses both cases): null when it fits. */
+export function incotermAdvice(f: Pick<WizardForm, 'duties_payer' | 'incoterm'>): 'needs_ddp' | 'ddp_with_receiver' | null {
+  if (!f.incoterm) return null;
+  if (f.duties_payer !== 'receiver' && f.incoterm !== 'DDP') return 'needs_ddp';
+  if (f.duties_payer === 'receiver' && f.incoterm === 'DDP') return 'ddp_with_receiver';
+  return null;
+}
+/**
+ * The Payment gate (Next / stepper): the account of the party that pays, where one applies.
+ * Transportation: receiver / third party → its DHL account. Duties (customs only): third party → its account.
+ * The Incoterm advice never blocks here — the server's validation decides.
+ */
+export function paymentGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
+  const e: FieldErrors = {};
+  const T = (ar: string, en: string) => tr(lang, ar, en);
+  const acc = (v: string, key: string, what: [string, string]) => {
+    if (!v.trim()) e[key] = T(`${what[0]} مطلوب.`, `${what[1]} is required.`);
+    else if (!DHL_ACCOUNT_RE.test(v.trim())) e[key] = T('رقم حساب DHL من 6 إلى 12 رقمًا.', 'A DHL account number has 6–12 digits.');
+  };
+  if (f.transport_payer === 'receiver') acc(f.transport_payer_account, 'transport_payer_account', ['رقم حساب DHL للمستلم', 'The receiver DHL account number']);
+  if (f.transport_payer === 'third_party') acc(f.transport_payer_account, 'transport_payer_account', ['رقم حساب DHL للطرف الثالث', 'The third-party DHL account number']);
+  if (needsCustoms(f) && f.duties_payer === 'third_party') acc(f.duties_payer_account, 'duties_payer_account', ['رقم حساب DHL للطرف الثالث', 'The third-party DHL account number']);
+  return e;
+}
+
 // ── Customs Invoice (MyDHL+ workflow) ──
 /** "Additional Invoice Information (Remarks)": one DHL remark per non-empty line. */
 export const remarkLines = (v: string) => v.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
@@ -879,6 +915,12 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
       if (g.dhl_invoice_type) miss.push(T('نوع الفاتورة', 'Invoice type'));
       if (g.customs_invoice_number) miss.push(T('رقم الفاتورة', 'Invoice number'));
       if (Object.keys(g).some((k) => k.startsWith('customs_documents') || k === 'invoice_remarks')) miss.push(T('بيانات الفاتورة', 'Invoice details'));
+      break;
+    }
+    case 'payment': {
+      const g = paymentGate(f, lang);
+      if (g.transport_payer_account) miss.push(T('رقم حساب دافع النقل', 'Transportation payer account'));
+      if (g.duties_payer_account) miss.push(T('رقم حساب دافع الرسوم', 'Duties payer account'));
       break;
     }
     case 'packages': if (!f.packages.length || f.packages.some((p) => !(num(p.weight_kg) ?? 0))) miss.push(T('وزن كل طرد', 'Weight of each package')); break;

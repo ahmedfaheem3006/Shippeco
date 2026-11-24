@@ -1297,6 +1297,94 @@ describe('«إنشاء شحنة» wizard', () => {
     expect((within(step.getByTestId('customs-documents')).getByLabelText('رقم المستند') as HTMLInputElement).value).toBe('EL-4471')
   })
 
+  const openPayment = async (draft: ReturnType<typeof shipment>) => {
+    svc.get.mockResolvedValue(draft)
+    svc.options.mockResolvedValue({ ...OPTIONS(true), payment: { shipper_account_masked: '*****2611' } })
+    renderAt('/create-shipment?draft=5'); await screen.findByText('عميل الاختبار')
+    goStep(/الدفع/)
+    return screen.findByTestId('payment-step')
+  }
+
+  it('Payment (AR): «كيف ستدفع؟» — SHIPPEC account shown masked; receiver / third-party transport account required for Next and never carried over; duties payer separate; DAP / DDP set visibly; an incompatible Incoterm is explained, not silently changed; review masks the accounts', async () => {
+    const step = within(await openPayment(intlDraft({ dhl_invoice_type: 'commercial' })))
+    expect(step.getByText('كيف ستدفع؟')).toBeTruthy()
+    expect(within(step.getByTestId('transport-payer')).getByRole('radio', { name: /SHIPPEC \/ حساب المرسل/ }).getAttribute('aria-checked')).toBe('true')
+    await waitFor(() => expect(within(step.getByTestId('transport-payer')).getByRole('radio', { name: /SHIPPEC/ }).textContent).toContain('*****2611'))
+    expect(document.body.textContent).not.toMatch(/460112611/)
+    // receiver pays transport → «رقم حساب DHL للمستلم», required for Next, digits only
+    fireEvent.click(within(step.getByTestId('transport-payer')).getByRole('radio', { name: /حساب DHL للمستلم/ }))
+    next()
+    expect(await screen.findByText('رقم حساب DHL للمستلم مطلوب.')).toBeTruthy()
+    expect(screen.getByTestId('payment-step')).toBeTruthy()
+    const recv = step.getByLabelText(/^رقم حساب DHL للمستلم/) as HTMLInputElement
+    fireEvent.change(recv, { target: { value: '12-34 56ab789' } })
+    expect(recv.value).toBe('123456789')
+    // switching to a third party never re-uses the receiver's number
+    fireEvent.click(within(step.getByTestId('transport-payer')).getByRole('radio', { name: /حساب DHL لطرف ثالث/ }))
+    expect((step.getByLabelText(/^رقم حساب DHL للطرف الثالث/) as HTMLInputElement).value).toBe('')
+    fireEvent.change(step.getByLabelText(/^رقم حساب DHL للطرف الثالث/), { target: { value: '123456789' } })
+    // duties: SHIPPEC → DDP set with its reason; back to the receiver → DAP
+    const duties = within(step.getByTestId('duties-payer'))
+    const inco = () => (step.getByLabelText(/^Incoterm/) as HTMLSelectElement).value
+    expect(inco()).toBe('DAP')
+    fireEvent.click(duties.getByRole('radio', { name: /SHIPPEC \/ حساب المرسل/ }))
+    expect(inco()).toBe('DDP')
+    expect(step.getByTestId('incoterm-auto').textContent).toMatch(/DDP لأن SHIPPEC يدفع الرسوم/)
+    fireEvent.click(duties.getByRole('radio', { name: /المستلم سيدفع/ }))
+    expect(inco()).toBe('DAP')
+    // a manual incompatible choice: kept, explained, one click to fix
+    await waitFor(() => expect(step.getByLabelText(/^Incoterm/).querySelectorAll('option').length).toBe(2))
+    fireEvent.change(step.getByLabelText(/^Incoterm/), { target: { value: 'DDP' } })
+    expect(inco()).toBe('DDP')
+    expect(step.getByTestId('incoterm-warning').textContent).toMatch(/مع «المستلم سيدفع» لا يُستخدم DDP عادةً/)
+    fireEvent.click(within(step.getByTestId('incoterm-warning')).getByRole('button', { name: /استخدام DAP/ }))
+    expect(inco()).toBe('DAP')
+    expect(step.queryByTestId('incoterm-warning')).toBeNull()
+    // duties by a third party: its own account field (not the transport one), required
+    fireEvent.click(duties.getByRole('radio', { name: /حساب DHL لطرف ثالث/ }))
+    expect(inco()).toBe('DDP')
+    next()
+    expect(await screen.findByText(/^رقم حساب DHL للطرف الثالث مطلوب\./)).toBeTruthy()
+    fireEvent.change(step.getByLabelText(/^رقم حساب DHL للطرف الثالث \(الرسوم والضرائب\)/), { target: { value: '555555555' } })
+    // saved: separate accounts as DHL receives them
+    svc.updateDraft.mockResolvedValue(intlDraft({ dhl_invoice_type: 'commercial' }))
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({ transport_payer: 'third_party', transport_payer_account: '123456789', duties_payer: 'third_party', duties_payer_account: '555555555', incoterm: 'DDP' })
+    next()
+    await waitFor(() => expect(screen.queryByTestId('payment-step')).toBeNull())
+    // the review shows the payers with masked accounts only
+    goStep(/المراجعة/)
+    await waitFor(() => expect(svc.validate).toHaveBeenCalled())
+    expect(await screen.findByText(/طرف ثالث · \*{5}6789/)).toBeTruthy()
+    expect(screen.getByText(/طرف ثالث · \*{5}5555/)).toBeTruthy()
+    expect(screen.queryByText(/123456789|555555555/)).toBeNull()
+  })
+
+  it('Payment (EN): MyDHL wording, DDP advice for a third-party duties payer on DAP; a reloaded draft keeps its payers and accounts; documents have no duties question', async () => {
+    const step = within(await openPayment(intlDraft({ dhl_invoice_type: 'commercial', transport_payer: 'receiver', transport_payer_account: '123456789', duties_payer: 'third_party', duties_payer_account: '555555555', incoterm: 'DAP' })))
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(step.getByText('How will you pay?')).toBeTruthy()
+    expect(step.getByText('How will you pay for transportation charges?')).toBeTruthy()
+    expect(step.getAllByText('How will duties and taxes be paid?').length).toBeGreaterThan(0)
+    expect(step.getByText('Terms of trade (Incoterm)')).toBeTruthy()
+    expect(within(step.getByTestId('duties-payer')).getByRole('radio', { name: /Receiver will pay/ })).toBeTruthy()
+    // reloaded: the stored payers and accounts
+    expect(within(step.getByTestId('transport-payer')).getByRole('radio', { name: /Receiver DHL Account/ }).getAttribute('aria-checked')).toBe('true')
+    expect((step.getByLabelText(/^Receiver DHL Account Number/) as HTMLInputElement).value).toBe('123456789')
+    expect((step.getByLabelText(/^Third Party DHL Account Number \(duties/) as HTMLInputElement).value).toBe('555555555')
+    // stored DAP with a third party paying duties: explained (the server decides), not silently changed
+    expect(step.getByTestId('incoterm-warning').textContent).toContain('This payment selection normally requires DDP.')
+    expect((step.getByLabelText(/^Incoterm/) as HTMLSelectElement).value).toBe('DAP')
+  })
+
+  it('Payment: documents shipments have no duties question and no Incoterm', async () => {
+    const step = within(await openPayment(shipment()))
+    expect(step.queryByTestId('duties-payer')).toBeNull()
+    expect(step.queryByLabelText(/^Incoterm/)).toBeNull()
+    expect(step.getByText(/لا رسوم جمركية على هذه الشحنة/)).toBeTruthy()
+  })
+
   it('Create Description: a deterministic English helper (no AI) fills the item description', async () => {
     await openDetails('AE')
     fireEvent.click(await screen.findByRole('radio', { name: /طرود \/ بضائع/ }))

@@ -10,7 +10,7 @@ import { useAuthStore } from '../../hooks/useAuthStore';
 import { Button, Note, Section, Stat } from './ui';
 import { useCsLang } from './csLang';
 import {
-  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, money, packageTotals, purposeLabel, stepLabel, translateIssue, type StepId,
+  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, maskAccount, money, packageTotals, purposeLabel, stepLabel, translateIssue, type StepId,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
 
@@ -126,8 +126,9 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
           <Stat label={t('الطرود', 'Packages')} value={`${pk.pieces} · ${kg(pk.weight, lang)}`} />
           {w.customs && <Stat label={t('قيمة البنود', 'Lines value')} value={`${it.value.toFixed(2)} ${form.currency}`} />}
           {w.customs && <Stat label="Incoterm" value={form.incoterm || '—'} />}
-          <Stat label={t('أجرة النقل على', 'Transportation paid by')} value={t(...PAYER[form.transport_payer])} />
-          {w.customs && <Stat label={t('الرسوم والضرائب على', 'Duties & taxes paid by')} value={t(...PAYER[form.duties_payer])} />}
+          {/* payer accounts only masked (last 4 digits) — the full number is sent to DHL, never displayed here */}
+          <Stat label={t('أجرة النقل على', 'Transportation paid by')} value={`${t(...PAYER[form.transport_payer])}${form.transport_payer !== 'shipper' && form.transport_payer_account ? ` · ${maskAccount(form.transport_payer_account)}` : ''}`} />
+          {w.customs && <Stat label={t('الرسوم والضرائب على', 'Duties & taxes paid by')} value={`${t(...PAYER[form.duties_payer])}${form.duties_payer === 'third_party' && form.duties_payer_account ? ` · ${maskAccount(form.duties_payer_account)}` : ''}`} />}
           {w.customs && (
             <Stat
               label={t('الفاتورة الجمركية', 'Customs invoice')}

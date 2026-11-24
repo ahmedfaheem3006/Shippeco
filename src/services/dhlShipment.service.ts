@@ -359,6 +359,8 @@ export interface ShipmentOptions {
   features?: { paperless_upload: boolean };
   declaration_statements?: Array<{ id: string; supported: boolean }>;
   customs_document_types?: string[];
+  /** SHIPPEC's own DHL account, masked (last 4 digits) — never in full. */
+  payment?: { shipper_account_masked: string | null };
   purposes: Array<{ value: ShipmentPurpose; label: string; dhl_export_reason_type: string | null; dhl_shipment_type: string | null }>;
   transport_payers: TransportPayer[];
   duties_payers: DutiesPayer[];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   allCountries, callingCode, composePhone, customsGate, declarationOptions, declarationPreview, emptyForm, emptyItem, emptyPackage, emptyParty, fromDefaultParty,
-  fromShipment, groupPieces, isOriginWeekend, issuesToErrors, needsUsExportFiling, suggestedInvoiceType,
+  fromShipment, groupPieces, incotermAdvice, isOriginWeekend, issuesToErrors, maskAccount, needsUsExportFiling, paymentGate, suggestedIncoterm, suggestedInvoiceType,
   itemTotals, locateIssue, needsCustoms, nextBusinessDay, packageTotals, partiesGate, routeIssuesText, routeSnapshot, splitPhone, stepMissing, toContent, translateIssue,
   visibleSteps, type WizardForm,
 } from './wizardModel';
@@ -177,6 +177,34 @@ describe('wizard model', () => {
     expect(fromShipment({ ...sh, shipment_details_extra: null, dhl_invoice_type: null, customs_invoice_number: null }).customs_invoice_mode).toBe('create');
     expect(locateIssue('customs_documents')).toEqual({ step: 'customs', key: 'customs_documents' });
     expect(locateIssue('invoice_remarks')).toEqual({ step: 'customs', key: 'invoice_remarks' });
+  });
+
+  it('Payment (MyDHL+): transport and duties payers are separate; accounts only where they apply; DAP / DDP suggested and incompatible pairs flagged; accounts masked for display', () => {
+    const f = { ...intlGoods(), shipper: saParty(), receiver: usParty() };
+    // SHIPPEC pays transport: no account asked or sent; receiver / third party: their 6–12 digit account
+    expect(paymentGate(f)).toEqual({});
+    expect(toContent({ ...f, transport_payer: 'shipper', transport_payer_account: '123456789' }).transport_payer_account).toBeNull();
+    expect(paymentGate({ ...f, transport_payer: 'receiver' }, 'en')).toEqual({ transport_payer_account: 'The receiver DHL account number is required.' });
+    expect(paymentGate({ ...f, transport_payer: 'third_party', transport_payer_account: '12345' }, 'en')).toEqual({ transport_payer_account: 'A DHL account number has 6–12 digits.' });
+    expect(paymentGate({ ...f, transport_payer: 'receiver', transport_payer_account: '123456789' })).toEqual({});
+    expect(toContent({ ...f, transport_payer: 'receiver', transport_payer_account: '123456789' })).toMatchObject({ transport_payer: 'receiver', transport_payer_account: '123456789' });
+    // duties: receiver → no account; SHIPPEC → no account typed (its own); third party → its account (separate field)
+    expect(toContent({ ...f, duties_payer: 'receiver', duties_payer_account: '555555555' }).duties_payer_account).toBeNull();
+    expect(toContent({ ...f, duties_payer: 'shipper', duties_payer_account: '555555555' })).toMatchObject({ duties_payer: 'shipper', duties_payer_account: null });
+    expect(paymentGate({ ...f, duties_payer: 'third_party' })).toHaveProperty('duties_payer_account');
+    expect(toContent({ ...f, duties_payer: 'third_party', duties_payer_account: '555555555', transport_payer: 'receiver', transport_payer_account: '123456789' }))
+      .toMatchObject({ duties_payer_account: '555555555', transport_payer_account: '123456789' });
+    // documents: duties never apply (the duties account never blocks)
+    expect(paymentGate({ ...f, content_kind: 'documents', duties_payer: 'third_party' })).toEqual({});
+    expect(toContent({ ...f, content_kind: 'documents', duties_payer: 'third_party', duties_payer_account: '555555555' })).toMatchObject({ duties_payer: 'receiver', duties_payer_account: null });
+    // DAP / DDP
+    expect([suggestedIncoterm('receiver'), suggestedIncoterm('shipper'), suggestedIncoterm('third_party')]).toEqual(['DAP', 'DDP', 'DDP']);
+    expect(incotermAdvice({ duties_payer: 'shipper', incoterm: 'DAP' })).toBe('needs_ddp');
+    expect(incotermAdvice({ duties_payer: 'third_party', incoterm: 'DDP' })).toBeNull();
+    expect(incotermAdvice({ duties_payer: 'receiver', incoterm: 'DDP' })).toBe('ddp_with_receiver');
+    expect(incotermAdvice({ duties_payer: 'receiver', incoterm: 'EXW' })).toBeNull();
+    expect([maskAccount('460112611'), maskAccount(''), maskAccount('1234')]).toEqual(['*****2611', '', '****']);
+    expect(stepMissing({ ...f, transport_payer: 'third_party' }, 'payment', 'en')).toEqual(['Transportation payer account']);
   });
 
   it('package quantities and totals; identical stored pieces are grouped back', () => {

@@ -1,17 +1,16 @@
 /**
- * Steps of «إنشاء شحنة»: packages, payment & terms (the Parties screen
- * lives in PartiesStep.tsx, Shipment Details in DetailsStep.tsx, the Customs
- * Invoice in CustomsStep.tsx), plus the pickup-address fields. Arabic or English (the page's own AR | EN). Field
+ * Steps of «إنشاء شحنة»: packages (the Parties screen lives in
+ * PartiesStep.tsx, Shipment Details in DetailsStep.tsx, the Customs Invoice in
+ * CustomsStep.tsx, Payment in PaymentStep.tsx), plus the pickup-address fields. Arabic or English (the page's own AR | EN). Field
  * errors come from the Backend's validation (mapped by
  * wizardModel.locateIssue) — never re-implemented here.
  */
-import React, { useEffect, useState } from 'react';
-import { Copy, Package, Plus, Trash2, Wallet } from 'lucide-react';
-import { dhlShipmentService } from '../../services/dhlShipment.service';
-import { ChoiceCards, CountrySelect, Field, Note, Section, SelectInput, TextInput, Button } from './ui';
+import React from 'react';
+import { Copy, Package, Plus, Trash2 } from 'lucide-react';
+import { CountrySelect, Field, Note, Section, SelectInput, TextInput, Button } from './ui';
 import { useCsLang } from './csLang';
 import {
-  emptyPackage, isInternational, kg, packageTotals, translateIssue, type FieldErrors, type PartyForm, type WizardForm,
+  emptyPackage, kg, packageTotals, translateIssue, type FieldErrors, type PartyForm, type WizardForm,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
 
@@ -127,79 +126,5 @@ export function StepPackages({ w }: Props) {
       </div>
       <p className="mt-2 text-[11px] text-slate-500">{tx('الأوزان الحجمية ووزن التسعير تظهر فقط كما تعيدها DHL بعد طلب الأسعار — لا يُحسب وزن مُحاسَب تقديريًا.', 'Volumetric and billed weights appear only as DHL returns them with the rates — no chargeable weight is estimated.')}</p>
     </Section>
-  );
-}
-
-// ── Payment & terms ──
-export function StepPayment({ w }: Props) {
-  const { form, update, errors, customs } = w;
-  const { t } = useCsLang();
-  const err = useErr(errors);
-  const [incoterms, setIncoterms] = useState<Array<{ code: string; name: string | null }>>([]);
-  useEffect(() => {
-    if (!customs) return;
-    dhlShipmentService.incoterms().then((r) => setIncoterms(r.items), () => setIncoterms([]));
-  }, [customs]);
-  return (
-    <div className="space-y-4">
-      <Section title={t('من يدفع أجرة النقل؟', 'Who pays the transportation charges?')} icon={<Wallet size={18} className="text-indigo-600" />}>
-        <ChoiceCards
-          name={t('دافع أجرة النقل', 'Transportation payer')} columns={3}
-          value={form.transport_payer}
-          onChange={(v) => update((f) => ({ ...f, transport_payer: v }))}
-          options={[
-            { value: 'shipper', title: t('SHIPPEC (المرسل)', 'SHIPPEC (sender)'), description: t('تُحسب على حساب SHIPPEC لدى DHL.', "Billed to SHIPPEC's DHL account.") },
-            { value: 'receiver', title: t('المستلم', 'Receiver'), description: t('برقم حساب المستلم لدى DHL.', "With the receiver's DHL account number.") },
-            { value: 'third_party', title: t('طرف ثالث', 'Third party'), description: t('برقم حساب DHL لطرف آخر.', "With another party's DHL account number.") },
-          ]}
-        />
-        {form.transport_payer !== 'shipper' && (
-          <div className="mt-3 max-w-sm">
-            <Field label={t('رقم حساب DHL للدافع', "Payer's DHL account number")} required error={err('transport_payer_account')} hint={t('رقم حساب الطرف الآخر فقط — حساب SHIPPEC لا يُعرض ولا يُطلب.', "The other party's account only — SHIPPEC's account is never shown or asked.")}>
-              {(id) => <TextInput id={id} value={form.transport_payer_account} onValue={(v) => update((f) => ({ ...f, transport_payer_account: v.replace(/\D/g, '').slice(0, 12) }))} error={err('transport_payer_account')} ltr inputMode="numeric" />}
-            </Field>
-          </div>
-        )}
-      </Section>
-
-      {customs ? (
-        <>
-          <Section title={t('من يدفع الرسوم والضرائب الجمركية؟', 'Who pays duties and taxes?')}>
-            <ChoiceCards
-              name={t('دافع الرسوم', 'Duties payer')} columns={3}
-              value={form.duties_payer}
-              onChange={(v) => update((f) => ({ ...f, duties_payer: v, incoterm: v === 'receiver' ? (f.incoterm === 'DDP' ? 'DAP' : f.incoterm) : 'DDP' }))}
-              options={[
-                { value: 'receiver', title: t('المستلم', 'Receiver'), description: t('عادةً DAP — يدفعها المستلم عند التسليم.', 'Usually DAP — the receiver pays on delivery.') },
-                { value: 'shipper', title: t('SHIPPEC (المرسل)', 'SHIPPEC (sender)'), description: t('DDP — خدمة DUTY TAX PAID.', 'DDP — DUTY TAX PAID service.') },
-                { value: 'third_party', title: t('طرف ثالث', 'Third party'), description: t('DDP برقم حساب DHL لطرف آخر.', "DDP with another party's DHL account number.") },
-              ]}
-            />
-            {err('duties_payer') && <p className="mt-2 text-[11px] font-semibold text-red-600" role="alert">{err('duties_payer')}</p>}
-            {form.duties_payer === 'third_party' && (
-              <div className="mt-3 max-w-sm">
-                <Field label={t('رقم حساب DHL لدافع الرسوم', "Duties payer's DHL account number")} required error={err('duties_payer_account')}>
-                  {(id) => <TextInput id={id} value={form.duties_payer_account} onValue={(v) => update((f) => ({ ...f, duties_payer_account: v.replace(/\D/g, '').slice(0, 12) }))} error={err('duties_payer_account')} ltr inputMode="numeric" />}
-                </Field>
-              </div>
-            )}
-          </Section>
-          <Section title={t('شروط التسليم (Incoterm)', 'Terms of trade (Incoterm)')} description={t('القائمة من DHL نفسها. التوافق مع دافع الرسوم يتحقق منه الخادم.', "The list comes from DHL itself. The server checks it against the duties payer.")}>
-            <div className="max-w-md">
-              <Field label="Incoterm" required error={err('incoterm')}>
-                {(id) => (
-                  <SelectInput id={id} value={form.incoterm} onValue={(v) => update((f) => ({ ...f, incoterm: v }))} error={err('incoterm')}>
-                    {(incoterms.length ? incoterms : [{ code: form.incoterm || 'DAP', name: null }]).map((i) => <option key={i.code} value={i.code}>{i.code}{i.name ? ` — ${i.name}` : ''}</option>)}
-                  </SelectInput>
-                )}
-              </Field>
-            </div>
-            <div className="mt-3"><Note>{t('المستلم يدفع الرسوم ← عادةً DAP. المرسل أو طرف ثالث يدفعها ← DDP (يشترطه الخادم).', 'Receiver pays duties → usually DAP. Sender or a third party pays → DDP (required by the server).')}</Note></div>
-          </Section>
-        </>
-      ) : (
-        <Note>{t(`لا رسوم جمركية على هذه الشحنة (${isInternational(form) ? 'مستندات' : 'شحنة محلية'}).`, `No customs duties on this shipment (${isInternational(form) ? 'documents' : 'domestic'}).`)}</Note>
-      )}
-    </div>
   );
 }
