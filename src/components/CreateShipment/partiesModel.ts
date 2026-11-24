@@ -25,20 +25,41 @@ export function clearAddress(p: PartyForm): PartyForm {
   };
 }
 
-/** A provider address → the form (only what the provider returned; everything stays editable). */
-export function applyAddress(p: PartyForm, a: LookupAddress): PartyForm {
-  const keep = (v: string | null | undefined, cur: string) => (v != null && String(v).trim() ? String(v).trim() : cur);
+/**
+ * A selected provider address → the form. Everything stays editable.
+ *   - the address-specific parts (Address 2, suburb / district, Saudi short
+ *     address and National Address parts) are REPLACED — never left over from
+ *     an earlier address;
+ *   - City / State / Postal Code: what the provider returned; when it returned
+ *     nothing for one, the current value is kept (only within the same country);
+ *   - `authoritative` (a Saudi National Address from SPL): City / State / Postal
+ *     Code are always replaced, even by an empty value;
+ *   - a Google address in Saudi Arabia clears the old short address (it no longer
+ *     describes the address chosen).
+ * The phone code follows the country (an empty one gets the country's code).
+ */
+export function applyAddress(p: PartyForm, a: LookupAddress, authoritative = false): PartyForm {
+  const val = (v: string | null | undefined) => (v != null && String(v).trim() ? String(v).trim() : '');
   const country = a.country_code || p.country_code;
-  const base = country !== p.country_code ? withCountry(p, country) : p;
+  const moved = country !== p.country_code;
+  const base = moved ? withCountry(p, country) : p;
+  const pick = (v: string | null | undefined, cur: string) => val(v) || (authoritative || moved ? '' : cur);
+  const sa = country === 'SA';
+  const short = sa ? val(a.short_address).toUpperCase() : '';
+  const code = callingCode(country);
   return {
     ...base,
-    address_line1: keep(a.address_line1, base.address_line1),
-    address_line2: keep(a.address_line2, base.address_line2),
-    short_address: country === 'SA' ? keep(a.short_address, base.short_address) : base.short_address,
-    suburb: country === 'SA' ? base.suburb : keep(a.district, base.suburb),
-    city: keep(a.city, base.city),
-    province: keep(a.province, base.province),
-    postal_code: keep(a.postal_code, base.postal_code),
+    address_line1: val(a.address_line1) || base.address_line1,
+    address_line2: val(a.address_line2),
+    short_address: sa ? short : base.short_address,
+    suburb: val(a.district),
+    city: pick(a.city, base.city),
+    province: pick(a.province, base.province),
+    postal_code: pick(a.postal_code, base.postal_code),
+    na: sa
+      ? { building_number: val(a.building_number), street: val(a.street), additional_number: val(a.additional_number), district: val(a.district), short_address: short }
+      : { building_number: '', street: '', additional_number: '', district: '', short_address: '' },
+    phones: base.phones.map((ph) => (ph.code ? ph : { ...ph, code })),
   };
 }
 
@@ -67,7 +88,25 @@ export function applyContact(p: PartyForm, c: SavedContact): PartyForm {
     city: s(c.city), province: s(c.province), postal_code: s(c.postal_code), residential: !!c.residential, email: s(c.email),
     phones: phones.length ? phones : [emptyPhone(c.country_code, p.phones[0]?.type ?? 'mobile')],
     vat_tax_id: s(c.vat_tax_id), eori: s(c.eori), notes: s(c.notes), saved_contact_id: c.id,
+    na: c.country_code === 'SA'
+      ? { building_number: s(c.building_number), street: s(c.street), additional_number: s(c.additional_number), district: s(c.suburb), short_address: s(c.short_address) }
+      : { building_number: '', street: '', additional_number: '', district: '', short_address: '' },
   };
+}
+
+/**
+ * The Saudi National Address parts kept from the last lookup — only while the
+ * address lines still say the same (a hand-edited line drops its parts).
+ */
+function naParts(p: PartyForm) {
+  const n = (v: string) => (v.trim() ? v.trim() : null);
+  const na = p.na;
+  if (p.country_code !== 'SA' || !na) return { building_number: null, street: null, additional_number: null };
+  const line1 = p.address_line1.trim();
+  const line2 = p.address_line2.trim();
+  const l1 = !!na.building_number && !!na.street && line1 === `${na.building_number} ${na.street}`;
+  const l2 = !!na.additional_number && line2.startsWith(na.additional_number);
+  return { building_number: l1 ? n(na.building_number) : null, street: l1 ? n(na.street) : null, additional_number: l2 ? n(na.additional_number) : null };
 }
 
 /** The reusable fields of a party for «حفظ في قاعدة البيانات» (no shipment field). */
@@ -78,7 +117,7 @@ export function contactFieldsOf(p: PartyForm): ContactFields {
     name: p.contact.trim(), business_contact: p.business_contact, company: n(p.company), country_code: p.country_code,
     country_name: p.country_code ? countryName(p.country_code, 'en') : null,
     address_line1: n(p.address_line1), address_line2: n(p.address_line2), short_address: sa ? n(p.short_address.toUpperCase()) : null,
-    building_number: null, street: null, additional_number: null,
+    ...naParts(p),
     suburb: n(p.suburb), city: n(p.city), province: n(p.province), postal_code: n(p.postal_code), residential: p.residential, email: n(p.email),
     phones: p.phones.filter((x) => x.number.trim()).map((x) => ({ type: x.type, code: n(x.code), number: n(x.number), extension: n(x.extension), sms: x.sms })),
     vat_tax_id: n(p.vat_tax_id), eori: n(p.eori), notes: n(p.notes),

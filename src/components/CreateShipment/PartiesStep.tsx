@@ -108,7 +108,7 @@ function ContactNameInput({ id, who, value, onChange, onPick, error, placeholder
 
 // ── Address 1 → provider suggestions (country-limited) ──
 function Address1Input({ id, value, onChange, country, onPick, error, t }: {
-  id: string; value: string; onChange: (v: string) => void; country: string; onPick: (s: AddressSuggestion) => Promise<void>; error?: string | null; t: T;
+  id: string; value: string; onChange: (v: string) => void; country: string; onPick: (s: AddressSuggestion, session: string) => Promise<void>; error?: string | null; t: T;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
@@ -129,7 +129,8 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
     if (!s) return;
     setOpen(false);
     setPicking(true);
-    try { await onPick(s); } finally { setPicking(false); session.current = newSession(); }
+    // Place Details with the same session token closes the Autocomplete session (Google billing)
+    try { await onPick(s, session.current); } finally { setPicking(false); session.current = newSession(); }
   };
   const noCountry = open && !country && typed.length >= 3;
   const show = !!key && r.status !== 'idle';
@@ -490,11 +491,12 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
   const sa = value.country_code === 'SA';
   const contactRole = who === 'shipper' ? 'sender' : 'receiver';
 
-  const pickAddress = async (s: AddressSuggestion) => {
+  // Address 1 suggestion → every address field (SPL National Address: authoritative)
+  const pickAddress = async (s: AddressSuggestion, session: string) => {
     setLookupError(null);
     try {
-      const addr = s.address ?? (s.id ? await addressLookupService.details(s.id, value.country_code, newSession()) : null);
-      if (addr) onChange(applyAddress(value, addr));
+      const addr = s.address ?? (s.id ? await addressLookupService.details(s.id, value.country_code, session) : null);
+      if (addr) onChange(applyAddress(value, addr, s.provider === 'spl'));
     } catch (x) {
       setLookupError(describeApiError(x, t('تعذر جلب تفاصيل العنوان — أكمل يدويًا.', 'Could not load the address details — complete it manually.')));
     }

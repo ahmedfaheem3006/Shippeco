@@ -52,7 +52,10 @@ export interface LookupAddress {
   additional_number: string | null;
   district: string | null;
   city: string | null;
+  /** The DHL State value (US / CA / AU: the short code). */
   province: string | null;
+  /** The full state / province / region name (display only). */
+  province_name?: string | null;
   postal_code: string | null;
   country_code: string;
 }
