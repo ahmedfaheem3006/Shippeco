@@ -11,7 +11,7 @@ const svc = vi.hoisted(() => ({
 const clients = vi.hoisted(() => ({ searchClients: vi.fn() }))
 vi.mock('../services/dhlShipment.service', () => ({ dhlShipmentService: svc, searchClients: clients.searchClients }))
 const contacts = vi.hoisted(() => ({ search: vi.fn(), create: vi.fn(), update: vi.fn() }))
-const lookup = vi.hoisted(() => ({ autocomplete: vi.fn(), details: vi.fn(), shortAddress: vi.fn(), postalCode: vi.fn() }))
+const lookup = vi.hoisted(() => ({ autocomplete: vi.fn(), cities: vi.fn(), details: vi.fn(), shortAddress: vi.fn(), postalCode: vi.fn() }))
 vi.mock('../services/shippingContacts.service', async (orig) => ({
   ...(await orig<typeof import('../services/shippingContacts.service')>()), shippingContactsService: contacts, addressLookupService: lookup,
 }))
@@ -90,6 +90,7 @@ beforeEach(() => {
   auth.role = 'manager'
   contacts.search.mockResolvedValue([])
   lookup.autocomplete.mockResolvedValue([])
+  lookup.cities.mockResolvedValue([])
   lookup.shortAddress.mockResolvedValue([])
   lookup.postalCode.mockResolvedValue([])
   svc.listDrafts.mockResolvedValue({ data: [], pagination: { total: 0 } })
@@ -640,6 +641,99 @@ describe('«إنشاء شحنة» wizard', () => {
     fireEvent.change(zip, { target: { value: '00000' } })
     expect(await screen.findByText('لم يتم العثور على مدينة مطابقة لهذا الرمز البريدي.')).toBeTruthy()
     expect((t.getByLabelText(/^المدينة/) as HTMLInputElement).value).toBe('Dearborn') // kept
+  })
+
+  // ═════════ City autocomplete ═════════
+  const cityOpt = (id: string, main: string, secondary: string) => ({ id, main, secondary, short_address: null, address: null, provider: 'google' })
+  it('City: no country → no lookup; fewer than 2 characters → no lookup; debounced to one request for the last text, inside the chosen country', async () => {
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    const t = within(toPanel())
+    const city = t.getByLabelText(/^المدينة/)
+    fireEvent.change(city, { target: { value: 'Dear' } })
+    expect(await t.findByText('اختر البلد/الإقليم أولًا لعرض المدن المقترحة.')).toBeTruthy()
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.cities).not.toHaveBeenCalled() // never without a country
+    pickCountry(1, 'USA')
+    fireEvent.change(city, { target: { value: 'D' } })
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.cities).not.toHaveBeenCalled() // 2-character minimum
+    for (const v of ['De', 'Dea', 'Dear']) fireEvent.change(city, { target: { value: v } })
+    await waitFor(() => expect(lookup.cities).toHaveBeenCalledTimes(1))
+    await new Promise((r) => setTimeout(r, 400))
+    expect(lookup.cities).toHaveBeenCalledTimes(1) // one pause in typing → one request
+    expect(lookup.cities.mock.calls[0].slice(0, 2)).toEqual(['Dear', 'US'])
+    // Egypt: the request names EG
+    pickCountry(1, 'EG')
+    fireEvent.change(city, { target: { value: 'Cai' } })
+    await waitFor(() => expect(lookup.cities).toHaveBeenCalledTimes(2))
+    expect(lookup.cities.mock.calls[1].slice(0, 2)).toEqual(['Cai', 'EG'])
+  })
+
+  it('City: «Dearborn / Michigan, United States of America»; selecting fills City + State (MI, shown as Michigan), keeps the country and the postal code; keyboard works; still editable', async () => {
+    lookup.cities.mockResolvedValue([cityOpt('ChIJ_dearborn_city01', 'Dearborn', 'MI, USA'), cityOpt('ChIJ_dearborn_hts_01', 'Dearborn Heights', 'MI, USA')])
+    lookup.details.mockResolvedValue({ address_line1: null, address_line2: null, short_address: null, building_number: null, street: null, additional_number: null,
+      district: null, city: 'Dearborn', province: 'MI', postal_code: null, country_code: 'US' })
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'USA')
+    const t = within(toPanel())
+    const v = (l: RegExp) => (t.getByLabelText(l) as HTMLInputElement).value
+    fireEvent.change(t.getByLabelText(/^الولاية/), { target: { value: 'CA' } }) // an older state — replaced, never kept
+    fireEvent.change(t.getByLabelText(/^الرمز البريدي/), { target: { value: '48126' } })
+    const city = t.getByLabelText(/^المدينة/)
+    fireEvent.change(city, { target: { value: 'Dear' } })
+    const first = await screen.findByRole('option', { name: /^Dearborn ?Michigan, United States of America$/ })
+    expect(first.textContent).toBe('DearbornMichigan, United States of America')
+    expect(within(document.getElementById(city.getAttribute('aria-controls')!)!).getByTestId('google-attribution')).toBeTruthy()
+    fireEvent.keyDown(city, { key: 'ArrowDown' })
+    fireEvent.keyDown(city, { key: 'ArrowUp' })
+    fireEvent.keyDown(city, { key: 'Enter' })
+    await waitFor(() => expect(lookup.details).toHaveBeenCalledWith('ChIJ_dearborn_city01', 'US', lookup.cities.mock.calls[0][2]))
+    await waitFor(() => expect(v(/^المدينة/)).toBe('Dearborn'))
+    expect(v(/^الولاية/)).toBe('MI')
+    expect(t.getByTestId('state-name').textContent).toBe('Michigan')
+    expect(v(/^الرمز البريدي/)).toBe('48126') // a city never overwrites the postal code
+    expect(v(/^البلد\/الإقليم/)).toBe('الولايات المتحدة الأمريكية')
+    expect(v(/^الرمز\*?$/)).toBe('1')
+    expect(screen.queryByRole('option', { name: /Dearborn/ })).toBeNull()
+    fireEvent.change(t.getByLabelText(/^الولاية/), { target: { value: 'OH' } })
+    expect(t.getByTestId('state-name').textContent).toBe('Ohio')
+    // Escape closes the list; the text typed stays
+    fireEvent.change(city, { target: { value: 'Dearb' } })
+    await screen.findByRole('option', { name: /Dearborn Heights/ })
+    fireEvent.keyDown(city, { key: 'Escape' })
+    expect(screen.queryByRole('option', { name: /Dearborn Heights/ })).toBeNull()
+    expect(v(/^المدينة/)).toBe('Dearb')
+  })
+
+  it('City: an older slow answer never replaces a newer one; no result / provider failure are explained and manual entry stays', async () => {
+    const resolvers: Record<string, (v: unknown) => void> = {}
+    lookup.cities.mockImplementation((q: string) => new Promise((r) => { resolvers[q] = r }))
+    renderAt()
+    await screen.findByTestId('parties-surface')
+    pickCountry(1, 'EG')
+    const city = within(toPanel()).getByLabelText(/^المدينة/) as HTMLInputElement
+    fireEvent.change(city, { target: { value: 'Ca' } })
+    await waitFor(() => expect(lookup.cities).toHaveBeenCalledTimes(1))
+    fireEvent.change(city, { target: { value: 'Cai' } })
+    await waitFor(() => expect(lookup.cities).toHaveBeenCalledTimes(2))
+    await act(async () => { resolvers.Cai([cityOpt('ChIJ_cairo_city_001', 'Cairo', 'Cairo Governorate, Egypt')]) })
+    await act(async () => { resolvers.Ca([cityOpt('ChIJ_old_city_0001', 'OLD CITY', 'Egypt')]) })
+    const opt = await screen.findByRole('option', { name: /Cairo/ })
+    expect(opt.textContent).toBe('CairoCairo Governorate, Egypt')
+    expect(screen.queryByText('OLD CITY')).toBeNull()
+    lookup.cities.mockReset()
+    lookup.cities.mockResolvedValueOnce([])
+    fireEvent.change(city, { target: { value: 'Zzzz' } })
+    expect(await screen.findByText('لم يتم العثور على مدينة مطابقة في هذا البلد.')).toBeTruthy()
+    lookup.cities.mockRejectedValueOnce(new ApiError('down', 502, 'ADDRESS_PROVIDER_ERROR'))
+    fireEvent.change(city, { target: { value: 'Zzzzy' } })
+    expect(await screen.findByText(/تعذر البحث الآن/)).toBeTruthy()
+    lookup.cities.mockRejectedValueOnce(new ApiError('not configured', 503, 'ADDRESS_PROVIDER_NOT_CONFIGURED'))
+    fireEvent.change(city, { target: { value: 'Giza' } })
+    expect(await screen.findByText(/اقتراح المدن غير مفعّل/)).toBeTruthy()
+    expect(city.value).toBe('Giza') // typed by hand, kept
   })
 
   it('Google suggestions carry the «Powered by Google» attribution; SPL ones do not', async () => {

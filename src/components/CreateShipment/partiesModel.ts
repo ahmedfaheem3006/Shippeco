@@ -42,6 +42,17 @@ export function applyAddress(p: PartyForm, a: LookupAddress): PartyForm {
   };
 }
 
+/**
+ * A City suggestion → City + State (+ the country Google answered for). The postal
+ * code is left alone (a city has many); the old state is replaced — never kept
+ * from an earlier city.
+ */
+export function applyCity(p: PartyForm, a: LookupAddress, typedCity: string): PartyForm {
+  const country = a.country_code || p.country_code;
+  const base = country !== p.country_code ? withCountry(p, country) : p;
+  return { ...base, city: (a.city ?? '').trim() || typedCity.trim() || base.city, province: (a.province ?? '').trim() };
+}
+
 /** A saved contact → the form (every field filled, all editable; no new record is created by selecting). */
 export function applyContact(p: PartyForm, c: SavedContact): PartyForm {
   const s = (v: string | null | undefined) => v ?? '';

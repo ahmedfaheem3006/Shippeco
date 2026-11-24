@@ -9,6 +9,8 @@
  *   - Country/Territory: every country, searchable, sets the calling code;
  *   - Address 1: country-limited suggestions from the provider behind the
  *     SHIPPEC Backend (no invented results); Saudi Short Address lookup;
+ *   - City: Google city suggestions inside the country (2+ characters); a choice
+ *     fills City + State (US: the 2-letter code sent, the state name shown);
  *   - US ZIP → city + state (Google Geocoding behind the Backend);
  *   - «حفظ في قاعدة البيانات» asks for a SHIPPEC alias (never sent to DHL); only an
  *     alias already in use is a conflict (update it / choose another name / cancel);
@@ -31,8 +33,9 @@ import { Button, Field, Section, TextInput, inputCls } from './ui';
 import { useCsLang, type CsLang } from './csLang';
 import { listKeyHandler, useLookup, useOutside, type LookupStatus } from './useLookup';
 import { CountryCombobox, Dropdown } from './Combobox';
+import { citySecondary, subdivisionName } from './addressRules';
 import {
-  applyAddress, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, SHORT_ADDRESS_RE, withCountry,
+  applyAddress, applyCity, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, SHORT_ADDRESS_RE, withCountry,
 } from './partiesModel';
 import {
   canShipment, countryName, emptyPhone, partiesGate, translateIssue, type FieldErrors, type PartyForm, type PhoneEntry,
@@ -155,6 +158,63 @@ function Address1Input({ id, value, onChange, country, onPick, error, t }: {
             <StatusRow status={r.status} t={t}
               empty={country === 'SA' ? t('لم يتم العثور على عنوان وطني مطابق.', 'No matching national address was found.') : t('لم يتم العثور على عنوان مطابق.', 'No matching address was found.')}
               unavailable={t('البحث التلقائي عن العناوين غير مفعّل — أدخل العنوان يدويًا.', 'Address suggestions are not enabled — enter the address manually.')} />
+          )}
+        </Dropdown>
+      )}
+    </div>
+  );
+}
+
+// ── City → Google city suggestions (cities only, country-limited); selecting fills the State ──
+function CityInput({ id, value, onChange, country, onPick, error, t }: {
+  id: string; value: string; onChange: (v: string) => void; country: string; onPick: (s: AddressSuggestion, session: string) => Promise<void>; error?: string | null; t: T;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [picking, setPicking] = useState(false);
+  const session = useRef(newSession());
+  const fetcher = useCallback((k: string, signal: AbortSignal) => {
+    const [cc, ...rest] = k.split('|');
+    return addressLookupService.cities(rest.join('|'), cc, session.current, signal);
+  }, []);
+  const typed = value.trim();
+  // only while the person types here (a value filled by another lookup never asks Google again)
+  const key = open && country && typed.length >= 2 ? `${country}|${typed}` : null;
+  const r = useLookup<AddressSuggestion>(key, fetcher, 300);
+  useOutside(box, () => setOpen(false));
+  const pick = async (i: number) => {
+    const s = r.items[i];
+    if (!s) return;
+    setOpen(false);
+    setPicking(true);
+    try { await onPick(s, session.current); } finally { setPicking(false); session.current = newSession(); }
+  };
+  const noCountry = open && !country && typed.length >= 2;
+  const show = !!key && r.status !== 'idle';
+  return (
+    <div ref={box} className="relative">
+      <TextInput id={id} value={value} ltr autoComplete="off" error={error} role="combobox" aria-expanded={show} aria-controls={listId} aria-autocomplete="list"
+        aria-activedescendant={show && r.items[active] ? `${listId}-${active}` : undefined}
+        onValue={(v) => { onChange(v); setOpen(true); setActive(0); }}
+        onKeyDown={listKeyHandler({ open: show, count: r.items.length, active, setActive, onPick: (i) => void pick(i), onClose: () => setOpen(false) })} />
+      {(r.status === 'loading' || picking) && <Loader2 size={14} className="absolute end-3 top-3.5 animate-spin text-slate-400" />}
+      {noCountry && <p className="mt-1 text-[11px] text-slate-500">{t('اختر البلد/الإقليم أولًا لعرض المدن المقترحة.', 'Choose the country first to see suggested cities.')}</p>}
+      {show && (
+        <Dropdown id={listId} label={t('المدن المقترحة', 'Suggested cities')}>
+          {r.status === 'done' && r.items.length ? r.items.map((s, i) => (
+            <button key={`${s.id ?? s.main}-${i}`} id={`${listId}-${i}`} type="button" role="option" aria-selected={i === active} tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => void pick(i)} className={optionCls(i === active)} data-city-option={i}>
+              <Building2 size={16} className="mt-0.5 text-indigo-500 shrink-0" />
+              <span className="flex-1 min-w-0 text-start" dir="ltr">
+                <span className="block text-sm font-bold text-slate-900 dark:text-white truncate">{s.main}</span>
+                <span className="block text-[11px] text-slate-500 truncate">{citySecondary(s.secondary, country)}</span>
+              </span>
+            </button>
+          )).concat([<div key="google-attribution" className="px-3 py-1.5 border-t border-slate-100 dark:border-slate-700 text-end text-[10px] font-semibold text-slate-400" dir="ltr" data-testid="google-attribution">Powered by Google</div>]) : (
+            <StatusRow status={r.status} t={t} empty={t('لم يتم العثور على مدينة مطابقة في هذا البلد.', 'No matching city was found in this country.')}
+              unavailable={t('اقتراح المدن غير مفعّل — أدخل المدينة يدويًا.', 'City suggestions are not enabled — enter the city manually.')} />
           )}
         </Dropdown>
       )}
@@ -419,6 +479,17 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
     }
   };
 
+  // City suggestion → City + State (+ country); the postal code is left alone
+  const pickCity = async (s: AddressSuggestion, session: string) => {
+    setLookupError(null);
+    try {
+      if (s.id) onChange(applyCity(value, await addressLookupService.details(s.id, value.country_code, session), s.main));
+    } catch (x) {
+      setLookupError(describeApiError(x, t('تعذر جلب تفاصيل المدينة — أكمل الولاية يدويًا.', 'Could not load the city details — enter the state manually.')));
+    }
+  };
+  const stateName = subdivisionName(value.country_code, value.province);
+
   const openSave = () => {
     if (!value.contact.trim() || !value.country_code) {
       toast.error(t('أدخل الاسم والبلد قبل الحفظ في قاعدة البيانات.', 'Enter the name and country before saving to the database.'));
@@ -496,8 +567,12 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
       )}
       <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
         <Field label={t('الضاحية', 'Suburb')} error={sa ? null : e('address_line3')}>{(id) => <TextInput id={id} value={value.suburb} onValue={(v) => set('suburb', v)} ltr error={sa ? null : e('address_line3')} />}</Field>
-        <Field label={t('المدينة', 'City')} required error={e('city')}>{(id) => <TextInput id={id} value={value.city} onValue={(v) => set('city', v)} error={e('city')} ltr autoComplete="address-level2" />}</Field>
-        <Field label={t('الولاية / المنطقة', 'State')} required={value.country_code === 'US'} error={e('province')}>{(id) => <TextInput id={id} value={value.province} onValue={(v) => set('province', v)} error={e('province')} ltr />}</Field>
+        <Field label={t('المدينة', 'City')} required error={e('city')}>{(id) => (
+          <CityInput id={id} value={value.city} country={value.country_code} error={e('city')} t={t}
+            onChange={(v) => set('city', v)} onPick={pickCity} />
+        )}</Field>
+        <Field label={t('الولاية / المنطقة', 'State')} required={value.country_code === 'US'} error={e('province')}
+          hint={stateName ? <span dir="ltr" data-testid="state-name">{stateName}</span> : undefined}>{(id) => <TextInput id={id} value={value.province} onValue={(v) => set('province', v)} error={e('province')} ltr />}</Field>
         <Field label={t('الرمز البريدي', 'Postal Code')} required={sa || value.country_code === 'US'} error={e('postal_code')}>{(id) => (
           <PostalCodeInput id={id} value={value.postal_code} country={value.country_code} error={e('postal_code')} required={sa || value.country_code === 'US'} t={t}
             onChange={(v) => set('postal_code', v)}

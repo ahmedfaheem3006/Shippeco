@@ -92,6 +92,11 @@ export const addressLookupService = {
     const qp = new URLSearchParams({ q, country, session });
     return api.get<AddressSuggestion[]>(`/address-lookup/autocomplete?${qp}`, { signal });
   },
+  /** City field: cities only, inside the country (Google Places behind the Backend). */
+  async cities(q: string, country: string, session: string, signal?: AbortSignal): Promise<AddressSuggestion[]> {
+    const qp = new URLSearchParams({ q, country, session });
+    return api.get<AddressSuggestion[]>(`/address-lookup/cities?${qp}`, { signal });
+  },
   async details(id: string, country: string, session: string): Promise<LookupAddress> {
     const qp = new URLSearchParams({ id, country, session });
     return api.get<LookupAddress>(`/address-lookup/details?${qp}`);
