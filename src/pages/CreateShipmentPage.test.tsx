@@ -1691,6 +1691,15 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({ transport_payer: 'third_party', transport_payer_account: '123456789', duties_payer: 'third_party', duties_payer_account: '555555555', incoterm: 'DDP' })
     next()
     await waitFor(() => expect(screen.queryByTestId('payment-step')).toBeNull())
+    // the payers changed → DHL's quote is stale: the way to the review stops at the Service step until it is refreshed
+    goStep(/المراجعة/)
+    expect(await screen.findByText('تغيّرت بيانات الشحنة — اضغط «تحديث الخدمات والأسعار» قبل المتابعة.')).toBeTruthy()
+    expect(svc.validate).not.toHaveBeenCalled()
+    svc.checkProducts.mockResolvedValue({ products: PRODUCTS })
+    svc.checkRates.mockResolvedValue({ quotes: [QUOTE] })
+    fireEvent.click(screen.getByRole('button', { name: /تحديث الخدمات والأسعار/ }))
+    await waitFor(() => expect(svc.checkRates).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('تغيّرت بيانات الشحنة')).toBeNull())
     // the review shows the payers with masked accounts only
     goStep(/المراجعة/)
     await waitFor(() => expect(svc.validate).toHaveBeenCalled())
