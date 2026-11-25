@@ -158,6 +158,8 @@ export interface WizardForm {
   pickup_option: PickupOption;
   pickup_earliest_time: string;
   pickup_latest_time: string;
+  /** «Where should the courier pick up the shipment?» — Reception / Front / Back, or Other (then pickup_location = the details). */
+  pickup_location_choice: PickupLocationChoice;
   pickup_location: string;
   pickup_location_type: 'business' | 'residence' | '';
   pickup_instructions: string;
@@ -231,7 +233,7 @@ export function emptyForm(): WizardForm {
     customs_invoice_mode: 'create', include_invoice_number: false, invoice_remarks: '', declaration_statements: [], customs_documents: [],
     incoterm: 'DAP', transport_payer: 'shipper', transport_payer_account: '', duties_payer: 'receiver', duties_payer_account: '',
     shipment_date: nextBusinessDay(), origin_gmt_offset: '', product_code: '', local_product_code: '', service_codes: [],
-    pickup_option: 'none', pickup_earliest_time: '', pickup_latest_time: '', pickup_location: '', pickup_location_type: '', pickup_instructions: '',
+    pickup_option: 'none', pickup_earliest_time: '', pickup_latest_time: '', pickup_location_choice: '', pickup_location: '', pickup_location_type: '', pickup_instructions: '',
     pickup_other_address: false, pickup_address: emptyParty(), service_point_id: '', service_point_name: '',
     shipper: fromDefaultParty(), receiver: toDefaultParty(), packages: [emptyPackage()], items: [],
   };
@@ -395,7 +397,7 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
     pickup_option: f.pickup_option,
     pickup_earliest_time: schedule ? t(f.pickup_earliest_time) : null,
     pickup_latest_time: schedule ? t(f.pickup_latest_time) : null,
-    pickup_location: schedule ? t(f.pickup_location) : null,
+    pickup_location: schedule ? pickupLocationOut(f) : null,
     pickup_location_type: schedule && f.pickup_location_type ? f.pickup_location_type : null,
     pickup_instructions: schedule ? t(f.pickup_instructions) : null,
     pickup_address: schedule && f.pickup_other_address ? (partyOut(f.pickup_address) as unknown as Party) : null,
@@ -519,7 +521,7 @@ export function fromShipment(sh: DhlShipment, clientName = ''): WizardForm {
     shipment_date: s(sh.shipment_date) || f.shipment_date, origin_gmt_offset: s(sh.origin_gmt_offset),
     product_code: s(sh.product_code), local_product_code: s(sh.local_product_code), service_codes: Array.isArray(sh.service_codes) ? sh.service_codes : [],
     pickup_option: sh.pickup_option ?? 'none', pickup_earliest_time: s(sh.pickup_earliest_time), pickup_latest_time: s(sh.pickup_latest_time),
-    pickup_location: s(sh.pickup_location), pickup_location_type: sh.pickup_location_type ?? '', pickup_instructions: s(sh.pickup_instructions),
+    ...pickupLocationIn(sh.pickup_location), pickup_location_type: sh.pickup_location_type ?? '', pickup_instructions: s(sh.pickup_instructions),
     pickup_other_address: !!sh.pickup_address, pickup_address: pa,
     service_point_id: s(sh.service_point_id), service_point_name: s(sh.service_point_name),
     shipper: partiesPartyIn(sh as Record<string, unknown>, 'shipper_', sh['shipper_details'] as PartyDetailsContent | null, 'mobile'),
@@ -928,10 +930,69 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
     }
     case 'packages': if (!f.packages.length || f.packages.some((p) => !(num(p.weight_kg) ?? 0))) miss.push(T('وزن كل طرد', 'Weight of each package')); break;
     case 'service': if (!f.product_code) miss.push(T('خدمة DHL', 'DHL service')); break;
-    case 'pickup': if (f.pickup_option === 'schedule' && (!f.pickup_earliest_time || !f.pickup_latest_time)) miss.push(T('وقت الاستلام', 'Pickup time')); if (f.pickup_option === 'drop_off' && !f.service_point_id) miss.push(T('نقطة الخدمة', 'Service point')); break;
+    case 'pickup':
+      if (f.pickup_option === 'schedule' && (!f.pickup_earliest_time || !f.pickup_latest_time)) miss.push(T('وقت الاستلام', 'Pickup time'));
+      if (f.pickup_option === 'schedule' && f.pickup_location_choice === 'other' && !f.pickup_location.trim()) miss.push(T('تفاصيل مكان الاستلام', 'Pickup location details'));
+      if (f.pickup_option === 'drop_off' && !f.service_point_id) miss.push(T('نقطة الخدمة', 'Service point'));
+      break;
     default: break;
   }
   return miss;
+}
+
+// ── Pickup step (MyDHL+ «Do you want to schedule a courier pickup?») ──
+export type PickupLocationChoice = '' | 'reception' | 'front' | 'back' | 'other';
+/**
+ * The MyDHL create-shipment `pickup.location` is free text (≤ 80, no enum in the API): Reception /
+ * Front / Back are sent as those words; Other sends the details the person typed.
+ */
+export const PICKUP_LOCATION_VALUES: Record<Exclude<PickupLocationChoice, '' | 'other'>, string> = { reception: 'Reception', front: 'Front', back: 'Back' };
+export const PICKUP_LOCATION_LABELS: Record<Exclude<PickupLocationChoice, ''>, [string, string]> = {
+  reception: ['الاستقبال', 'Reception'], front: ['الواجهة / المدخل الأمامي', 'Front'], back: ['الخلف / المدخل الخلفي', 'Back'], other: ['مكان آخر', 'Other'],
+};
+export const PICKUP_TEXT_MAX = 80;
+function pickupLocationOut(f: Pick<WizardForm, 'pickup_location_choice' | 'pickup_location'>): string | null {
+  if (f.pickup_location_choice === 'other') return f.pickup_location.trim() || null;
+  if (f.pickup_location_choice) return PICKUP_LOCATION_VALUES[f.pickup_location_choice];
+  return null;
+}
+/** A stored `pickup.location` back to the choice (an older free-text value becomes Other + its text). */
+export function pickupLocationIn(v: string | null | undefined): Pick<WizardForm, 'pickup_location_choice' | 'pickup_location'> {
+  const s = String(v ?? '').trim();
+  if (!s) return { pickup_location_choice: '', pickup_location: '' };
+  const hit = (Object.keys(PICKUP_LOCATION_VALUES) as Array<keyof typeof PICKUP_LOCATION_VALUES>).find((k) => PICKUP_LOCATION_VALUES[k].toLowerCase() === s.toLowerCase());
+  return hit ? { pickup_location_choice: hit, pickup_location: '' } : { pickup_location_choice: 'other', pickup_location: s };
+}
+/** Pickup times every 15 minutes inside DHL's window (HH:MM, both ends included). */
+export function pickupSlots(earliest: string | null | undefined, latest: string | null | undefined, step = 15): string[] {
+  const toMin = (x: string) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5));
+  if (!earliest || !latest || !/^\d{2}:\d{2}/.test(earliest) || !/^\d{2}:\d{2}/.test(latest)) return [];
+  const a = toMin(earliest); const b = toMin(latest);
+  const out: string[] = [];
+  for (let m = Math.ceil(a / step) * step; m <= b; m += step) out.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  if (out[out.length - 1] !== latest.slice(0, 5) && b >= a) out.push(latest.slice(0, 5));
+  if (out[0] !== earliest.slice(0, 5)) out.unshift(earliest.slice(0, 5));
+  return out;
+}
+/**
+ * The Pickup gate (Next / stepper) for «Yes — Schedule Pickup»: both times inside DHL's window, the
+ * latest after the earliest, and the details when the courier comes to «Other». No minimum window
+ * length is invented (the MyDHL API states none; DHL's validation decides).
+ */
+export function pickupGate(f: WizardForm, cap: { pickupEarliest?: string | null; pickupLatest?: string | null } | null, lang: CsLang = 'ar'): FieldErrors {
+  const e: FieldErrors = {};
+  const T = (ar: string, en: string) => tr(lang, ar, en);
+  if (f.pickup_option === 'drop_off' && !f.service_point_id) e.service_point_id = T('اختر نقطة خدمة DHL تقبل التسليم.', 'Choose a DHL Service Point that accepts drop-off.');
+  if (f.pickup_option !== 'schedule') return e;
+  const min = cap?.pickupEarliest?.slice(0, 5) ?? null;
+  const max = cap?.pickupLatest?.slice(0, 5) ?? null;
+  if (!f.pickup_earliest_time) e.pickup_earliest_time = T('اختر أبكر وقت للاستلام.', 'Choose the earliest pickup time.');
+  else if (min && f.pickup_earliest_time < min) e.pickup_earliest_time = T(`DHL تستلم من ${min} على هذا المسار.`, `DHL picks up from ${min} on this route.`);
+  if (!f.pickup_latest_time) e.pickup_latest_time = T('اختر آخر وقت للاستلام.', 'Choose the latest pickup time.');
+  else if (max && f.pickup_latest_time > max) e.pickup_latest_time = T(`DHL تستلم حتى ${max} على هذا المسار.`, `DHL picks up until ${max} on this route.`);
+  else if (f.pickup_earliest_time && f.pickup_latest_time <= f.pickup_earliest_time) e.pickup_latest_time = T('آخر وقت يجب أن يكون بعد أبكر وقت.', 'The latest time must be after the earliest time.');
+  if (f.pickup_location_choice === 'other' && !f.pickup_location.trim()) e.pickup_location = T('اكتب تفاصيل مكان الاستلام.', 'Enter the pickup location details.');
+  return e;
 }
 
 // ── Service step (MyDHL+ «I'm sending my shipment on» / rates / optional services) ──

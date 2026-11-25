@@ -360,7 +360,7 @@ export interface ServicePoint {
 
 export interface ShipmentOptions {
   /** What may be offered right now (Paperless upload follows DHL_PROD_PAPERLESS_UPLOAD_ENABLED in Production). */
-  features?: { paperless_upload: boolean };
+  features?: { paperless_upload: boolean; pickup_booking?: boolean };
   declaration_statements?: Array<{ id: string; supported: boolean }>;
   customs_document_types?: string[];
   /** SHIPPEC's own DHL account, masked (last 4 digits) — never in full. */

@@ -5,6 +5,7 @@ import {
   itemTotals, locateIssue, needsCustoms, nextBusinessDay, packageTotals, partiesGate, routeIssuesText, routeSnapshot, splitPhone, stepMissing, toContent, translateIssue,
   visibleSteps, type WizardForm,
   chargeRows, dateParts, dhlDateTime, goGreenOf, optionalServiceRows, originToday, shipDateCards, shipDateRange, toggleOptionalService,
+  pickupGate, pickupLocationIn, pickupSlots,
 } from './wizardModel';
 import { applyAddress, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, withCountry } from './partiesModel';
 import { canShipment } from '../../utils/dhlShipmentPermissions';
@@ -373,6 +374,44 @@ describe('wizard model', () => {
     expect(routeSnapshot({ ...f, service_codes: ['SF'] })).not.toBe(base);
     expect(routeSnapshot({ ...f, receiver: { ...f.receiver, address_line1: '1 Other Road' } })).not.toBe(base);
     expect(routeSnapshot({ ...f, service_codes: ['WY'] })).toBe(base); // Paperless follows its own flag
+  });
+
+  it('Pickup: Reception / Front / Back / Other → DHL pickup.location (free text); a stored value comes back as its choice; only with «Yes — Schedule Pickup»', () => {
+    const base = { ...emptyForm(), shipper: saParty(), receiver: saParty(), pickup_option: 'schedule' as const, pickup_earliest_time: '09:00', pickup_latest_time: '18:30' };
+    expect(toContent({ ...base, pickup_location_choice: 'reception' }).pickup_location).toBe('Reception');
+    expect(toContent({ ...base, pickup_location_choice: 'front' }).pickup_location).toBe('Front');
+    expect(toContent({ ...base, pickup_location_choice: 'back', pickup_location: 'left over' }).pickup_location).toBe('Back');
+    expect(toContent({ ...base, pickup_location_choice: 'other', pickup_location: '  Security gate 2 ' }).pickup_location).toBe('Security gate 2');
+    expect(toContent({ ...base, pickup_location_choice: '' }).pickup_location).toBeNull();
+    expect(toContent({ ...base, pickup_option: 'none', pickup_location_choice: 'reception', pickup_instructions: 'x' })).toMatchObject({ pickup_location: null, pickup_instructions: null, pickup_earliest_time: null, pickup_address: null });
+    expect(toContent({ ...base, pickup_option: 'drop_off', pickup_location_choice: 'front' }).pickup_location).toBeNull();
+    expect(pickupLocationIn('Reception')).toEqual({ pickup_location_choice: 'reception', pickup_location: '' });
+    expect(pickupLocationIn('back')).toEqual({ pickup_location_choice: 'back', pickup_location: '' });
+    expect(pickupLocationIn('Warehouse loading area')).toEqual({ pickup_location_choice: 'other', pickup_location: 'Warehouse loading area' });
+    expect(pickupLocationIn(null)).toEqual({ pickup_location_choice: '', pickup_location: '' });
+    // the alternate pickup address is its own object: the shipment's From never changes with it
+    const alt = toContent({ ...base, pickup_other_address: true, pickup_address: { ...saParty(), city: 'Riyadh', address_line1: '1 Warehouse Road' } });
+    expect(alt.pickup_address).toMatchObject({ city: 'Riyadh', address_line1: '1 Warehouse Road' });
+    expect(alt.shipper).toMatchObject({ city: 'Dammam', address_line1: '3456 Prince Sultan Road' });
+    expect(toContent({ ...base, pickup_other_address: false, pickup_address: { ...saParty(), city: 'Riyadh' } }).pickup_address).toBeNull();
+  });
+
+  it('Pickup: times inside DHL\'s window every 15 minutes; the gate checks the window, the order and Other\'s details (no invented minimum length)', () => {
+    expect(pickupSlots('09:00:00', '10:00:00')).toEqual(['09:00', '09:15', '09:30', '09:45', '10:00']);
+    expect(pickupSlots('09:10', '09:40')).toEqual(['09:10', '09:15', '09:30', '09:40']);
+    expect(pickupSlots(null, '18:30')).toEqual([]);
+    const cap = { pickupEarliest: '09:00:00', pickupLatest: '18:30:00' };
+    const f = { ...emptyForm(), shipper: saParty(), pickup_option: 'schedule' as const, pickup_earliest_time: '09:00', pickup_latest_time: '18:30', pickup_location_choice: 'reception' as const };
+    expect(pickupGate(f, cap, 'en')).toEqual({});
+    expect(pickupGate({ ...f, pickup_earliest_time: '10:00', pickup_latest_time: '10:15' }, cap, 'en')).toEqual({}); // DHL decides any minimum
+    expect(pickupGate({ ...f, pickup_earliest_time: '08:30' }, cap, 'en')).toEqual({ pickup_earliest_time: 'DHL picks up from 09:00 on this route.' });
+    expect(pickupGate({ ...f, pickup_latest_time: '19:00' }, cap, 'en')).toEqual({ pickup_latest_time: 'DHL picks up until 18:30 on this route.' });
+    expect(pickupGate({ ...f, pickup_earliest_time: '12:00', pickup_latest_time: '11:00' }, cap, 'en')).toEqual({ pickup_latest_time: 'The latest time must be after the earliest time.' });
+    expect(pickupGate({ ...f, pickup_location_choice: 'other', pickup_location: ' ' }, cap, 'ar')).toEqual({ pickup_location: 'اكتب تفاصيل مكان الاستلام.' });
+    expect(pickupGate({ ...f, pickup_location_choice: 'other', pickup_location: 'Gate 2' }, cap)).toEqual({});
+    expect(pickupGate({ ...f, pickup_option: 'none', pickup_earliest_time: '' }, cap)).toEqual({});
+    expect(pickupGate({ ...f, pickup_option: 'drop_off' }, cap, 'en')).toEqual({ service_point_id: 'Choose a DHL Service Point that accepts drop-off.' });
+    expect(stepMissing({ ...f, pickup_location_choice: 'other' }, 'pickup', 'en')).toEqual(['Pickup location details']);
   });
 
   it('role map mirrors the Backend', () => {

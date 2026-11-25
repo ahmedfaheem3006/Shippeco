@@ -11,7 +11,7 @@ import { Button, Note, Section, Stat } from './ui';
 import { ChargeTable } from './StepService';
 import { useCsLang } from './csLang';
 import {
-  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, maskAccount, money, optionalServiceRows, packageTotals, purposeLabel, stepLabel,
+  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, maskAccount, money, optionalServiceRows, packageTotals, PICKUP_LOCATION_LABELS, purposeLabel, stepLabel,
   translateIssue, type StepId,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
@@ -22,7 +22,7 @@ const PHASE_TEXT: Record<string, [string, string]> = {
   sending: ['إرسال طلب الإنشاء إلى DHL — لا تغلق الصفحة…', 'Sending the creation request to DHL — do not close the page…'],
 };
 const PAYER: Record<string, [string, string]> = { shipper: ['SHIPPEC (المرسل)', 'SHIPPEC (sender)'], receiver: ['المستلم', 'Receiver'], third_party: ['طرف ثالث', 'Third party'] };
-const PICKUP: Record<string, [string, string]> = { schedule: ['جدولة مندوب DHL', 'Schedule a DHL courier'], none: ['بدون استلام', 'No pickup'], drop_off: ['التسليم في نقطة خدمة DHL', 'Drop off at a DHL Service Point'] };
+const PICKUP: Record<string, [string, string]> = { schedule: ['نعم — جدولة استلام بواسطة مندوب DHL', 'Yes — Schedule Pickup'], none: ['لا — بدون استلام', 'No pickup'], drop_off: ['التسليم في نقطة خدمة DHL', 'Drop off at DHL Service Point'] };
 
 function PartySummary({ title, p }: { title: string; p: Wizard['form']['shipper'] }) {
   const { lang } = useCsLang();
@@ -147,7 +147,16 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
           )}
           {w.customs && <Stat label="Paperless Trade" value={form.customs_invoice_mode === 'create' && form.paperless_trade ? `${t('نعم', 'Yes')} (${form.dhl_invoice_type === 'proforma' ? 'Proforma' : 'Commercial'})` : t('لا', 'No')} />}
           <Stat label={t('الاستلام', 'Pickup')} value={t(...PICKUP[form.pickup_option])} />
-          {form.pickup_option === 'schedule' && <Stat label={t('موعد الاستلام', 'Pickup time')} value={`${form.shipment_date} · ${form.pickup_earliest_time || '—'}–${form.pickup_latest_time || '—'}`} />}
+          {form.pickup_option === 'schedule' && <Stat label={t('نافذة الاستلام', 'Pickup window')} value={<span dir="ltr">{`${form.shipment_date} · ${form.pickup_earliest_time || '—'}–${form.pickup_latest_time || '—'}`}</span>} />}
+          {form.pickup_option === 'schedule' && (
+            <Stat label={t('مكان الاستلام', 'Pickup location')}
+              value={form.pickup_location_choice ? `${t(...PICKUP_LOCATION_LABELS[form.pickup_location_choice])}${form.pickup_location_choice === 'other' && form.pickup_location.trim() ? ` · ${form.pickup_location.trim()}` : ''}` : '—'} />
+          )}
+          {form.pickup_option === 'schedule' && (
+            <Stat label={t('عنوان الاستلام', 'Pickup address')}
+              value={<span dir="ltr">{form.pickup_other_address ? [form.pickup_address.address_line1, form.pickup_address.city].filter(Boolean).join(', ') : t('عنوان المرسل', 'Sender address')}</span>} />
+          )}
+          {form.pickup_option === 'schedule' && form.pickup_instructions.trim() && <Stat label={t('تعليمات للمندوب', 'Courier instructions')} value={<span dir="ltr">{form.pickup_instructions.trim()}</span>} />}
           {form.pickup_option === 'drop_off' && <Stat label={t('نقطة الخدمة', 'Service point')} value={form.service_point_name || '—'} />}
         </div>
       </Section>

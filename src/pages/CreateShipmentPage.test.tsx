@@ -354,26 +354,124 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.getByTestId('gogreen-card').textContent).toMatch(/GoGreen Plus — شحن بانبعاثات كربونية أقل.*3\.12 ر\.س/)
   })
 
-  it('pickup: three choices; service points that do not accept drop-off cannot be chosen', async () => {
-    svc.servicePoints.mockResolvedValue({ points: [
-      { id: 'DHA014', name: 'DHL Express Service Point', localName: 'DHL SERVICE POINT - Ibn Khaldoun', type: 'STATION', address: { line1: 'IBN Khaldoun street', line2: null, line3: null, city: 'DAMMAM', postalCode: null, country: 'SA' }, distance: '0.13 km', distanceKm: 0.13, shippingCutoff: '17:00:00.000', openingHours: [{ day: 'SUNDAY', open: '09:00', close: '22:00' }], capabilities: { dropOff: true }, limits: { maxPieces: 5, maxShipmentWeightKg: 70, maxPieceWeightKg: 70, pieceSizeCm: [] } },
-      { id: 'DHAFZ3', name: 'Collection only', localName: 'Sahel - Fodel - Collection only', type: 'PARTNER', address: { line1: 'x', line2: null, line3: null, city: 'DAMMAM', postalCode: null, country: 'SA' }, distance: '0.58 km', distanceKm: 0.58, shippingCutoff: null, openingHours: [], capabilities: { dropOff: false }, limits: { maxPieces: null, maxShipmentWeightKg: null, maxPieceWeightKg: null, pieceSizeCm: [] } },
-    ] })
+  const POINTS = [
+    { id: 'DHA014', name: 'DHL Express Service Point', localName: 'DHL SERVICE POINT - Ibn Khaldoun', type: 'STATION', address: { line1: 'IBN Khaldoun street', line2: null, line3: null, city: 'DAMMAM', postalCode: null, country: 'SA' }, distance: '0.13 km', distanceKm: 0.13, shippingCutoff: '17:00:00.000', openingHours: [{ day: 'SUNDAY', open: '09:00', close: '22:00' }], capabilities: { dropOff: true }, limits: { maxPieces: 5, maxShipmentWeightKg: 70, maxPieceWeightKg: 70, pieceSizeCm: [] } },
+    { id: 'DHAFZ3', name: 'Collection only', localName: 'Sahel - Fodel - Collection only', type: 'PARTNER', address: { line1: 'x', line2: null, line3: null, city: 'DAMMAM', postalCode: null, country: 'SA' }, distance: '0.58 km', distanceKm: 0.58, shippingCutoff: null, openingHours: [], capabilities: { dropOff: false }, limits: { maxPieces: null, maxShipmentWeightKg: null, maxPieceWeightKg: null, pieceSizeCm: [] } },
+  ]
+  const pickupRadio = (name: RegExp) => within(screen.getByRole('radiogroup', { name: /هل تريد جدولة استلام الشحنة|Do you want to schedule a courier pickup/ })).getByRole('radio', { name })
+  const saved = () => svc.updateDraft.mock.calls[svc.updateDraft.mock.calls.length - 1][1]
+
+  it('Pickup (AR, MyDHL+): «نعم — جدولة استلام / لا / التسليم في نقطة خدمة DHL»; the shipment date with «تعديل» to the Service step; DHL\'s window (09:00–18:30) prefilled and enforced; Reception / Front / Back / Other (+ details, required); the sender address by default; the pickup weight from the packages; courier instructions; what is saved', async () => {
+    svc.updateDraft.mockImplementation(async () => shipment())
     renderAt('/create-shipment?draft=5')
     await screen.findByText('عميل الاختبار')
     goStep(/الاستلام/)
-    fireEvent.click(await screen.findByRole('radio', { name: /جدولة مندوب DHL/ }))
-    expect(screen.getByText(/نافذة DHL لهذه الخدمة: من 09:00 حتى 18:30/)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText(/أبكر وقت/), { target: { value: '19:00' } })
-    fireEvent.change(screen.getByLabelText(/آخر وقت/), { target: { value: '20:00' } })
-    expect(screen.getByText(/الموعد خارج نافذة DHL/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: /التسليم في نقطة خدمة DHL/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'بحث' }))
+    expect(await screen.findByText('هل تريد جدولة استلام الشحنة بواسطة مندوب DHL؟')).toBeTruthy()
+    expect(pickupRadio(/^لا/)).toBeTruthy()
+    expect(pickupRadio(/التسليم في نقطة خدمة DHL/)).toBeTruthy()
+    fireEvent.click(pickupRadio(/نعم — جدولة استلام/))
+    // the shipment date of the draft, editable only on the Service step
+    const dateBox = within(screen.getByTestId('pickup-date'))
+    expect(dateBox.getByText('سأرسل شحنتي في')).toBeTruthy()
+    expect(dateBox.getByText('19')).toBeTruthy()
+    // DHL's window for the chosen product, both times prefilled from it (visible, changeable)
+    const win = within(screen.getByTestId('pickup-window'))
+    expect(win.getByText('09:00')).toBeTruthy()
+    expect(win.getByText('18:30')).toBeTruthy()
+    const earliest = screen.getByLabelText(/^جاهزة للاستلام من/) as HTMLSelectElement
+    const latest = screen.getByLabelText(/^آخر وقت للاستلام/) as HTMLSelectElement
+    expect([earliest.value, latest.value]).toEqual(['09:00', '18:30'])
+    const values = [...earliest.querySelectorAll('option')].map((o) => o.value).filter(Boolean)
+    expect([values[0], values[values.length - 1], values.includes('19:00')]).toEqual(['09:00', '18:30', false])
+    fireEvent.change(earliest, { target: { value: '12:00' } })
+    fireEvent.change(latest, { target: { value: '11:00' } })
+    expect(await screen.findByText('آخر وقت يجب أن يكون بعد أبكر وقت.')).toBeTruthy()
+    fireEvent.change(latest, { target: { value: '17:00' } })
+    expect(screen.queryByText('آخر وقت يجب أن يكون بعد أبكر وقت.')).toBeNull()
+    // where the courier picks up: the three named places + Other
+    const where = screen.getByLabelText(/^من أين يستلم المندوب الشحنة؟/) as HTMLSelectElement
+    expect([...where.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['اختر', 'الاستقبال', 'الواجهة / المدخل الأمامي', 'الخلف / المدخل الخلفي', 'مكان آخر'])
+    fireEvent.change(where, { target: { value: 'other' } })
+    next()
+    expect(await screen.findByText('اكتب تفاصيل مكان الاستلام.')).toBeTruthy()
+    expect(screen.getByTestId('pickup-step')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(/^تفاصيل مكان الاستلام/), { target: { value: 'Security gate 2' } })
+    // the pickup address = the sender address (read-only); the weight from the packages
+    const addr = screen.getByTestId('pickup-address').textContent ?? ''
+    for (const x of ['Sara Operations', 'Shippec Trading', 'السعودية', '3456, Prince Sultan Road', '7788, Al Olaya', 'ROLA3456', 'Dammam', '31952', '+966551234567']) expect(addr).toContain(x)
+    expect(screen.getByTestId('pickup-weight').textContent).toBe('0.4 كغ · 1 طرد')
+    fireEvent.change(screen.getByLabelText(/^تعليمات للمندوب/), { target: { value: 'Call on arrival' } })
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(saved()).toMatchObject({ pickup_option: 'schedule', pickup_earliest_time: '12:00', pickup_latest_time: '17:00', pickup_location: 'Security gate 2', pickup_instructions: 'Call on arrival', pickup_address: null })
+    // «تعديل» → the Service step's date cards
+    fireEvent.click(dateBox.getByRole('button', { name: /تعديل/ }))
+    expect(await screen.findByTestId('ship-date')).toBeTruthy()
+  })
+
+  it('Pickup (EN): Reception / Front / Back are sent as those words; another pickup address never changes From; «No» and drop-off send no pickup; the Shipment Cost Summary shows DHL\'s figures only (no invented chargeable weight)', async () => {
+    svc.updateDraft.mockImplementation(async () => shipment())
+    svc.servicePoints.mockResolvedValue({ points: POINTS })
+    svc.get.mockResolvedValue(shipment({ pickup_option: 'schedule', pickup_earliest_time: '10:00', pickup_latest_time: '17:00', pickup_location: 'Front' }))
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Pickup/)
+    expect(await screen.findByText('Do you want to schedule a courier pickup?')).toBeTruthy()
+    expect(pickupRadio(/Yes — Schedule Pickup/).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByText('Pickup Window — When courier may arrive and shipment is ready')).toBeTruthy()
+    const where = screen.getByLabelText(/^Where should the courier pick up the shipment\?/) as HTMLSelectElement
+    expect(where.value).toBe('front') // the stored DHL location comes back as its choice
+    expect([...where.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Select One', 'Reception', 'Front', 'Back', 'Other'])
+    for (const [choice, sent] of [['reception', 'Reception'], ['back', 'Back']]) {
+      fireEvent.change(where, { target: { value: choice } })
+      expect(screen.queryByLabelText(/^Pickup location details/)).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: /Save draft/ }))
+      await waitFor(() => expect(saved()).toMatchObject({ pickup_location: sent }))
+    }
+    expect((screen.getByLabelText(/^Instructions for the courier/) as HTMLTextAreaElement).placeholder).toBe("Provide other instructions you'd like the courier to receive")
+    expect(screen.getByText('Total Pickup Weight')).toBeTruthy()
+    // another pickup address (Edit): starts from the sender's, saved separately, From unchanged
+    fireEvent.click(within(screen.getByText('Pickup Address').closest('section') as HTMLElement).getByRole('button', { name: /Edit/ }))
+    const pa = within(document.querySelector('[data-party="pickup_address"]') as HTMLElement)
+    expect((pa.getByLabelText(/^City/) as HTMLInputElement).value).toBe('Dammam')
+    fireEvent.change(pa.getByLabelText(/^City/), { target: { value: 'Khobar' } })
+    fireEvent.change(pa.getByLabelText(/^Address line 1/), { target: { value: '9 Warehouse Road' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(saved()).toMatchObject({ pickup_address: expect.objectContaining({ city: 'Khobar', address_line1: '9 Warehouse Road' }) }))
+    expect(saved().shipper).toMatchObject({ city: 'Dammam', address_line1: '3456, Prince Sultan Road' })
+    fireEvent.click(screen.getByRole('button', { name: /Use the sender address/ }))
+    // Shipment Cost Summary: DHL's product, weights and charges
+    const cs = within(screen.getByTestId('cost-summary'))
+    expect(screen.getByText('Shipment Cost Summary')).toBeTruthy()
+    expect(cs.getByText('EXPRESS DOMESTIC')).toBeTruthy()
+    expect(cs.getByTestId('cs-volumetric').textContent).toBe('0.6 kg')
+    expect(cs.getByTestId('cs-total-weight').textContent).toBe('0.4 kg')
+    expect(cs.getByTestId('cs-chargeable').textContent).toBe('Not returned by the DHL API')
+    expect(screen.getByTestId('cost-summary-charges').querySelector('[data-charge="total"]')?.textContent).toBe('Total (VAT included)66.18 SAR')
+    expect(screen.queryByText(/Expected profit/)).toBeNull()
+    // «No»: nothing about a pickup is sent
+    fireEvent.click(pickupRadio(/^No/))
+    fireEvent.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(saved()).toMatchObject({ pickup_option: 'none', pickup_earliest_time: null, pickup_latest_time: null, pickup_location: null, pickup_instructions: null, pickup_address: null }))
+    // drop-off: a DHL Service Point that accepts drop-off; no pickup
+    fireEvent.click(pickupRadio(/Drop off at DHL Service Point/))
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     expect(await screen.findByText('DHL SERVICE POINT - Ibn Khaldoun')).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'غير متاحة للتسليم' }) as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'اختيار هذه النقطة' }))
-    expect(screen.getByText(/النقطة المختارة:/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'النقطة المختارة' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Not available for drop-off' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Choose this point' }))
+    expect(screen.getByRole('button', { name: 'Selected point' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(saved()).toMatchObject({ pickup_option: 'drop_off', service_point_id: 'DHA014', pickup_location: null, pickup_earliest_time: null }))
+  })
+
+  it('Pickup: with DHL_PROD_PICKUP_ENABLED off the choice stays visible with a clear notice (validation refuses it — nothing is booked)', async () => {
+    svc.options.mockResolvedValue({ purposes: [], transport_payers: [], duties_payers: [], pickup_options: [], document_refetch_types: [], features: { paperless_upload: false, pickup_booking: false } })
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/الاستلام/)
+    expect((await screen.findByTestId('pickup-gate-off')).textContent).toMatch(/DHL_PROD_PICKUP_ENABLED/)
+    expect((pickupRadio(/نعم — جدولة استلام/) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('review validates with DHL on entry; «إنشاء الشحنة» asks for confirmation and sends ONE create; success shows AWB, invoice and documents', async () => {

@@ -18,12 +18,12 @@ import { StepCustoms } from '../components/CreateShipment/CustomsStep';
 import { StepDetails } from '../components/CreateShipment/DetailsStep';
 import { StepParties } from '../components/CreateShipment/PartiesStep';
 import { StepService } from '../components/CreateShipment/StepService';
-import { StepPickup } from '../components/CreateShipment/StepPickup';
+import { pickupCapabilitiesOf, StepPickup } from '../components/CreateShipment/StepPickup';
 import { StepReview } from '../components/CreateShipment/StepReview';
 import { CreateOutcome } from '../components/CreateShipment/CreateOutcome';
 import { CsLangProvider, LangToggle } from '../components/CreateShipment/i18n';
 import { useCsLang } from '../components/CreateShipment/csLang';
-import { canShipment, countryName, customsGate, detailsGate, partiesGate, paymentGate, stepMissing, type FieldErrors, type StepId } from '../components/CreateShipment/wizardModel';
+import { canShipment, countryName, customsGate, detailsGate, partiesGate, paymentGate, pickupGate, stepMissing, type FieldErrors, type StepId } from '../components/CreateShipment/wizardModel';
 
 const STATUS: Record<string, [string, string]> = {
   draft: ['مسودة', 'Draft'], validated: ['تم التحقق', 'Validated'], ready: ['مؤكدة', 'Confirmed'], failed: ['رفضتها DHL', 'Refused by DHL'],
@@ -84,7 +84,7 @@ function Wizard({ draftId }: { draftId: number | null }) {
   const w = useShipmentWizard({ draftId });
   const { form, step, setStep, steps } = w;
   const idx = steps.findIndex((s) => s.id === step);
-  /** After a blocked Next, the missing required fields of that screen are marked (Parties, Shipment Details, Customs Invoice, Payment). */
+  /** After a blocked Next, the missing required fields of that screen are marked (Parties, Shipment Details, Customs Invoice, Payment, Pickup). */
   const [gated, setGated] = useState<Partial<Record<StepId, boolean>>>({});
 
   // A step that disappeared (customs no longer needed) → the next visible one.
@@ -120,15 +120,15 @@ function Wizard({ draftId }: { draftId: number | null }) {
   };
   /**
    * Leaving a gated screen forward (Next or the stepper) needs every required field — Parties
-   * (customer, From, To), Shipment Details, the Customs Invoice, then Payment. A saved contact, an address
+   * (customer, From, To), Shipment Details, the Customs Invoice, Payment, then Pickup. A saved contact, an address
    * suggestion or an uploaded item file never bypasses this.
    */
   const gateOf = (s: StepId): FieldErrors => (
     s === 'parties' ? partiesGate(form, lang) : s === 'details' ? detailsGate(form, lang) : s === 'customs' ? customsGate(form, lang)
-      : s === 'payment' ? paymentGate(form, lang) : {}
+      : s === 'payment' ? paymentGate(form, lang) : s === 'pickup' ? pickupGate(form, pickupCapabilitiesOf(w), lang) : {}
   );
   const blockedBefore = (target: number) => {
-    for (const s of ['parties', 'details', 'customs', 'payment'] as const) {
+    for (const s of ['parties', 'details', 'customs', 'payment', 'pickup'] as const) {
       const at = steps.findIndex((x) => x.id === s);
       if (at < 0 || target <= at || !Object.keys(gateOf(s)).length) continue;
       setGated((g) => ({ ...g, [s]: true }));
@@ -199,7 +199,7 @@ function Wizard({ draftId }: { draftId: number | null }) {
         {step === 'packages' && <StepPackages w={w} />}
         {step === 'payment' && <StepPayment w={w} showGate={!!gated.payment} />}
         {step === 'service' && <StepService w={w} />}
-        {step === 'pickup' && <StepPickup w={w} />}
+        {step === 'pickup' && <StepPickup w={w} onGo={go} showGate={!!gated.pickup} />}
         {step === 'review' && <StepReview w={w} onGo={go} />}
       </div>
 
