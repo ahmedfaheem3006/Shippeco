@@ -743,6 +743,38 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.getByText(/إنشاء الشحنة لدى DHL للمدير أو المسؤول فقط/)).toBeTruthy()
   })
 
+  it('Review messages (AR + EN): no static Paperless (WY) warning; DHL\'s own evidence shows as information («From DHL»), a real DHL warning still shows as a warning, a DHL Paperless requirement blocks on the Customs step with DHL\'s words', async () => {
+    const ok = (over: Record<string, unknown> = {}) => ({ ok: true, issues: [], warnings: [], notices: [], dhl_validation: { status: 'passed', message: null }, shipment: shipment(), ...over })
+    // 1. no evidence: no Paperless message at all
+    svc.validate.mockResolvedValueOnce(ok())
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/المراجعة/)
+    expect(await screen.findByText(/اجتازت البيانات التحقق المحلي وتحقق DHL/)).toBeTruthy()
+    expect(screen.queryByText(/Paperless/)).toBeNull()
+    expect(screen.queryByText(/تنبيهات \(لا تمنع الإنشاء\)/)).toBeNull()
+    expect(screen.queryByTestId('validation-notices')).toBeNull()
+    // 2. DHL lists WY for the chosen service → information, not a warning; a DHL warning stays a warning
+    svc.validate.mockResolvedValueOnce(ok({
+      notices: [{ field: 'paperless_trade', code: 'PLT_AVAILABLE', message: 'Paperless Trade is available for this shipment.' }],
+      warnings: [{ field: 'dhl', message: 'Shipment is subject to an inspection at destination' }],
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة التحقق' }))
+    const notes = await screen.findByTestId('validation-notices')
+    expect(notes.textContent).toMatch(/معلومات من DHL/)
+    expect(notes.textContent).toMatch(/خدمة Paperless Trade متاحة لهذه الشحنة/)
+    expect(screen.getByText(/تنبيهات \(لا تمنع الإنشاء\)/)).toBeTruthy()
+    expect(screen.getByText('Shipment is subject to an inspection at destination')).toBeTruthy()
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(screen.getByTestId('validation-notices').textContent).toMatch(/From DHL.*Paperless Trade is available for this shipment\./)
+    // 3. DHL requires Paperless for this account → a blocking error with DHL's words, on the Customs step
+    svc.validate.mockResolvedValueOnce(ok({ ok: false, issues: [{ field: 'paperless_trade', message: '8001 : Paperless Trade (WY) is mandatory for this account' }], dhl_validation: { status: 'failed', message: 'x' } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Validate again' }))
+    expect(await screen.findByText(/Errors blocking creation \(1\)/)).toBeTruthy()
+    expect(screen.getByText('8001 : Paperless Trade (WY) is mandatory for this account')).toBeTruthy()
+    expect(svc.create).not.toHaveBeenCalled()
+  })
+
   it('QA 3D.1: the price an employee sets travels with the draft (stored on review), so the manager who creates finds it', async () => {
     auth.role = 'employee'
     svc.get.mockResolvedValue(shipment({ selling_price: null, dhl_cost: null, dhl_cost_source: null }))

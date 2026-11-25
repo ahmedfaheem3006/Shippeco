@@ -81,6 +81,8 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
   });
   const issues = validation?.issues ?? [];
   const warnings = validation?.warnings ?? [];
+  // information from DHL's own answers (e.g. Paperless Trade available for the chosen service) — never a warning
+  const notices = validation?.notices ?? [];
   const grouped = issues.reduce<Record<string, string[]>>((acc, i) => {
     const st = locateIssue(i.field).step;
     (acc[st] ||= []).push(translateIssue(i.message, lang));
@@ -127,6 +129,13 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
               <Note tone="warn" title={t('تنبيهات (لا تمنع الإنشاء)', 'Warnings (do not block creation)')}>
                 <ul className="list-disc ps-5">{warnings.map((x, i) => <li key={i} dir="auto">{translateIssue(x.message, lang)}</li>)}</ul>
               </Note>
+            )}
+            {notices.length > 0 && (
+              <div data-testid="validation-notices">
+                <Note tone="info" title={t('معلومات من DHL', 'From DHL')}>
+                  <ul className="list-disc ps-5">{notices.map((x, i) => <li key={i} dir="auto" data-code={x.code}>{translateIssue(x.message, lang)}</li>)}</ul>
+                </Note>
+              </div>
             )}
           </div>
         ) : <p className="text-sm text-slate-500">{t('لم يتم التحقق بعد.', 'Not validated yet.')}</p>}
