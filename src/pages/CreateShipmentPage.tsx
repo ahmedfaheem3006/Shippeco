@@ -23,7 +23,7 @@ import { StepReview } from '../components/CreateShipment/StepReview';
 import { CreateOutcome } from '../components/CreateShipment/CreateOutcome';
 import { CsLangProvider, LangToggle } from '../components/CreateShipment/i18n';
 import { useCsLang } from '../components/CreateShipment/csLang';
-import { canShipment, countryName, customsGate, detailsGate, partiesGate, paymentGate, pickupGate, stepMissing, type FieldErrors, type StepId } from '../components/CreateShipment/wizardModel';
+import { canShipment, countryName, customsGate, detailsGate, partiesGate, paymentGate, pickupGate, serviceGate, stepMissing, type FieldErrors, type StepId } from '../components/CreateShipment/wizardModel';
 
 const STATUS: Record<string, [string, string]> = {
   draft: ['مسودة', 'Draft'], validated: ['تم التحقق', 'Validated'], ready: ['مؤكدة', 'Confirmed'], failed: ['رفضتها DHL', 'Refused by DHL'],
@@ -125,10 +125,11 @@ function Wizard({ draftId }: { draftId: number | null }) {
    */
   const gateOf = (s: StepId): FieldErrors => (
     s === 'parties' ? partiesGate(form, lang) : s === 'details' ? detailsGate(form, lang) : s === 'customs' ? customsGate(form, lang)
-      : s === 'payment' ? paymentGate(form, lang) : s === 'pickup' ? pickupGate(form, pickupCapabilitiesOf(w), lang) : {}
+      : s === 'payment' ? paymentGate(form, lang) : s === 'service' ? serviceGate(w.servicesStale && !!w.products?.length, lang)
+        : s === 'pickup' ? pickupGate(form, pickupCapabilitiesOf(w), lang) : {}
   );
   const blockedBefore = (target: number) => {
-    for (const s of ['parties', 'details', 'customs', 'payment', 'pickup'] as const) {
+    for (const s of ['parties', 'details', 'customs', 'payment', 'service', 'pickup'] as const) {
       const at = steps.findIndex((x) => x.id === s);
       if (at < 0 || target <= at || !Object.keys(gateOf(s)).length) continue;
       setGated((g) => ({ ...g, [s]: true }));
@@ -209,7 +210,7 @@ function Wizard({ draftId }: { draftId: number | null }) {
             <Button variant="secondary" onClick={back} disabled={idx <= 0}><PrevIcon size={16} /> {t('السابق', 'Back')}</Button>
             {gateCount > 0 ? (
               <span className="min-w-0 text-[11px] sm:text-xs font-bold text-red-600 dark:text-red-400 truncate" role="alert" data-testid="parties-gate-summary">
-                {t(`أكمل الحقول المطلوبة (${gateCount}) قبل المتابعة.`, `Complete the required fields (${gateCount}) to continue.`)}
+                {step === 'service' ? gateOf('service').services : t(`أكمل الحقول المطلوبة (${gateCount}) قبل المتابعة.`, `Complete the required fields (${gateCount}) to continue.`)}
               </span>
             ) : (
               <span className="hidden sm:block text-[11px] text-slate-500 truncate" aria-live="polite">

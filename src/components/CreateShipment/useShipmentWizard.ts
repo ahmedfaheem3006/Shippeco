@@ -17,6 +17,12 @@ import {
 import { useCsLang } from './csLang';
 
 export type CostMode = 'dhl_quote' | 'manual' | 'unknown';
+/**
+ * Why DHL's services / prices could not be shown — kept apart so the page never calls a DHL answer
+ * a deleted draft: SHIPPEC's own rules (field issues, no DHL call made), stale shipment data, DHL's
+ * own answer, a draft that really no longer exists, anything else.
+ */
+export type ServicesError = { kind: 'local' | 'stale' | 'provider' | 'missing' | 'other'; message: string };
 export interface Pricing { selling_price: string; cost_mode: CostMode; manual_cost: string }
 export type CreatePhase = 'idle' | 'saving' | 'validating' | 'pricing' | 'confirming' | 'sending' | 'done';
 
@@ -55,7 +61,16 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   const [quotedAt, setQuotedAt] = useState<string | null>(null);
   const [servicesSnapshot, setServicesSnapshot] = useState<string | null>(null);
   const [servicesLoading, setServicesLoading] = useState(false);
-  const [servicesError, setServicesError] = useState<string | null>(null);
+  const [servicesError, setServicesError] = useState<ServicesError | null>(null);
+  /**
+   * Request lifecycle: every products / rates / selection request belongs to the draft that was active
+   * when it started. `generation` changes when the draft is replaced (New) or the page unmounts;
+   * `servicesSeq` when a newer refresh starts. An answer from an older generation / refresh is ignored —
+   * it can never fill another draft. Nothing is retried.
+   */
+  const generation = useRef(0);
+  const servicesSeq = useRef(0);
+  useEffect(() => () => { generation.current += 1; }, []);
   const [selecting, setSelecting] = useState<string | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validatedJson, setValidatedJson] = useState<string | null>(null);
@@ -193,33 +208,57 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
    * change that needs DHL again (a new shipment date, an optional service): it is applied, saved,
    * and DHL is asked for that data — the old list never stays selectable.
    */
+  const classify = useCallback((err: unknown, fallback: [string, string]): ServicesError => {
+    const T = (ar: string, en: string) => (langRef.current === 'en' ? en : ar);
+    if (err instanceof ApiError) {
+      if (err.code === 'ROUTE_INCOMPLETE') return { kind: 'local', message: routeIssuesText(issuesOf(err), langRef.current) };
+      if (err.code === 'CONTENT_CHANGED' || err.code === 'PRODUCTS_STALE' || err.code === 'QUOTE_STALE') {
+        return { kind: 'stale', message: T('تغيّرت بيانات الشحنة. حدّث الخدمات والأسعار.', 'Shipment data changed. Refresh services and prices.') };
+      }
+      if (err.status === 404 && err.code === 'NOT_FOUND') return { kind: 'missing', message: T('لم تعد مسودة الشحنة هذه موجودة.', 'This shipment draft no longer exists.') };
+      // DHL's own answer (the Backend's DHL_* codes) — DHL's text as given
+      if (String(err.code ?? '').startsWith('DHL_')) return { kind: 'provider', message: err.message };
+    }
+    return { kind: 'other', message: describeApiError(err, T(...fallback)) };
+  }, []);
+
   const fetchServices = useCallback(async (next?: WizardForm) => {
     const f = next ?? form;
     if (next) setForm(next);
+    const mySeq = ++servicesSeq.current;
+    const myGen = generation.current;
+    const current = () => mySeq === servicesSeq.current && myGen === generation.current;
     setServicesLoading(true);
     setServicesError(null);
     try {
+      // save the current draft → the Backend checks its own rules → GET products → POST rates (in that order)
       const sh = await save(true, f);
-      if (!sh) return;
-      const [p, r] = await Promise.allSettled([dhlShipmentService.checkProducts(sh.id), dhlShipmentService.checkRates(sh.id)]);
-      if (p.status === 'rejected') throw p.reason;
-      setProducts(p.value.products);
-      setQuotes(r.status === 'fulfilled' ? r.value.quotes : []);
-      setQuotedAt(r.status === 'fulfilled' ? r.value.quoted_at ?? null : null);
-      if (r.status === 'rejected') setServicesError(`${tRef.current('تعذر جلب الأسعار:', 'Could not load the prices:')} ${describeApiError(r.reason, tRef.current('أعد المحاولة', 'try again'))}`);
+      if (!sh || !current()) return;
+      const p = await dhlShipmentService.checkProducts(sh.id);
+      if (!current()) return;
+      let r: Awaited<ReturnType<typeof dhlShipmentService.checkRates>> | null = null;
+      let ratesErr: unknown = null;
+      try { r = await dhlShipmentService.checkRates(sh.id); } catch (e) { ratesErr = e; }
+      if (!current()) return;
+      setProducts(p.products);
+      setQuotes(r ? r.quotes : []);
+      setQuotedAt(r ? r.quoted_at ?? null : null);
+      if (ratesErr) {
+        const c = classify(ratesErr, ['تعذر جلب الأسعار', 'Could not load the prices']);
+        setServicesError({ ...c, message: `${tRef.current('تعذر جلب الأسعار:', 'Could not load the prices:')} ${c.message}` });
+      }
       setServicesSnapshot(routeSnapshot(f));
-      const still = p.value.products.some((x) => x.productCode === f.product_code);
+      const still = p.products.some((x) => x.productCode === f.product_code);
       if (f.product_code && !still) setForm((x) => ({ ...x, product_code: '', local_product_code: '' }));
     } catch (err) {
+      if (!current()) return;
       const issues = issuesOf(err);
       if (issues.length) showIssues(issues);
-      setServicesError(err instanceof ApiError && err.code === 'ROUTE_INCOMPLETE'
-        ? routeIssuesText(issues, langRef.current)
-        : describeApiError(err, tRef.current('تعذر جلب خدمات DHL', 'Could not load the DHL services')));
+      setServicesError(classify(err, ['تعذر جلب خدمات DHL', 'Could not load the DHL services']));
     } finally {
-      setServicesLoading(false);
+      if (current()) setServicesLoading(false);
     }
-  }, [save, form, showIssues]);
+  }, [save, form, showIssues, classify]);
 
   /** An optional DHL service ticked / unticked: saved, then DHL prices the shipment again with it. */
   const toggleService = useCallback((code: string) => {
@@ -232,11 +271,13 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   }, [fetchServices, form]);
 
   const chooseProduct = useCallback(async (code: string) => {
+    const myGen = generation.current;
     setSelecting(code);
     try {
       const sh = await save();
-      if (!sh) return;
+      if (!sh || myGen !== generation.current) return;
       const updated = await dhlShipmentService.selectProduct(sh.id, code);
+      if (myGen !== generation.current) return; // the draft was replaced meanwhile
       setShipment(updated);
       const next = { ...form, product_code: updated.product_code ?? code, local_product_code: updated.local_product_code ?? '' };
       setForm(next);
@@ -329,6 +370,10 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   }, [result, save, form, validatedJson, pricing, showIssues]);
 
   const reset = useCallback(() => {
+    generation.current += 1; // answers still on their way belong to the old draft
+    setServicesLoading(false);
+    setSelecting(null);
+    setServicesError(null);
     setForm(emptyForm());
     setShipment(null);
     setSavedJson(null);

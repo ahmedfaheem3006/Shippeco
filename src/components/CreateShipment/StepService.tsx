@@ -322,7 +322,15 @@ export function StepService({ w }: { w: Wizard }) {
           {w.servicesStale && products.length > 0 && !w.servicesLoading && (
             <div className="mb-3"><Note tone="warn" title={t('تغيّرت بيانات الشحنة', 'The shipment data changed')}>{t('الخدمات والأسعار المعروضة قد لا تخص البيانات الحالية — اضغط «تحديث الخدمات والأسعار» قبل الاختيار.', 'The services and prices shown may not match the current data — press «Refresh services and prices» before choosing.')}</Note></div>
           )}
-          {w.servicesError && <div className="mb-3"><Note tone="error">{w.servicesError}</Note></div>}
+          {w.servicesError && (
+            <div className="mb-3" data-testid="services-error" data-kind={w.servicesError.kind}>
+              <Note tone={w.servicesError.kind === 'stale' ? 'warn' : 'error'}
+                title={w.servicesError.kind === 'local' ? t('صحّح بيانات الشحنة — لم يُرسل شيء إلى DHL', 'Correct the shipment data — nothing was sent to DHL')
+                  : w.servicesError.kind === 'provider' ? t('رد DHL', "DHL's answer") : undefined}>
+                <span dir="auto">{w.servicesError.message}</span>
+              </Note>
+            </div>
+          )}
           {e('product_code') && <div className="mb-3"><Note tone="error">{e('product_code')}</Note></div>}
           {e('service_codes') && <div className="mb-3"><Note tone="error">{e('service_codes')}</Note></div>}
           {w.servicesLoading ? (

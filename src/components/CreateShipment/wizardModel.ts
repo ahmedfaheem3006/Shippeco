@@ -942,6 +942,14 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
   return miss;
 }
 
+/**
+ * The Service gate (Next / stepper): DHL's list must belong to the current shipment data — a stale list
+ * (the shipment changed after it was fetched) is refreshed first, never used.
+ */
+export function serviceGate(stale: boolean, lang: CsLang = 'ar'): FieldErrors {
+  return stale ? { services: tr(lang, 'تغيّرت بيانات الشحنة — اضغط «تحديث الخدمات والأسعار» قبل المتابعة.', 'The shipment data changed — press «Refresh services and prices» before continuing.') } : {};
+}
+
 // ── Pickup step (MyDHL+ «Do you want to schedule a courier pickup?») ──
 export type PickupLocationChoice = '' | 'reception' | 'front' | 'back' | 'other';
 /**

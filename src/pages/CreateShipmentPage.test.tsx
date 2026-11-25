@@ -285,6 +285,80 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.queryByLabelText(/^Sender time zone/)).toBeNull()
   })
 
+  const freshDraft = () => shipment({ available_products: null, rate_quotes: null, product_code: null, local_product_code: null, product_name: null, selling_price: null, dhl_cost: null })
+
+  it('Service lifecycle (EN): SHIPPEC\'s own rules first — a local problem is shown as such, rates are never asked and nothing is retried; DHL\'s own answer is shown as DHL\'s (never «deleted item»); only a missing draft says so', async () => {
+    svc.get.mockResolvedValue(freshDraft())
+    svc.checkProducts.mockRejectedValueOnce(new ApiError('أكمل بيانات المسار والطرود قبل الاستعلام من DHL', 422, 'ROUTE_INCOMPLETE', [{ field: 'receiver.provinceCode', message: 'United States: the 2-letter state code is required, e.g. "DE"' }]))
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Service/)
+    const err = await screen.findByTestId('services-error')
+    expect(err.getAttribute('data-kind')).toBe('local')
+    expect(err.textContent).toMatch(/Correct the shipment data — nothing was sent to DHL/)
+    expect(err.textContent).toMatch(/2-letter state code/)
+    expect(svc.checkProducts).toHaveBeenCalledTimes(1)
+    expect(svc.checkRates).not.toHaveBeenCalled() // rates only after products succeeded
+    // DHL answers "no data" (the Backend's 422 DHL_NOT_FOUND): DHL's text, once, no retry
+    svc.checkProducts.mockRejectedValueOnce(new ApiError('DHL: 404 Not Found: Product(s) not found', 422, 'DHL_NOT_FOUND'))
+    fireEvent.click(screen.getByRole('button', { name: /Show available DHL services/ }))
+    await waitFor(() => expect(screen.getByTestId('services-error').getAttribute('data-kind')).toBe('provider'))
+    expect(screen.getByTestId('services-error').textContent).toMatch(/DHL's answer.*Product\(s\) not found/)
+    expect(screen.queryByText(/العنصر غير موجود/)).toBeNull()
+    expect(svc.checkProducts).toHaveBeenCalledTimes(2)
+    expect(svc.checkRates).not.toHaveBeenCalled()
+    // a draft that really no longer exists
+    svc.checkProducts.mockRejectedValueOnce(new ApiError('DHL shipment not found', 404, 'NOT_FOUND'))
+    fireEvent.click(screen.getByRole('button', { name: /Show available DHL services/ }))
+    await waitFor(() => expect(screen.getByTestId('services-error').textContent).toMatch(/This shipment draft no longer exists\./))
+    expect(svc.checkProducts).toHaveBeenCalledTimes(3)
+  })
+
+  it('Service lifecycle (AR): a stale list blocks «التالي» and «اختيار»; «تحديث الخدمات والأسعار» saves, asks DHL again and clears the warning and the old error', async () => {
+    svc.updateDraft.mockImplementation(async () => shipment())
+    svc.checkProducts.mockResolvedValue({ products: PRODUCTS })
+    svc.checkRates.mockResolvedValue({ quotes: [QUOTE], quoted_at: '2026-11-25T08:00:00Z' })
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/الطرود/)
+    fireEvent.change(screen.getAllByLabelText(/^الوزن/)[0], { target: { value: '2.5' } })
+    goStep(/الخدمة/)
+    expect(await screen.findByText('تغيّرت بيانات الشحنة')).toBeTruthy()
+    for (const b of screen.getAllByRole('button', { name: /^اختيار$|تم الاختيار/ })) expect((b as HTMLButtonElement).disabled).toBe(true)
+    next()
+    expect(await screen.findByText('تغيّرت بيانات الشحنة — اضغط «تحديث الخدمات والأسعار» قبل المتابعة.')).toBeTruthy()
+    expect(screen.getByTestId('service-step')).toBeTruthy() // still on the Service step
+    fireEvent.click(screen.getByRole('button', { name: /تحديث الخدمات والأسعار/ }))
+    await waitFor(() => expect(svc.checkRates).toHaveBeenCalledTimes(1))
+    expect(svc.updateDraft).toHaveBeenCalled()
+    expect(svc.updateDraft.mock.invocationCallOrder[0]).toBeLessThan(svc.checkProducts.mock.invocationCallOrder[0])
+    expect(svc.checkProducts.mock.invocationCallOrder[0]).toBeLessThan(svc.checkRates.mock.invocationCallOrder[0])
+    await waitFor(() => expect(screen.queryByText('تغيّرت بيانات الشحنة')).toBeNull())
+    expect(screen.queryByTestId('services-error')).toBeNull()
+    next()
+    await waitFor(() => expect(screen.queryByTestId('service-step')).toBeNull())
+  })
+
+  it('Service lifecycle: an answer for a replaced draft («New») is ignored — it never fills the new shipment; no rates are asked for the old draft', async () => {
+    let release!: (v: unknown) => void
+    svc.get.mockResolvedValue(freshDraft())
+    svc.checkProducts.mockImplementationOnce(() => new Promise((r) => { release = r }))
+    svc.checkRates.mockResolvedValue({ quotes: [QUOTE] })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/الخدمة/)
+    await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /جديدة/ }))
+    release({ products: PRODUCTS })
+    await act(async () => { await Promise.resolve() })
+    goStep(/الخدمة/)
+    expect(document.querySelectorAll('[data-product]').length).toBe(0)
+    expect(svc.checkRates).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
   /** DHL TEST 2026-11-18 (domestic N), with DHL's lines before tax (basePrice). */
   const NET_QUOTE = {
     ...QUOTE, amount: 75.73, taxTotal: 9.88,
