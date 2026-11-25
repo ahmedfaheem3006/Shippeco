@@ -98,8 +98,11 @@ for (const lang of ['ar', 'en'] as const) {
       await expect(customs.getByTestId('declaration-certificate_of_origin')).toContainText(/Saudi Arabia, (Turkey|Türkiye) origin/)
       await expect(customs.getByTestId('declaration-usmca')).toHaveCount(0)
       await expect(customs.getByTestId('us-export-filing')).toHaveCount(0)
-      await customs.getByLabel(L('أرغب في إضافة رقم فاتورة', 'I would like to include an invoice number')).check()
+      // DHL requires the invoice number AND date (exportDeclarations[].invoice): both shown, both required — no «optional» checkbox
+      await expect(customs.getByLabel(L('أرغب في إضافة رقم فاتورة', 'I would like to include an invoice number'))).toHaveCount(0)
       await customs.getByLabel(new RegExp(`^${L('رقم الفاتورة', 'Invoice Number')}`)).fill('INV-2026-0118')
+      await customs.getByRole('button', { name: new RegExp(L('استخدام تاريخ الشحن', 'Use the shipment date')) }).click()
+      await expect(customs.getByLabel(new RegExp(`^${L('تاريخ الفاتورة', 'Invoice Date')}`))).toHaveValue('2026-11-26')
       await customs.getByLabel(new RegExp(`^${L('معلومات إضافية على الفاتورة', 'Additional Invoice Information')}`)).fill('Goods for exhibition')
       await customs.getByRole('button', { name: L('إضافة مستند آخر', 'Add Another') }).click()
       await customs.locator('[data-document="0"]').getByLabel(L('نوع المستند', 'Document type')).selectOption('COO')

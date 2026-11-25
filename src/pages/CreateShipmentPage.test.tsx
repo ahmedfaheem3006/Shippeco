@@ -1520,6 +1520,7 @@ describe('«إنشاء شحنة» wizard', () => {
     const intl = shipment({
       customs_required: true, content_type: 'goods', is_domestic: false, receiver_country_code: 'AE', receiver_city: 'Dubai', receiver_postal_code: null,
       currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: 'proforma',
+      customs_invoice_number: 'PI-2026-0118', customs_invoice_date: '2026-11-19', shipment_details_extra: { customs_invoice_mode: 'create' },
       items: [{ line_number: 1, description: "Men's cotton T-shirt", quantity: 2, unit: 'PCS', unit_value: '10.000', currency: 'SAR', country_of_origin: 'CN',
         outbound_hs_code: null, inbound_hs_code: null, unit_net_weight_kg: '0.200', unit_gross_weight_kg: null, line_gross_weight_kg: '0.400' }],
     })
@@ -1562,7 +1563,8 @@ describe('«إنشاء شحنة» wizard', () => {
 
   const intlDraft = (over: Record<string, unknown> = {}) => shipment({
     customs_required: true, content_type: 'goods', is_domestic: false, receiver_country_code: 'AE', receiver_city: 'Dubai', receiver_postal_code: null,
-    currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: null, customs_invoice_number: null,
+    currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: null, customs_invoice_number: 'PI-2026-0118', customs_invoice_date: '2026-11-19',
+    shipment_details_extra: { customs_invoice_mode: 'create' },
     items: [{ line_number: 1, description: "Men's cotton T-shirt", quantity: 2, unit: 'PCS', unit_value: '10.000', currency: 'SAR', country_of_origin: 'CN',
       outbound_hs_code: null, inbound_hs_code: null, unit_net_weight_kg: '0.200', unit_gross_weight_kg: null, line_gross_weight_kg: '0.400' }],
     ...over,
@@ -1576,7 +1578,7 @@ describe('«إنشاء شحنة» wizard', () => {
     return screen.findByTestId('customs-step')
   }
 
-  it('Customs Invoice (AR): Create Invoice by default; invoice type required (suggested from the purpose, never silent); optional invoice number; remarks; Certificate of Origin; documents; no US filing / USMCA for a Saudi origin; saved in the draft', async () => {
+  it('Customs Invoice (AR): Create Invoice by default; invoice type required (suggested from the purpose, never silent); the invoice number AND date required (DHL); remarks; Certificate of Origin; documents; no US filing / USMCA for a Saudi origin; saved in the draft', async () => {
     svc.options.mockResolvedValue(OPTIONS(true))
     const step = within(await openCustoms(intlDraft()))
     expect(step.getByText('تفاصيل الفاتورة الجمركية')).toBeTruthy()
@@ -1590,12 +1592,18 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.getByTestId('customs-step')).toBeTruthy()
     fireEvent.click(step.getByRole('button', { name: 'استخدامها' }))
     expect(step.getByRole('radio', { name: /فاتورة مبدئية/ }).getAttribute('aria-checked')).toBe('true')
-    // the invoice number: hidden until «أرغب في إضافة رقم فاتورة»; then required for Next
-    expect(step.queryByLabelText(/^رقم الفاتورة/)).toBeNull()
-    fireEvent.click(step.getByLabelText('أرغب في إضافة رقم فاتورة'))
+    // the invoice number AND date: always shown, both required (DHL's exportDeclarations[].invoice) — no «optional» checkbox
+    expect(step.queryByLabelText('أرغب في إضافة رقم فاتورة')).toBeNull()
+    fireEvent.change(step.getByLabelText(/^رقم الفاتورة/), { target: { value: '' } })
+    fireEvent.change(step.getByLabelText(/^تاريخ الفاتورة/), { target: { value: '' } })
     next()
-    expect(await screen.findByText('أدخل رقم الفاتورة أو ألغِ الخيار.')).toBeTruthy()
+    expect(await screen.findByText('رقم الفاتورة مطلوب (تشترطه DHL).')).toBeTruthy()
+    expect(screen.getByText('تاريخ الفاتورة مطلوب (تشترطه DHL).')).toBeTruthy()
+    expect(screen.getByTestId('customs-step')).toBeTruthy()
     fireEvent.change(step.getByLabelText(/^رقم الفاتورة/), { target: { value: 'INV-2026-77' } })
+    // the date is never filled silently: «استخدام تاريخ الشحن» fills it only on click
+    fireEvent.click(step.getByRole('button', { name: /استخدام تاريخ الشحن/ }))
+    expect((step.getByLabelText(/^تاريخ الفاتورة/) as HTMLInputElement).value).toBe('2026-11-19')
     fireEvent.change(step.getByLabelText(/^معلومات إضافية على الفاتورة/), { target: { value: 'Goods for exhibition\nReturn within 30 days' } })
     // declarations: Certificate of Origin with the exact printed text; no NAFTA / USMCA, no US export filing on SA → AE
     expect(step.getByTestId('declaration-certificate_of_origin').textContent).toContain('We hereby certify that the goods described in this invoice are of China origin.')
@@ -1677,11 +1685,42 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(usmca.disabled).toBe(true)
     expect(usmca.checked).toBe(false)
     // reloaded: Create Invoice, number shown, remarks, statement, document
-    expect((step.getByLabelText('أرغب في إضافة رقم فاتورة') as HTMLInputElement).checked).toBe(true)
     expect((step.getByLabelText(/^رقم الفاتورة/) as HTMLInputElement).value).toBe('INV-9')
     expect((step.getByLabelText(/^معلومات إضافية على الفاتورة/) as HTMLTextAreaElement).value).toBe('Line A')
     expect((within(step.getByTestId('declaration-certificate_of_origin')).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
     expect((within(step.getByTestId('customs-documents')).getByLabelText('رقم المستند') as HTMLInputElement).value).toBe('EL-4471')
+  })
+
+  it('Customs invoice required by DHL (EN): «Use My Own Invoice» needs «My Invoice Number» + date (saved as invoice metadata only — no upload, no Paperless); a Backend «CUSTOMS_INVOICE_INCOMPLETE» is a local error (no rates asked); DHL\'s schema refusal reaches the person in words, never as a «#/…» path', async () => {
+    svc.options.mockResolvedValue(OPTIONS(false))
+    svc.updateDraft.mockImplementation(async () => intlDraft())
+    const step = within(await openCustoms(intlDraft({ customs_invoice_number: null, customs_invoice_date: null, shipment_details_extra: { customs_invoice_mode: 'own' } })))
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(step.getByRole('radio', { name: /Use My Own Invoice/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    expect(await screen.findByText('The invoice number is required (DHL requires it).')).toBeTruthy()
+    expect(screen.getByText('The invoice date is required (DHL requires it).')).toBeTruthy()
+    fireEvent.change(step.getByLabelText(/^My Invoice Number/), { target: { value: 'ACME-INV-5521' } })
+    fireEvent.change(step.getByLabelText(/^Invoice Date/), { target: { value: '2026-11-18' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({ customs_invoice_number: 'ACME-INV-5521', customs_invoice_date: '2026-11-18', dhl_invoice_type: null, paperless_trade: false, details_extra: { customs_invoice_mode: 'own' } })
+    expect(svc.updateDraft.mock.calls[0][1].service_codes).not.toContain('WY')
+    // the Backend refuses DHL services while the customs invoice is incomplete: shown as SHIPPEC's own rule, rates never asked
+    svc.checkProducts.mockRejectedValueOnce(new ApiError('Customs invoice information is incomplete.', 422, 'CUSTOMS_INVOICE_INCOMPLETE', [{ field: 'customs_invoice_number', message: 'Customs invoice information is incomplete: the invoice number is required' }]))
+    goStep(/Service/)
+    fireEvent.click(await screen.findByRole('button', { name: /Refresh services and prices/ }))
+    const err = await screen.findByTestId('services-error')
+    expect(err.getAttribute('data-kind')).toBe('local')
+    expect(err.textContent).toMatch(/Customs invoice information is incomplete\. Complete the invoice number and date on the Customs step\./)
+    expect(svc.checkRates).not.toHaveBeenCalled()
+    // DHL's JSON-schema refusal (mapped by the Backend) on the review: words on the Customs step, no raw path
+    svc.validate.mockResolvedValue({ ok: false, issues: [{ field: 'customs_invoice_number', message: 'Customs invoice information is incomplete' }], warnings: [], dhl_validation: { status: 'failed', message: 'x' }, shipment: intlDraft() })
+    goStep(/Review/)
+    await waitFor(() => expect(svc.validate).toHaveBeenCalled())
+    expect(document.body.textContent).not.toMatch(/#\/content/)
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'AR' }))
+    expect(await screen.findAllByText(/بيانات الفاتورة الجمركية غير مكتملة/)).toBeTruthy()
   })
 
   const openPayment = async (draft: ReturnType<typeof shipment>) => {

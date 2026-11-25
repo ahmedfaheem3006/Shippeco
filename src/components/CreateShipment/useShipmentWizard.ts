@@ -225,6 +225,9 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     const T = (ar: string, en: string) => (langRef.current === 'en' ? en : ar);
     if (err instanceof ApiError) {
       if (err.code === 'ROUTE_INCOMPLETE') return { kind: 'local', message: routeIssuesText(issuesOf(err), langRef.current) };
+      if (err.code === 'CUSTOMS_INVOICE_INCOMPLETE') {
+        return { kind: 'local', message: T('بيانات الفاتورة الجمركية غير مكتملة. أكمل رقم الفاتورة وتاريخها في خطوة الجمارك.', 'Customs invoice information is incomplete. Complete the invoice number and date on the Customs step.') };
+      }
       if (err.code === 'CONTENT_CHANGED' || err.code === 'PRODUCTS_STALE' || err.code === 'QUOTE_STALE') {
         return { kind: 'stale', message: T('تغيّرت بيانات الشحنة. حدّث الخدمات والأسعار.', 'Shipment data changed. Refresh services and prices.') };
       }

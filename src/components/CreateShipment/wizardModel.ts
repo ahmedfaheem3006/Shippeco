@@ -363,8 +363,8 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
   const amountOf = (v: string) => { const n = num(v); return n == null ? null : Math.round(n * 100) / 100; };
   const services = f.service_codes.filter((s) => s !== 'WY' && s !== 'DD');
   const createInvoice = customs && f.customs_invoice_mode === 'create';
-  const withNumber = customs && (f.customs_invoice_mode === 'own' || f.include_invoice_number);
-  const number = withNumber ? t(f.customs_invoice_number) : null;
+  // DHL requires exportDeclarations[].invoice { number, date } on every customs shipment (both modes)
+  const number = customs ? t(f.customs_invoice_number) : null;
   const paperless = createInvoice && f.paperless_trade;
   return {
     client_id: f.client_id,
@@ -382,7 +382,7 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
     export_reason_type: customs && t(f.export_reason_type) ? f.export_reason_type : null,
     shipment_type: null,
     customs_invoice_number: number,
-    customs_invoice_date: number ? t(f.customs_invoice_date) : null,
+    customs_invoice_date: customs ? t(f.customs_invoice_date) : null,
     dhl_invoice_type: createInvoice && f.dhl_invoice_type ? f.dhl_invoice_type : null,
     // remarks are printed on the invoice DHL creates (Create Invoice only)
     invoice_remarks: createInvoice ? remarkLines(f.invoice_remarks) : [],
@@ -643,6 +643,15 @@ const TRANSLATIONS: Array<[RegExp, string]> = [
   [/Paperless Trade: choose the customs invoice/i, 'Paperless Trade: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
   [/Create Invoice: choose the invoice type/i, 'إنشاء فاتورة: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
   [/Paperless Trade with your own invoice/i, 'Paperless Trade مع فاتورتك الخاصة يتطلب رفع ملف فاتورتك إلى DHL — غير متاح في SHIPPEC بعد'],
+  [/Customs invoice information is incomplete: the invoice number is required/i, 'بيانات الفاتورة الجمركية غير مكتملة: رقم الفاتورة مطلوب'],
+  [/Customs invoice information is incomplete: the invoice date is required/i, 'بيانات الفاتورة الجمركية غير مكتملة: تاريخ الفاتورة مطلوب'],
+  [/Customs invoice information is incomplete: choose the invoice type/i, 'بيانات الفاتورة الجمركية غير مكتملة: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
+  [/Customs invoice information is incomplete/i, 'بيانات الفاتورة الجمركية غير مكتملة.'],
+  [/DHL refused this customs line item/i, 'رفضت DHL هذا البند الجمركي — راجع الوصف والكمية والقيمة والأوزان وبلد المنشأ'],
+  [/DHL refused the sender \(From\) details/i, 'رفضت DHL بيانات المرسل (من) — راجع العنوان وبيانات الاتصال'],
+  [/DHL refused the receiver \(To\) details/i, 'رفضت DHL بيانات المستلم (إلى) — راجع العنوان وبيانات الاتصال'],
+  [/DHL refused this package/i, 'رفضت DHL هذا الطرد — راجع الوزن والأبعاد'],
+  [/DHL refused part of the shipment data/i, 'رفضت DHL جزءًا من بيانات الشحنة — راجع التفاصيل ثم أعد التحقق'],
   [/Courier pickup is not currently available/i, 'استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.'],
   [/Paperless Trade upload is turned off/i, 'رفع Paperless Trade متوقف على هذا الخادم — ألغِ الخيار أو راجع المسؤول'],
   [/An invoice date only goes with an invoice number/i, 'تاريخ الفاتورة يُرسل مع رقم الفاتورة فقط'],
@@ -882,9 +891,11 @@ export function customsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
   if (!needsCustoms(f)) return e;
   const T = (ar: string, en: string) => tr(lang, ar, en);
   if (f.customs_invoice_mode === 'create' && !f.dhl_invoice_type) e.dhl_invoice_type = T('اختر نوع الفاتورة التي تُنشئها DHL.', 'Choose the invoice type DHL creates.');
+  // DHL requires the invoice number AND date on every customs shipment, in both modes — typed, never invented
   const number = f.customs_invoice_number.trim();
-  if (f.customs_invoice_mode === 'create' && f.include_invoice_number && !number) e.customs_invoice_number = T('أدخل رقم الفاتورة أو ألغِ الخيار.', 'Enter the invoice number or clear the option.');
-  if (number && (f.customs_invoice_mode === 'own' || f.include_invoice_number) && !isLatin(number)) e.customs_invoice_number = T('رقم الفاتورة بالأحرف اللاتينية فقط.', 'Latin characters only.');
+  if (!number) e.customs_invoice_number = T('رقم الفاتورة مطلوب (تشترطه DHL).', 'The invoice number is required (DHL requires it).');
+  else if (!isLatin(number)) e.customs_invoice_number = T('رقم الفاتورة بالأحرف اللاتينية فقط.', 'Latin characters only.');
+  if (!f.customs_invoice_date.trim()) e.customs_invoice_date = T('تاريخ الفاتورة مطلوب (تشترطه DHL).', 'The invoice date is required (DHL requires it).');
   const lines = f.customs_invoice_mode === 'create' ? remarkLines(f.invoice_remarks) : [];
   if (lines.length > REMARKS_MAX_LINES) e.invoice_remarks = T(`${REMARKS_MAX_LINES} أسطر كحد أقصى (حد DHL).`, `At most ${REMARKS_MAX_LINES} lines (DHL limit).`);
   else if (lines.some((l) => l.length > REMARK_MAX)) e.invoice_remarks = T(`كل سطر ${REMARK_MAX} حرفًا كحد أقصى (حد DHL).`, `Each line: at most ${REMARK_MAX} characters (DHL limit).`);
@@ -922,6 +933,7 @@ export function stepMissing(f: WizardForm, step: StepId, lang: CsLang = 'ar'): s
       const g = customsGate(f, lang);
       if (g.dhl_invoice_type) miss.push(T('نوع الفاتورة', 'Invoice type'));
       if (g.customs_invoice_number) miss.push(T('رقم الفاتورة', 'Invoice number'));
+      if (g.customs_invoice_date) miss.push(T('تاريخ الفاتورة', 'Invoice date'));
       if (Object.keys(g).some((k) => k.startsWith('customs_documents') || k === 'invoice_remarks')) miss.push(T('بيانات الفاتورة', 'Invoice details'));
       break;
     }

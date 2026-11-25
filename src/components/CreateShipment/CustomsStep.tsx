@@ -46,6 +46,33 @@ function Check2({ checked, onChange, label, description, disabled, testId }: {
   );
 }
 
+/**
+ * The invoice number + date DHL requires on every customs shipment (MyDHL REST:
+ * content.exportDeclarations[].invoice { number, date }). Both typed by the person — never invented;
+ * «Use the shipment date» fills the date only when the person clicks it.
+ */
+function InvoiceIdentity({ w, err, numberLabel }: { w: Wizard; err: (k: string) => string | null; numberLabel: string }) {
+  const { form, update } = w;
+  const { t } = useCsLang();
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="invoice-identity">
+      <Field label={numberLabel} required error={err('customs_invoice_number')} hint={t('بالأحرف اللاتينية، حتى 35 حرفًا.', 'Latin characters, up to 35.')}>
+        {(id) => <TextInput id={id} value={form.customs_invoice_number} onValue={(v) => update((f) => ({ ...f, customs_invoice_number: v.slice(0, 35) }))} error={err('customs_invoice_number')} ltr maxLength={35} />}
+      </Field>
+      <div className="min-w-0">
+        <Field label={t('تاريخ الفاتورة', 'Invoice Date')} required error={err('customs_invoice_date')}>
+          {(id) => <TextInput id={id} type="date" value={form.customs_invoice_date} onValue={(v) => update((f) => ({ ...f, customs_invoice_date: v }))} error={err('customs_invoice_date')} />}
+        </Field>
+        {!form.customs_invoice_date && form.shipment_date && (
+          <button type="button" className="mt-1 text-[11px] font-bold text-indigo-600 hover:underline" onClick={() => update((f) => ({ ...f, customs_invoice_date: f.shipment_date }))}>
+            {t('استخدام تاريخ الشحن', 'Use the shipment date')} (<span dir="ltr">{form.shipment_date}</span>)
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function StepCustoms({ w, showGate }: { w: Wizard; showGate: boolean }) {
   const { form, update, errors } = w;
   const { t, lang } = useCsLang();
@@ -119,23 +146,10 @@ export function StepCustoms({ w, showGate }: { w: Wizard; showGate: boolean }) {
 
             <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-3 sm:p-4 space-y-3">
               <div>
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{t('رقم الفاتورة', 'Invoice Number')}</h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('يمكنك إضافة رقم يساعدك والجمارك على الرجوع إلى الفاتورة.', 'You can provide a number that is helpful for you and customs to refer to.')}</p>
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{t('رقم الفاتورة وتاريخها', 'Invoice Number and Date')}</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('مطلوبان: تشترط DHL رقم الفاتورة وتاريخها في كل شحنة جمركية، ويُطبعان على الفاتورة التي تُنشئها DHL.', 'Required: DHL needs the invoice number and date on every customs shipment; they are printed on the invoice DHL creates.')}</p>
               </div>
-              <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100 cursor-pointer">
-                <input type="checkbox" className="accent-indigo-600" checked={form.include_invoice_number} onChange={(e) => set('include_invoice_number', e.target.checked)} />
-                {t('أرغب في إضافة رقم فاتورة', 'I would like to include an invoice number')}
-              </label>
-              {form.include_invoice_number && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Field label={t('رقم الفاتورة', 'Invoice Number')} required error={err('customs_invoice_number')}>
-                    {(id) => <TextInput id={id} value={form.customs_invoice_number} onValue={(v) => set('customs_invoice_number', v.slice(0, 35))} error={err('customs_invoice_number')} ltr maxLength={35} />}
-                  </Field>
-                  <Field label={t('تاريخ الفاتورة', 'Invoice date')} error={err('customs_invoice_date')} hint={t('اختياري — يُستخدم تاريخ الشحن إن تُرك فارغًا.', 'Optional — the shipment date is used when empty.')}>
-                    {(id) => <TextInput id={id} type="date" value={form.customs_invoice_date} onValue={(v) => set('customs_invoice_date', v)} error={err('customs_invoice_date')} />}
-                  </Field>
-                </div>
-              )}
+              <InvoiceIdentity w={w} err={err} numberLabel={t('رقم الفاتورة', 'Invoice Number')} />
             </div>
 
             <Field
@@ -206,14 +220,7 @@ export function StepCustoms({ w, showGate }: { w: Wizard; showGate: boolean }) {
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{t('رقم الفاتورة', 'Invoice Number')}</h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('إذا كانت فواتيرك مرقّمة فأدخل الرقم كما هو تمامًا.', 'If you number your invoices, provide the number exactly the same.')}</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label={t('رقم فاتورتي', 'My Invoice Number')} error={err('customs_invoice_number')}>
-                  {(id) => <TextInput id={id} value={form.customs_invoice_number} onValue={(v) => set('customs_invoice_number', v.slice(0, 35))} error={err('customs_invoice_number')} ltr maxLength={35} />}
-                </Field>
-                <Field label={t('تاريخ الفاتورة', 'Invoice date')} error={err('customs_invoice_date')} hint={t('اختياري — يُستخدم تاريخ الشحن إن تُرك فارغًا.', 'Optional — the shipment date is used when empty.')}>
-                  {(id) => <TextInput id={id} type="date" value={form.customs_invoice_date} onValue={(v) => set('customs_invoice_date', v)} error={err('customs_invoice_date')} />}
-                </Field>
-              </div>
+              <InvoiceIdentity w={w} err={err} numberLabel={t('رقم فاتورتي', 'My Invoice Number')} />
             </div>
             <Note>{t('مع فاتورتك الخاصة لا تُنشئ DHL فاتورة، ولا يتوفر Paperless Trade (يتطلب رفع ملف فاتورتك — غير مربوط بعد).', 'With your own invoice DHL creates none, and Paperless Trade is not available (it needs your invoice file uploaded — not connected yet).')}</Note>
             {(err('paperless_trade') || err('dhl_invoice_type')) && <Note tone="error">{err('paperless_trade') ?? err('dhl_invoice_type')}</Note>}
