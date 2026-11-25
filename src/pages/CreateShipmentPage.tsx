@@ -6,8 +6,8 @@
  * with the language.
  */
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, FileClock, PackagePlus, RotateCcw, Save } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, FileClock, ListChecks, PackagePlus, RotateCcw, Save } from 'lucide-react';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { dhlShipmentService, type DraftListRow } from '../services/dhlShipment.service';
 import { useShipmentWizard } from '../components/CreateShipment/useShipmentWizard';
@@ -78,11 +78,28 @@ function Title() {
   );
 }
 
+/** «جميع الشحنات» — a sub-page of «إنشاء شحنة» (never leaves the module). */
+function AllShipmentsLink() {
+  const { t } = useCsLang();
+  return (
+    <Link to="/create-shipment/shipments" data-testid="all-shipments-button"
+      className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 min-h-[44px]">
+      <ListChecks size={16} /> {t('جميع الشحنات', 'All Shipments')}
+    </Link>
+  );
+}
+
 function Wizard({ draftId }: { draftId: number | null }) {
   const role = useAuthStore((s) => s.user?.role);
   const { t, lang, dir } = useCsLang();
   const w = useShipmentWizard({ draftId });
   const { form, step, setStep, steps } = w;
+  const navigate = useNavigate();
+  // DHL created the shipment → the confirmation / documents page (never back to a blank wizard)
+  const createdId = w.result?.outcome === 'created' && w.result.awb ? w.result.shipment.id : null;
+  useEffect(() => {
+    if (createdId) navigate(`/create-shipment/success/${createdId}`, { replace: true });
+  }, [createdId, navigate]);
   const idx = steps.findIndex((s) => s.id === step);
   /** After a blocked Next, the missing required fields of that screen are marked (Parties, Shipment Details, Customs Invoice, Payment, Pickup). */
   const [gated, setGated] = useState<Partial<Record<StepId, boolean>>>({});
@@ -149,13 +166,15 @@ function Wizard({ draftId }: { draftId: number | null }) {
   const back = () => { if (idx > 0) setStep(steps[idx - 1].id); };
   const missing = stepMissing(form, step, lang);
 
+  if (createdId) {
+    return <div className="space-y-4" dir={dir} role="status" aria-label={t('جارٍ فتح تأكيد الشحنة', 'Opening the shipment confirmation')}><Skeleton className="h-16" /><Skeleton className="h-72" /></div>;
+  }
   if (w.result) {
     return (
       <div className="space-y-5 min-w-0" dir={dir}>
-        <header><Title /></header>
+        <header className="flex flex-wrap items-end justify-between gap-3"><Title /><AllShipmentsLink /></header>
         <CreateOutcome
           result={w.result}
-          estimatedDelivery={w.quote?.deliveryCapabilities?.estimatedDeliveryDateAndTime ?? w.quote?.estimatedDelivery ?? null}
           onNew={w.reset}
           onEdit={() => { w.setResult(null); setStep('parties'); }}
           onResolved={(sh) => { w.setShipment(sh); w.setResult({ ...w.result!, shipment: sh, outcome: sh.creation_status === 'created' ? 'created' : 'failed', awb: sh.awb, creation_error: { code: sh.creation_error_code, message: sh.creation_error_message } }); }}
@@ -178,7 +197,8 @@ function Wizard({ draftId }: { draftId: number | null }) {
             {w.shipment?.dhl_env === 'test' && <span className="ms-2 px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700 border border-sky-100 text-[10px] font-bold">{t('بيئة اختبار DHL', 'DHL test environment')}</span>}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <AllShipmentsLink />
           {w.shipment && <Button variant="ghost" onClick={() => { if (!w.dirty || window.confirm(t('توجد تعديلات غير محفوظة — بدء شحنة جديدة؟', 'There are unsaved changes — start a new shipment?'))) w.reset(); }}><RotateCcw size={16} /> {t('جديدة', 'New')}</Button>}
           <Button variant="secondary" onClick={() => void w.save(false)} loading={w.saving} disabled={!w.dirty && !!w.shipment}>
             <Save size={16} /> {w.dirty || !w.shipment ? t('حفظ المسودة', 'Save draft') : t('محفوظة', 'Saved')}

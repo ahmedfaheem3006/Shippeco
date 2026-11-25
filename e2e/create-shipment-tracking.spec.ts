@@ -103,6 +103,16 @@ async function wizardApi(page: Page, createAnswer: (r: Route) => Promise<void>) 
   await page.route(/\/api\/dhl\/incoterms$/, (r) => r.fulfill(json({ success: true, data: { source: 'dhl', items: [{ code: 'DAP', name: 'Delivered At Place', description: null }, { code: 'DDP', name: 'Delivered Duty Paid', description: null }, { code: 'EXW', name: 'Ex Works', description: null }] } })))
   await page.route(/\/api\/dhl\/default-shipper$/, (r) => r.fulfill(json({ success: true, data: null })))
   await page.route(/\/api\/dhl\/pickups\/7$/, (r) => r.fulfill(json({ success: true, data: { id: 7, status: 'booked', dispatch_confirmation_number: 'CBJ261119000561', pickup_date: '2026-11-22', earliest_time: '10:00', latest_time: '16:00' } })))
+  // after DHL created it: the confirmation page reads the stored record (GET /:id/details)
+  await page.route(/\/api\/dhl\/shipments\/5\/details$/, (r) => r.fulfill(json({ success: true, data: {
+    ...created().shipment, status: 'booked', dhl_created_at: '2026-11-18T10:05:00Z', origin_gmt_offset: '+03:00',
+    packages: [{ sequence: 1, weight_kg: '0.600', dhl_piece_id: 'JD014600004614961175001' }, { sequence: 2, weight_kg: '0.600', dhl_piece_id: 'JD014600004614961175002' }],
+    documents: created().documents.map((d, i) => ({ ...d, origin: 'dhl_response', sequence: i + 1, page_count: 1 })),
+    pickup: { id: 7, status: 'booked', dispatch_confirmation_number: 'CBJ261119000561', pickup_date: '2026-11-22', earliest_time: '10:00', close_time: '16:00', location: 'reception', location_type: 'business', instructions: 'Call on arrival' },
+    tracking: null, invoice: { id: 91, invoice_number: 'DH2601', status: 'unpaid', payment_status: 0 }, supersedes: null, replaced_by: null, copied_from: null,
+    management: { edit_policy: 'replacement_only', can_copy: true, can_replace: true, replace_blocked: null, replacement_draft_id: null, can_cancel: true, cancel_blocked: null,
+      in_dhl_network: false, tracking_status: null, remote_operations: [], pickup: null, documents_bundle: { available: true, documents: 3, pages: 3 } },
+  } })))
   return calls
 }
 
@@ -171,13 +181,14 @@ for (const vp of VIEWPORTS) {
       await expect(yes).toBeVisible()
       expect(calls.create).toBe(0) // nothing is sent before the explicit confirmation
       await yes.click()
-      await expect(page.getByText('تم إنشاء الشحنة لدى DHL')).toBeVisible()
-      await expect(page.getByText('4614961175', { exact: true })).toBeVisible()
+      // success → the dedicated confirmation page of THIS shipment (never back to a blank wizard)
+      await expect(page).toHaveURL(/\/create-shipment\/success\/5$/)
+      await expect(page.getByRole('heading', { name: 'تم إنشاء الشحنة بنجاح' })).toBeVisible()
+      await expect(page.getByTestId('summary-awb')).toHaveText('4614961175')
       await expect(page.getByText('DH2601')).toBeVisible()
-      await expect(page.getByRole('button', { name: /ملصق الشحن/ })).toBeVisible()
-      await expect(page.getByRole('button', { name: /الفاتورة التجارية/ })).toBeVisible()
-      await expect(page.getByText('CBJ261119000561')).toBeVisible()
-      await expect(page.getByText('يُرفع بعد 10 دقائق')).toBeVisible()
+      await expect(page.getByTestId('summary-pickup-dcn')).toHaveText('CBJ261119000561')
+      await expect(page.locator('[data-document-type]')).toHaveCount(3)
+      await expect(page.locator('[data-document-type="commercial_invoice"]')).toContainText('الفاتورة التجارية')
       expect(calls).toMatchObject({ create: 1, confirm: 1 })
       expect(calls.pricing).toBeGreaterThanOrEqual(1) // the price travels with the draft (stored on review) and is approved again at creation
       await shot(page, `08-create-success-${vp.name}`)

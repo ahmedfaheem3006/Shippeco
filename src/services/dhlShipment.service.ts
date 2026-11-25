@@ -198,7 +198,11 @@ export interface RateQuote {
   pricingDate?: string | null;
 }
 
-export interface ShipmentDocument { id: number; document_type: string; content_type: string; size_bytes: number; sha256: string; origin?: string; created_at?: string }
+export interface ShipmentDocument {
+  id: number; document_type: string; content_type: string; size_bytes: number; sha256: string; origin?: string; created_at?: string;
+  /** DHL's order in the create answer; pages of the PDF (migration 048) */
+  sequence?: number | null; page_count?: number | null;
+}
 
 /** GET /dhl/shipments/:id (dhl_shipments row + derived fields). Only the fields the UI reads are typed. */
 export interface DhlShipment {
@@ -275,6 +279,64 @@ export interface DhlShipment {
   documents: ShipmentDocument[];
   [k: string]: unknown;
 }
+
+/** What SHIPPEC offers for one shipment now (GET /:id/details → management). MyDHL REST cannot edit / delete an AWB. */
+export interface ShipmentManagement {
+  edit_policy: 'draft_edit' | 'replacement_only' | 'none';
+  can_copy: boolean;
+  can_replace: boolean;
+  replace_blocked: string | null;
+  replacement_draft_id: number | null;
+  can_cancel: boolean;
+  cancel_blocked: string | null;
+  in_dhl_network: boolean;
+  tracking_status: string | null;
+  remote_operations: Array<{ code: 'pickup_update' | 'pickup_cancel' | 'paperless_upload'; available: boolean }>;
+  pickup: { id: number; status: string; dispatch_confirmation_number: string | null; cancel_state: string; cancellable: boolean } | null;
+  documents_bundle: { available: boolean; documents: number; pages: number | null };
+}
+
+export interface LinkedShipment { id: number; awb: string | null; shippec_reference: string; creation_status: CreationStatus; status: string }
+
+/** GET /dhl/shipments/:id/details — the confirmation / management view of one shipment. */
+export interface ShipmentDetails extends DhlShipment {
+  pickup: (PickupRecord & { location_type?: string | null; instructions?: string | null; cancel_state?: string; cancel_error?: string | null }) | null;
+  tracking: { normalized_status: string | null; current_description: string | null; estimated_delivery: string | null; last_synced_at: string | null; pickup_at: string | null } | null;
+  invoice: { id: number; invoice_number: string | null; status: string | null; payment_status: number | null } | null;
+  created_by_name: string | null;
+  dhl_created_at: string | null;
+  supersedes: LinkedShipment | null;
+  replaced_by: LinkedShipment | null;
+  copied_from: LinkedShipment | null;
+  cancellation_reason: string | null;
+  cancelled_at: string | null;
+  invoice_reversal_status: 'none' | 'reversed' | 'needs_review';
+  management: ShipmentManagement;
+}
+
+export type ListBucket = 'ready_to_ship' | 'pre_transit' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'exception' | 'cancelled' | 'uncertain';
+export type DateFilter = 'all' | 'today' | 'past_7' | 'past_30' | 'past_60' | 'past_90' | 'upcoming' | 'range';
+
+/** One row of «All Shipments» (GET /dhl/shipments/managed). */
+export interface ManagedShipmentRow {
+  id: number; dhl_env: string; awb: string | null; shippec_reference: string; status: string; creation_status: CreationStatus; list_status: ListBucket;
+  tracking_status: string | null; tracking_description: string | null; estimated_delivery: string | null; delivered_at: string | null;
+  shipment_date: string | null; product_code: string | null; product_name: string | null; content_description: string | null; customs_required: boolean;
+  shipper_company: string | null; shipper_contact: string | null; shipper_city: string | null; shipper_country_code: string | null;
+  receiver_company: string | null; receiver_contact: string | null; receiver_city: string | null; receiver_country_code: string | null;
+  package_count: number; total_gross_weight: string | null; client_id: number | null; client_name: string | null; created_by_name: string | null;
+  pickup_option: PickupOption; dispatch_confirmation_number: string | null; pickup_status: string | null;
+  invoice_id: number | null; invoice_number: string | null; supersedes_shipment_id: number | null; replaced_by_shipment_id: number | null;
+  replaced_by_awb: string | null; supersedes_awb: string | null; document_count: number;
+  dhl_created_at: string | null; created_at: string; updated_at: string; cancelled_at: string | null; cancellation_reason: string | null;
+}
+
+export interface ManagedListQuery {
+  q?: string; date?: DateFilter; from?: string; to?: string; status?: ListBucket | ''; content?: 'documents' | 'packages' | '';
+  product?: string; pickup?: 'scheduled' | 'none' | 'drop_off' | ''; client_id?: number | ''; page?: number; limit?: number;
+}
+
+export interface ShipmentFacets { products: Array<{ code: string; name: string | null; n: number }>; customers: Array<{ id: number; name: string; n: number }> }
 
 export interface DraftListRow {
   id: number;
@@ -427,19 +489,41 @@ export const dhlShipmentService = {
   setDefaultShipper: (p: Party) => api.put<Party>('/dhl/default-shipper', p),
   getPickup: (pickupId: number) => api.get<PickupRecord>(`/dhl/pickups/${pickupId}`),
 
-  /** The bytes through the SHIPPEC Backend (authenticated); never a storage path. */
-  async downloadDocument(shipmentId: number, documentId: number): Promise<{ blob: Blob; filename: string }> {
-    const token = useAuthStore.getState().token;
-    const res = await fetch(`${env.apiUrl}${BASE}/${shipmentId}/documents/${documentId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (!res.ok) {
-      const json = await res.json().catch(() => null);
-      throw new ApiError(json?.error?.message || 'تعذر تنزيل المستند', res.status, json?.error?.code);
-    }
-    const cd = res.headers.get('content-disposition') ?? '';
-    const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `shipment_${shipmentId}_${documentId}.pdf`;
-    return { blob: await res.blob(), filename };
+  // ── Created shipments (All Shipments, confirmation, copy, replacement, cancellation) ──
+  details: (id: number) => api.get<ShipmentDetails>(`${BASE}/${id}/details`),
+  listShipments(q: ManagedListQuery = {}) {
+    const qp = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== null && v !== '' && !(k === 'date' && v === 'all')) qp.set(k, String(v));
+    return api.get<{ data: ManagedShipmentRow[]; pagination: { page: number; limit: number; total: number } }>(`${BASE}/managed?${qp.toString()}`);
   },
+  facets: () => api.get<ShipmentFacets>(`${BASE}/managed/facets`),
+  /** A NEW draft from the business input (never DHL's output). */
+  copy: (id: number) => api.post<DhlShipment & { replayed: boolean }>(`${BASE}/${id}/copy`, {}),
+  /** «Create corrected replacement» — a NEW draft linked to this AWB (an existing one is reopened). */
+  replacement: (id: number) => api.post<DhlShipment & { replayed: boolean }>(`${BASE}/${id}/replacement`, {}),
+  /** Cancel a CREATED shipment in SHIPPEC (its DHL courier pickup first). The AWB is never deleted at DHL. */
+  cancelShipment: (id: number, reason: string) =>
+    api.post<{ pickup_cancelled: boolean; invoice_reversal: 'none' | 'reversed' | 'needs_review'; shipment: ShipmentDetails }>(`${BASE}/${id}/cancel-shipment`, { reason }),
+  /** ONE PDF with every DHL document of the shipment (DHL's originals, merged by the Backend). */
+  downloadBundle: (shipmentId: number) => fetchFile(`${BASE}/${shipmentId}/documents/bundle`, `shipment_${shipmentId}_documents.pdf`),
+
+  /** The bytes through the SHIPPEC Backend (authenticated); never a storage path. */
+  downloadDocument: (shipmentId: number, documentId: number) => fetchFile(`${BASE}/${shipmentId}/documents/${documentId}`, `shipment_${shipmentId}_${documentId}.pdf`),
 };
+
+/** An authenticated file from the SHIPPEC Backend (never a public / storage URL, never base64 in the browser's storage). */
+export async function fetchFile(path: string, fallbackName: string): Promise<{ blob: Blob; filename: string; pages: number | null }> {
+  const token = useAuthStore.getState().token;
+  const res = await fetch(`${env.apiUrl}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    const json = await res.json().catch(() => null);
+    throw new ApiError(json?.error?.message || 'تعذر تنزيل المستند', res.status, json?.error?.code);
+  }
+  const cd = res.headers.get('content-disposition') ?? '';
+  const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? fallbackName;
+  const pages = Number(res.headers.get('x-page-count'));
+  return { blob: await res.blob(), filename, pages: Number.isFinite(pages) && pages > 0 ? pages : null };
+}
 
 /** Clients for the «العميل» picker (GET /clients?search=…, with ids). */
 export async function searchClients(q: string): Promise<Array<{ id: number; name: string; phone: string | null; email: string | null; city: string | null; country: string | null }>> {

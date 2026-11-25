@@ -12,6 +12,8 @@ export const HOME_TITLE = 'الرئيسية';
 export const PAGE_TITLES: ReadonlyArray<{ path: string; title: string }> = [
   { path: '/', title: HOME_TITLE },
   { path: '/dashboard', title: HOME_TITLE },
+  { path: '/create-shipment/success/:id', title: 'تأكيد الشحنة' },
+  { path: '/create-shipment/shipments', title: 'جميع الشحنات' },
   { path: '/create-shipment', title: 'إنشاء شحنة' },
   { path: '/shipment-tracking/:awb', title: 'تفاصيل البوليصة' },
   { path: '/shipment-tracking', title: 'متابعة البوليصة' },

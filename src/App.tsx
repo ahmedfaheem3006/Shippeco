@@ -36,6 +36,8 @@ const QuoteRequestsPage = lazy(() => import('./pages/QuoteRequestsPage').then((m
 const ShipmentTrackingPage = lazy(() => import('./pages/ShipmentTrackingPage').then((m) => ({ default: m.ShipmentTrackingPage })))
 const ShipmentTrackingDetailsPage = lazy(() => import('./pages/ShipmentTrackingDetailsPage').then((m) => ({ default: m.ShipmentTrackingDetailsPage })))
 const CreateShipmentPage = lazy(() => import('./pages/CreateShipmentPage').then((m) => ({ default: m.CreateShipmentPage })))
+const CreateShipmentConfirmationPage = lazy(() => import('./pages/CreateShipmentConfirmationPage').then((m) => ({ default: m.CreateShipmentConfirmationPage })))
+const AllShipmentsPage = lazy(() => import('./pages/AllShipmentsPage').then((m) => ({ default: m.AllShipmentsPage })))
 const SupportCenterPage = lazy(() => import('./pages/SupportCenterPage').then((m) => ({ default: m.SupportCenterPage })))
 
 function RouteFallback() {
@@ -180,6 +182,9 @@ function App() {
           <Route path="/shipment-tracking" element={<ShipmentTrackingPage />} />
           <Route path="/shipment-tracking/:awb" element={<ShipmentTrackingDetailsPage />} />
           <Route path="/create-shipment" element={<CreateShipmentPage />} />
+          {/* sub-pages of «إنشاء شحنة» (the module stays selected): the post-create confirmation and All Shipments */}
+          <Route path="/create-shipment/success/:id" element={<CreateShipmentConfirmationPage />} />
+          <Route path="/create-shipment/shipments" element={<AllShipmentsPage />} />
           <Route
             path="/support"
             element={

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom'
 
 const svc = vi.hoisted(() => ({
   listDrafts: vi.fn(), get: vi.fn(), createDraft: vi.fn(), updateDraft: vi.fn(), cancel: vi.fn(), checkProducts: vi.fn(), selectProduct: vi.fn(),
@@ -79,7 +79,21 @@ const pickCountry = (side: 0 | 1, q: string) => {
   fireEvent.change(box, { target: { value: q } })
   fireEvent.keyDown(box, { key: 'Enter' })
 }
-const renderAt = (url = '/create-shipment') => render(<MemoryRouter initialEntries={[url]}><CreateShipmentPage /></MemoryRouter>)
+/** The confirmation / All Shipments sub-pages are their own routes: a probe shows where the wizard went. */
+function SubPage({ name }: { name: string }) {
+  const { id } = useParams()
+  const loc = useLocation()
+  return <div data-testid="subpage">{name}{id ? ` ${id}` : ''}{loc.search}</div>
+}
+const renderAt = (url = '/create-shipment') => render(
+  <MemoryRouter initialEntries={[url]}>
+    <Routes>
+      <Route path="/create-shipment" element={<CreateShipmentPage />} />
+      <Route path="/create-shipment/success/:id" element={<SubPage name="CONFIRMATION" />} />
+      <Route path="/create-shipment/shipments" element={<SubPage name="ALL SHIPMENTS" />} />
+    </Routes>
+  </MemoryRouter>,
+)
 const next = () => fireEvent.click(screen.getByRole('button', { name: /التالي/ }))
 const goStep = (label: RegExp) => fireEvent.click(screen.getAllByRole('button', { name: label })[0])
 
@@ -678,7 +692,7 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(screen.queryByTestId('pickup-gate-off')).toBeNull()
   })
 
-  it('review validates with DHL on entry; «إنشاء الشحنة» asks for confirmation and sends ONE create; success shows AWB, invoice and documents', async () => {
+  it('review validates with DHL on entry; «إنشاء الشحنة» asks for confirmation and sends ONE create; success opens the confirmation page of that shipment (never a blank wizard)', async () => {
     let release!: () => void
     svc.create.mockImplementation(() => new Promise((r) => { release = () => r(created()) }))
     renderAt('/create-shipment?draft=5')
@@ -698,11 +712,7 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(svc.confirm).toHaveBeenCalledWith(5)
     expect(await screen.findByText(/إرسال طلب الإنشاء إلى DHL/)).toBeTruthy()
     await act(async () => { release() })
-    expect(await screen.findByText('تم إنشاء الشحنة لدى DHL')).toBeTruthy()
-    expect(screen.getByText('4614961120')).toBeTruthy() // the AWB exactly as DHL issued it, never split
-    expect(screen.getByText('DH2601')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /ملصق الشحن/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /بوليصة الشحن/ })).toBeTruthy()
+    expect((await screen.findByTestId('subpage')).textContent).toBe('CONFIRMATION 5')
     expect(svc.create).toHaveBeenCalledTimes(1)
   })
 
@@ -1954,4 +1964,17 @@ describe('«إنشاء شحنة» wizard', () => {
     expect((within(document.querySelector('[data-item="0"]') as HTMLElement).getByLabelText(/^ما هو البند؟/) as HTMLInputElement).value).toBe("Men's 100% cotton T-shirt for personal use")
   })
 
+})
+
+describe('«إنشاء شحنة» header — «جميع الشحنات»', () => {
+  it('sits next to «حفظ المسودة» (AR + EN) and opens the All Shipments sub-page without leaving the module', async () => {
+    renderAt('/create-shipment')
+    const btn = await screen.findByTestId('all-shipments-button')
+    expect(btn.textContent).toContain('جميع الشحنات')
+    expect(btn.parentElement?.textContent).toContain('حفظ المسودة')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(screen.getByTestId('all-shipments-button').textContent).toContain('All Shipments')
+    fireEvent.click(screen.getByTestId('all-shipments-button'))
+    expect((await screen.findByTestId('subpage')).textContent).toBe('ALL SHIPMENTS')
+  })
 })

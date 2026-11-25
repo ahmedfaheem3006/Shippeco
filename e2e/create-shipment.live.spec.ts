@@ -372,11 +372,12 @@ test('create: a manager sends exactly ONE create; success screen; documents thro
   await yes.click()
   await yes.click({ timeout: 500 }).catch(() => undefined) // an impatient double click must not send a second request
 
-  const outcome = page.getByText(/تم إنشاء الشحنة لدى DHL|لا تحاول إنشاء الشحنة مرة أخرى|رفضت DHL إنشاء الشحنة/)
+  // created → the confirmation page (/create-shipment/success/:id); uncertain / refused stay on the wizard
+  const outcome = page.getByText(/تم إنشاء الشحنة بنجاح|لا تحاول إنشاء الشحنة مرة أخرى|رفضت DHL إنشاء الشحنة/)
   await expect(outcome.first()).toBeVisible({ timeout: 180_000 })
   expect(createCalls).toHaveLength(1)
-  await expect(page.getByText('تم إنشاء الشحنة لدى DHL')).toBeVisible()
-  const awb = (await page.locator('text=/^\\d{3} \\d{3} \\d{4}$/').first().innerText()).replace(/\D/g, '')
+  await expect(page.getByRole('heading', { name: 'تم إنشاء الشحنة بنجاح' })).toBeVisible()
+  const awb = (await page.getByTestId('summary-awb').innerText()).replace(/\D/g, '')
   const invLink = page.getByRole('link', { name: /^DH\d+/ }).first()
   const invoiceNumber = (await invLink.innerText()).trim()
   const invoiceId = Number(new URL(await invLink.getAttribute('href') ?? '', 'http://x').searchParams.get('invoice'))

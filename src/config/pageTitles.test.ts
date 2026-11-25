@@ -38,7 +38,7 @@ describe('central page titles', () => {
   it('every signed-in route of App.tsx has a title (no silent "الرئيسية")', () => {
     const appRoutes = ['/dashboard', '/invoices', '/new-invoice', '/reports', '/clients', '/collection-model', '/expenses', '/calculator', '/reconcile',
       '/invoice-template', '/paymob-links', '/settings', '/profit-report', '/audit-log', '/wa-templates', '/tasks', '/shipment-tracking',
-      '/shipment-tracking/:awb', '/create-shipment', '/support', '/quote-requests']
+      '/shipment-tracking/:awb', '/create-shipment', '/create-shipment/success/:id', '/create-shipment/shipments', '/support', '/quote-requests']
     const declared = PAGE_TITLES.map((p) => p.path)
     for (const r of appRoutes) expect(declared).toContain(r)
   })
