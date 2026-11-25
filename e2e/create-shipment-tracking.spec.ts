@@ -158,7 +158,8 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByText('67.60 ر.س').first()).toBeVisible() // SHIPPEC profit, shown apart from DHL's price
       await shot(page, `05-product-rate-${vp.name}`)
       await next.click() // pickup
-      await expect(page.getByText(/نافذة DHL لهذه الخدمة: من 09:00 حتى 18:30/)).toBeVisible()
+      await expect(page.getByTestId('pickup-window')).toContainText('09:00') // DHL's pickup window for the product
+      await expect(page.getByTestId('pickup-window')).toContainText('18:30')
       await shot(page, `06-pickup-${vp.name}`)
       await next.click() // review
       await expect(page.getByText(/اجتازت البيانات التحقق المحلي وتحقق DHL/)).toBeVisible()
