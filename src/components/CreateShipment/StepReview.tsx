@@ -11,7 +11,7 @@ import { Button, Note, Section, Stat } from './ui';
 import { ChargeTable } from './StepService';
 import { useCsLang } from './csLang';
 import {
-  ALL_STEPS, canShipment, composePhone, countryName, isInternational, itemTotals, kg, locateIssue, maskAccount, money, optionalServiceRows, packageTotals, PICKUP_LOCATION_LABELS, purposeLabel, stepLabel,
+  ALL_STEPS, canShipment, composePhone, countryName, effectiveInvoiceType, isInternational, itemTotals, kg, locateIssue, maskAccount, money, optionalServiceRows, packageTotals, PICKUP_LOCATION_LABELS, purposeLabel, stepLabel,
   translateIssue, type StepId,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
@@ -66,6 +66,11 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
   const priced = w.pricing.selling_price !== '' && Number.isFinite(sell) && sell > 0;
   const profit = priced && w.dhlCost != null ? Math.round((sell - w.dhlCost) * 100) / 100 : null;
   const est = quote?.deliveryCapabilities?.estimatedDeliveryDateAndTime ?? quote?.estimatedDelivery ?? null;
+  // the customs invoice DHL receives: «Create Invoice» → SHIPPEC-issued (stored on the draft); «own» → typed
+  const invType = effectiveInvoiceType(form);
+  const ownInvoice = form.customs_invoice_mode === 'own';
+  const invoiceNumber = ownInvoice ? form.customs_invoice_number.trim() : String(w.shipment?.customs_invoice_number ?? '');
+  const invoiceDate = ownInvoice ? form.customs_invoice_date.trim() : String(w.shipment?.customs_invoice_date ?? '');
   // the optional services as they go to DHL (WY / DD are SHIPPEC's own, shown elsewhere)
   const chosen = form.service_codes.filter((c) => c !== 'WY' && c !== 'DD');
   const rows = optionalServiceRows(quote, chosen, lang).filter((r) => r.selected);
@@ -144,11 +149,11 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
           {w.customs && (
             <Stat
               label={t('الفاتورة الجمركية', 'Customs invoice')}
-              value={`${form.customs_invoice_mode === 'own' ? t('فاتورتي الخاصة', 'My own invoice') : `${t('تُنشئها DHL', 'Created by DHL')}${form.dhl_invoice_type ? ` (${form.dhl_invoice_type === 'proforma' ? 'Proforma' : 'Commercial'})` : ''}`}${
-                (form.customs_invoice_mode === 'own' || form.include_invoice_number) && form.customs_invoice_number.trim() ? ` · ${form.customs_invoice_number.trim()}` : ''}`}
+              value={`${form.customs_invoice_mode === 'own' ? t('فاتورتي الخاصة', 'My own invoice') : `${t('تُنشئها DHL', 'Created by DHL')}${invType ? ` (${invType === 'proforma' ? 'Proforma' : 'Commercial'})` : ''}`}${
+                invoiceNumber ? ` · ${invoiceNumber}` : ''}${invoiceDate ? ` · ${invoiceDate}` : ''}`}
             />
           )}
-          {w.customs && <Stat label="Paperless Trade" value={form.customs_invoice_mode === 'create' && form.paperless_trade ? `${t('نعم', 'Yes')} (${form.dhl_invoice_type === 'proforma' ? 'Proforma' : 'Commercial'})` : t('لا', 'No')} />}
+          {w.customs && <Stat label="Paperless Trade" value={form.customs_invoice_mode === 'create' && form.paperless_trade ? `${t('نعم', 'Yes')} (${invType === 'proforma' ? 'Proforma' : 'Commercial'})` : t('لا', 'No')} />}
           <Stat label={t('الاستلام', 'Pickup')} value={t(...PICKUP[form.pickup_option])} />
           {form.pickup_option === 'schedule' && <Stat label={t('نافذة الاستلام', 'Pickup window')} value={<span dir="ltr">{`${form.shipment_date} · ${form.pickup_earliest_time || '—'}–${form.pickup_latest_time || '—'}`}</span>} />}
           {form.pickup_option === 'schedule' && (

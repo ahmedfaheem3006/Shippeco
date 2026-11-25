@@ -6,7 +6,7 @@ import {
   visibleSteps, type WizardForm,
   chargeRows, dateParts, dhlDateTime, goGreenOf, optionalServiceRows, originToday, shipDateCards, shipDateRange, toggleOptionalService,
   needsOriginOffset, originOffset, senderTimeZone,
-  pickupGate, pickupLocationIn, pickupSlots,
+  pickupGate, pickupLocationIn, pickupSlots, effectiveInvoiceType,
 } from './wizardModel';
 import { applyAddress, applyCity, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, withCountry } from './partiesModel';
 import { normalizeSubdivision } from './geoRules';
@@ -125,44 +125,52 @@ describe('wizard model', () => {
     expect(goods.items?.[0]).toMatchObject({ description: 'T-shirt', line_gross_weight_kg: '0.5', unit_net_weight_kg: '0.2' });
   });
 
-  it('Customs Invoice → DHL draft: the invoice number + date always go with a customs shipment (DHL requires exportDeclarations[].invoice), in both modes; type, remarks, statements, documents, Paperless', () => {
+  it('Customs Invoice → DHL draft: «Create Invoice» sends no number / date (SHIPPEC issues them on the server) and the type derived from the purpose; «Use My Own Invoice» sends the typed ones; remarks, statements, documents, Paperless', () => {
     const base = { ...intlGoods(), shipper: saParty(), receiver: usParty(), dhl_invoice_type: 'proforma' as const, customs_invoice_number: 'INV-9', customs_invoice_date: '2026-11-20' };
-    // Create Invoice: the number and date are sent as typed (the old «include an invoice number» option is gone)
-    const noFlag = toContent({ ...base, customs_invoice_mode: 'create', include_invoice_number: false });
-    expect(noFlag).toMatchObject({ customs_invoice_number: 'INV-9', customs_invoice_date: '2026-11-20', dhl_invoice_type: 'proforma', details_extra: { customs_invoice_mode: 'create' } });
-    // nothing typed → nothing invented (null, the gate and the Backend ask for them)
-    expect(toContent({ ...base, customs_invoice_mode: 'create', customs_invoice_number: ' ', customs_invoice_date: '' })).toMatchObject({ customs_invoice_number: null, customs_invoice_date: null });
-    const withNumber = toContent({ ...base, customs_invoice_mode: 'create', include_invoice_number: true, invoice_remarks: 'Goods for exhibition\n\n Return in 30 days ',
+    // Create Invoice: nothing typed is sent as the invoice number / date — the Backend issues CI-<reference> + the sender's date
+    const created = toContent({ ...base, customs_invoice_mode: 'create' });
+    expect(created).toMatchObject({ customs_invoice_number: null, customs_invoice_date: null, dhl_invoice_type: 'proforma', details_extra: { customs_invoice_mode: 'create' } });
+    // the invoice type: chosen, else derived from the purpose (gift → Proforma, sale → Commercial), else none
+    expect(toContent({ ...base, customs_invoice_mode: 'create', dhl_invoice_type: '', shipment_purpose: 'gift' }).dhl_invoice_type).toBe('proforma');
+    expect(toContent({ ...base, customs_invoice_mode: 'create', dhl_invoice_type: '', shipment_purpose: 'commercial' }).dhl_invoice_type).toBe('commercial');
+    expect(toContent({ ...base, customs_invoice_mode: 'create', dhl_invoice_type: 'commercial', shipment_purpose: 'gift' }).dhl_invoice_type).toBe('commercial'); // the person's choice wins
+    expect(toContent({ ...base, customs_invoice_mode: 'create', dhl_invoice_type: '', shipment_purpose: 'claim' }).dhl_invoice_type).toBeNull();
+    const full = toContent({ ...base, customs_invoice_mode: 'create', invoice_remarks: 'Goods for exhibition\n\n Return in 30 days ',
       declaration_statements: ['certificate_of_origin', 'usmca'], customs_documents: [{ type_code: 'COO', value: ' COO-1 ' }, { type_code: '', value: '' }], paperless_trade: true });
-    expect(withNumber).toMatchObject({
-      customs_invoice_number: 'INV-9', customs_invoice_date: '2026-11-20', invoice_remarks: ['Goods for exhibition', 'Return in 30 days'],
+    expect(full).toMatchObject({
+      invoice_remarks: ['Goods for exhibition', 'Return in 30 days'],
       declaration_statements: ['certificate_of_origin'], // USMCA is not offered on SA → US (and never sent)
       customs_documents: [{ type_code: 'COO', value: 'COO-1' }], paperless_trade: true, service_codes: ['WY'],
     });
-    // Use My Own Invoice: my number, no DHL invoice, no Paperless, no statements / remarks (they print on DHL's invoice)
-    const own = toContent({ ...base, customs_invoice_mode: 'own', include_invoice_number: false, paperless_trade: true, invoice_remarks: 'x', declaration_statements: ['certificate_of_origin'] });
+    // Use My Own Invoice: my number / date, no DHL invoice, no Paperless, no statements / remarks (they print on DHL's invoice)
+    const own = toContent({ ...base, customs_invoice_mode: 'own', paperless_trade: true, invoice_remarks: 'x', declaration_statements: ['certificate_of_origin'] });
     expect(own).toMatchObject({ customs_invoice_number: 'INV-9', customs_invoice_date: '2026-11-20', dhl_invoice_type: null, paperless_trade: false, service_codes: [], invoice_remarks: [], declaration_statements: [], details_extra: { customs_invoice_mode: 'own' } });
+    // nothing typed → nothing invented
+    expect(toContent({ ...base, customs_invoice_mode: 'own', customs_invoice_number: ' ', customs_invoice_date: '' })).toMatchObject({ customs_invoice_number: null, customs_invoice_date: null });
     // documents shipment: nothing of the customs invoice is sent
     expect(toContent({ ...base, content_kind: 'documents', customs_documents: [{ type_code: 'COO', value: '1' }] })).toMatchObject({ customs_documents: [], invoice_remarks: [], customs_invoice_number: null, details_extra: { customs_invoice_mode: null } });
   });
 
-  it('Customs Invoice gate, route-aware declarations, US-only Electronic Export Filing, invoice type suggested from the purpose', () => {
-    const f = { ...intlGoods(), customs_invoice_mode: 'create' as const, customs_invoice_number: 'INV-9', customs_invoice_date: '2026-11-20' };
-    expect(customsGate(f, 'en')).toEqual({ dhl_invoice_type: 'Choose the invoice type DHL creates.' });
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial' })).toEqual({});
-    // DHL requires the invoice number and date (both modes)
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial', customs_invoice_number: '', customs_invoice_date: '' }, 'en')).toEqual({
+  it('Customs Invoice gate: «Create Invoice» needs no typed number / date and no click on the type when the purpose implies it; «Use My Own Invoice» requires its own number and date; route-aware declarations, US-only Electronic Export Filing', () => {
+    const f = { ...intlGoods(), customs_invoice_mode: 'create' as const, customs_invoice_number: '', customs_invoice_date: '' };
+    expect(customsGate(f, 'en')).toEqual({}); // gift → Proforma, the invoice metadata is SHIPPEC's
+    expect(stepMissing(f, 'customs', 'en')).toEqual([]);
+    expect(effectiveInvoiceType(f)).toBe('proforma');
+    expect(customsGate({ ...f, shipment_purpose: 'claim' }, 'en')).toEqual({ dhl_invoice_type: 'Choose the invoice type DHL creates.' });
+    expect(stepMissing({ ...f, shipment_purpose: 'claim' }, 'customs', 'en')).toEqual(['Invoice type']);
+    expect(customsGate({ ...f, shipment_purpose: 'claim', dhl_invoice_type: 'commercial' })).toEqual({});
+    // Use My Own Invoice: DHL requires YOUR invoice number and date
+    expect(customsGate({ ...f, customs_invoice_mode: 'own' }, 'en')).toEqual({
       customs_invoice_number: 'The invoice number is required (DHL requires it).', customs_invoice_date: 'The invoice date is required (DHL requires it).',
     });
-    expect(customsGate({ ...f, customs_invoice_mode: 'own', customs_invoice_number: '' }, 'ar')).toEqual({ customs_invoice_number: 'رقم الفاتورة مطلوب (تشترطه DHL).' });
-    expect(stepMissing({ ...f, dhl_invoice_type: 'commercial', customs_invoice_number: '', customs_invoice_date: '' }, 'customs', 'en')).toEqual(['Invoice number', 'Invoice date']);
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial', invoice_remarks: 'a\nb\nc\nd' })).toHaveProperty('invoice_remarks');
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial', invoice_remarks: 'x'.repeat(46) })).toHaveProperty('invoice_remarks');
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial', invoice_remarks: 'ملاحظة' })).toHaveProperty('invoice_remarks');
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial', customs_documents: [{ type_code: 'COO', value: '' }] })).toHaveProperty(['customs_documents.0']);
-    expect(customsGate({ ...f, dhl_invoice_type: 'commercial', customs_documents: [{ type_code: '', value: '' }] })).toEqual({}); // an empty row is ignored
-    // own invoice: no invoice type; hidden remarks never block
-    expect(customsGate({ ...f, customs_invoice_mode: 'own', invoice_remarks: 'a\nb\nc\nd' })).toEqual({});
+    expect(customsGate({ ...f, customs_invoice_mode: 'own', customs_invoice_date: '2026-11-20' }, 'ar')).toEqual({ customs_invoice_number: 'رقم الفاتورة مطلوب (تشترطه DHL).' });
+    expect(stepMissing({ ...f, customs_invoice_mode: 'own' }, 'customs', 'en')).toEqual(['Invoice number', 'Invoice date']);
+    expect(customsGate({ ...f, customs_invoice_mode: 'own', customs_invoice_number: 'ACME-1', customs_invoice_date: '2026-11-20' })).toEqual({});
+    expect(customsGate({ ...f, invoice_remarks: 'a\nb\nc\nd' })).toHaveProperty('invoice_remarks');
+    expect(customsGate({ ...f, invoice_remarks: 'x'.repeat(46) })).toHaveProperty('invoice_remarks');
+    expect(customsGate({ ...f, invoice_remarks: 'ملاحظة' })).toHaveProperty('invoice_remarks');
+    expect(customsGate({ ...f, customs_documents: [{ type_code: 'COO', value: '' }] })).toHaveProperty(['customs_documents.0']);
+    expect(customsGate({ ...f, customs_documents: [{ type_code: '', value: '' }] })).toEqual({}); // an empty row is ignored
     expect(customsGate({ ...f, content_kind: 'documents' })).toEqual({});
     // declarations: Certificate of Origin everywhere; USMCA only US / CA / MX (unsupported); never for a Saudi origin
     expect(declarationOptions({ shipper: saParty(), receiver: usParty() })).toEqual([{ id: 'certificate_of_origin', supported: true }]);
@@ -170,19 +178,23 @@ describe('wizard model', () => {
     expect(declarationPreview('certificate_of_origin', intlGoods())).toBe('We hereby certify that the goods described in this invoice are of China origin.');
     expect(needsUsExportFiling({ shipper: saParty() })).toBe(false);
     expect(needsUsExportFiling({ shipper: usParty() })).toBe(true);
-    expect([suggestedInvoiceType('commercial'), suggestedInvoiceType('gift'), suggestedInvoiceType('claim')]).toEqual(['commercial', 'proforma', null]);
-    expect(stepMissing(f, 'customs', 'en')).toEqual(['Invoice type']);
+    expect([suggestedInvoiceType('commercial'), suggestedInvoiceType('gift'), suggestedInvoiceType('sample'), suggestedInvoiceType('personal_not_for_resale'), suggestedInvoiceType('claim')])
+      .toEqual(['commercial', 'proforma', 'proforma', 'proforma', null]);
   });
 
-  it('a stored draft brings its Customs Invoice back (mode, number checkbox, remarks, statements, documents); older drafts get a sensible mode', () => {
+  it('a stored draft brings its Customs Invoice back: «Create Invoice» keeps the SHIPPEC-issued number out of the typed fields (never turned into an «own» number); «own» brings its number / date back; older drafts get a sensible mode', () => {
     const sh: any = {
       id: 8, customs_required: true, shipper_country_code: 'SA', receiver_country_code: 'US', packages: [], items: [], service_codes: [],
-      customs_invoice_number: 'INV-9', customs_invoice_date: '2026-11-20', dhl_invoice_type: 'commercial', invoice_remarks: ['Line A', 'Line B'],
+      customs_invoice_number: 'CI-7541D62773C0', customs_invoice_date: '2026-11-25', dhl_invoice_type: 'commercial', invoice_remarks: ['Line A', 'Line B'],
       declaration_statements: ['certificate_of_origin'], customs_documents: [{ type_code: 'COO', value: 'COO-1' }], shipment_details_extra: { customs_invoice_mode: 'create' },
     };
     const f = fromShipment(sh);
-    expect(f).toMatchObject({ customs_invoice_mode: 'create', include_invoice_number: true, invoice_remarks: 'Line A\nLine B', declaration_statements: ['certificate_of_origin'], customs_documents: [{ type_code: 'COO', value: 'COO-1' }] });
-    expect(toContent(f)).toMatchObject({ invoice_remarks: ['Line A', 'Line B'], customs_invoice_number: 'INV-9', customs_documents: [{ type_code: 'COO', value: 'COO-1' }] });
+    expect(f).toMatchObject({ customs_invoice_mode: 'create', customs_invoice_number: '', customs_invoice_date: '', invoice_remarks: 'Line A\nLine B', declaration_statements: ['certificate_of_origin'], customs_documents: [{ type_code: 'COO', value: 'COO-1' }] });
+    expect(toContent(f)).toMatchObject({ invoice_remarks: ['Line A', 'Line B'], customs_invoice_number: null, customs_documents: [{ type_code: 'COO', value: 'COO-1' }] });
+    // switching that draft to «own» starts with empty own fields (SHIPPEC's number is not the shipper's invoice)
+    expect(toContent({ ...f, customs_invoice_mode: 'own' })).toMatchObject({ customs_invoice_number: null, customs_invoice_date: null });
+    const ownSh = { ...sh, customs_invoice_number: 'ACME-77', customs_invoice_date: '2026-11-20', dhl_invoice_type: null, shipment_details_extra: { customs_invoice_mode: 'own' } };
+    expect(fromShipment(ownSh)).toMatchObject({ customs_invoice_mode: 'own', customs_invoice_number: 'ACME-77', customs_invoice_date: '2026-11-20' });
     expect(fromShipment({ ...sh, shipment_details_extra: null, dhl_invoice_type: null }).customs_invoice_mode).toBe('own');
     expect(fromShipment({ ...sh, shipment_details_extra: null }).customs_invoice_mode).toBe('create');
     expect(fromShipment({ ...sh, shipment_details_extra: null, dhl_invoice_type: null, customs_invoice_number: null }).customs_invoice_mode).toBe('create');

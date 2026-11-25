@@ -21,7 +21,7 @@ import { dhlShipmentService, type ShipmentOptions } from '../../services/dhlShip
 import { Button, ChoiceCards, Field, inputCls, Note, Section, SelectInput, TextInput } from './ui';
 import { useCsLang } from './csLang';
 import {
-  CUSTOMS_DOCUMENT_ID_MAX, CUSTOMS_DOCUMENT_TYPES, customsGate, declarationOptions, declarationPreview, invoiceTotals, itemTotals, kg, needsUsExportFiling,
+  CUSTOMS_DOCUMENT_ID_MAX, CUSTOMS_DOCUMENT_TYPES, customsGate, declarationOptions, declarationPreview, effectiveInvoiceType, invoiceTotals, itemTotals, kg, needsUsExportFiling,
   packageTotals, purposeLabel, remarkLines, REMARK_MAX, REMARKS_MAX_LINES, suggestedInvoiceType, translateIssue, type WizardForm,
 } from './wizardModel';
 import type { Wizard } from './useShipmentWizard';
@@ -51,6 +51,31 @@ function Check2({ checked, onChange, label, description, disabled, testId }: {
  * content.exportDeclarations[].invoice { number, date }). Both typed by the person — never invented;
  * «Use the shipment date» fills the date only when the person clicks it.
  */
+/**
+ * «Create Invoice»: the invoice number / date SHIPPEC issues (CI-<draft reference>, the sender's date at first
+ * issue) — read-only, nothing to type (as in MyDHL+); stable after save, refresh, validation and reload.
+ */
+function GeneratedInvoice({ w }: { w: Wizard }) {
+  const { t } = useCsLang();
+  const sh = w.shipment;
+  const issued = sh && (sh['shipment_details_extra'] as { customs_invoice_mode?: string } | null)?.customs_invoice_mode === 'create' && sh.customs_invoice_number
+    ? { number: sh.customs_invoice_number, date: sh.customs_invoice_date } : null;
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/30 p-3 sm:p-4" data-testid="generated-invoice">
+      <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{t('رقم الفاتورة وتاريخها', 'Invoice Number and Date')}</h3>
+      {issued ? (
+        <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div><dt className="text-[11px] font-bold text-slate-500">{t('رقم الفاتورة', 'Invoice Number')}</dt><dd className="font-extrabold font-mono" dir="ltr" data-testid="generated-invoice-number">{issued.number}</dd></div>
+          <div><dt className="text-[11px] font-bold text-slate-500">{t('تاريخ الفاتورة', 'Invoice Date')}</dt><dd className="font-extrabold tabular-nums" dir="ltr" data-testid="generated-invoice-date">{issued.date ?? '—'}</dd></div>
+        </dl>
+      ) : (
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300" data-testid="generated-invoice-pending">{t('يُصدره SHIPPEC تلقائيًا عند حفظ المسودة — لا حاجة لإدخاله.', 'Issued automatically by SHIPPEC when the draft is saved — nothing to enter.')}</p>
+      )}
+      <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">{t('تُصدر SHIPPEC رقم الفاتورة وتاريخها (بتاريخ بلد المرسل) وتطبعهما DHL على الفاتورة التي تُنشئها.', "SHIPPEC issues the invoice number and date (the sender's date) and DHL prints them on the invoice it creates.")}</p>
+    </div>
+  );
+}
+
 function InvoiceIdentity({ w, err, numberLabel }: { w: Wizard; err: (k: string) => string | null; numberLabel: string }) {
   const { form, update } = w;
   const { t } = useCsLang();
@@ -123,7 +148,7 @@ export function StepCustoms({ w, showGate }: { w: Wizard; showGate: boolean }) {
               <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{t('نوع الفاتورة', 'Invoice type')}<span className="text-red-500 ms-0.5" aria-hidden="true">*</span></span>
               <ChoiceCards
                 name={t('نوع الفاتورة', 'Invoice type')}
-                value={form.dhl_invoice_type as 'commercial' | 'proforma'}
+                value={effectiveInvoiceType(form) as 'commercial' | 'proforma'}
                 onChange={(v) => set('dhl_invoice_type', v)}
                 options={[
                   { value: 'commercial', title: t('فاتورة تجارية (Commercial)', 'Commercial Invoice'), description: t('للبيع والشحنات التجارية.', 'For sales and commercial shipments.') },
@@ -137,20 +162,16 @@ export function StepCustoms({ w, showGate }: { w: Wizard; showGate: boolean }) {
                 <p className="mt-1 text-[11px] text-slate-500" data-testid="invoice-type-suggestion">
                   {t(`غرض الشحنة «${purposeLabel(form.shipment_purpose, 'ar')}» يُستخدم معه عادةً `, `For the purpose «${purposeLabel(form.shipment_purpose, 'en')}» DHL usually uses a `)}
                   <b>{suggestion === 'commercial' ? t('فاتورة تجارية', 'Commercial Invoice') : t('فاتورة مبدئية', 'Proforma Invoice')}</b>
-                  {form.dhl_invoice_type !== suggestion && (
+                  {effectiveInvoiceType(form) !== suggestion ? (
                     <> · <button type="button" className="font-bold text-indigo-600 hover:underline" onClick={() => set('dhl_invoice_type', suggestion)}>{t('استخدامها', 'Use it')}</button></>
+                  ) : !form.dhl_invoice_type && (
+                    <span data-testid="invoice-type-preselected"> · {t('محدّدة تلقائيًا من غرض الشحنة — يمكنك تغييرها.', 'Selected from the purpose — you can change it.')}</span>
                   )}
                 </p>
               ) : null}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-3 sm:p-4 space-y-3">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{t('رقم الفاتورة وتاريخها', 'Invoice Number and Date')}</h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('مطلوبان: تشترط DHL رقم الفاتورة وتاريخها في كل شحنة جمركية، ويُطبعان على الفاتورة التي تُنشئها DHL.', 'Required: DHL needs the invoice number and date on every customs shipment; they are printed on the invoice DHL creates.')}</p>
-              </div>
-              <InvoiceIdentity w={w} err={err} numberLabel={t('رقم الفاتورة', 'Invoice Number')} />
-            </div>
+            <GeneratedInvoice w={w} />
 
             <Field
               label={t('معلومات إضافية على الفاتورة (ملاحظات)', 'Additional Invoice Information (Remarks)')}

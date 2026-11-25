@@ -363,8 +363,10 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
   const amountOf = (v: string) => { const n = num(v); return n == null ? null : Math.round(n * 100) / 100; };
   const services = f.service_codes.filter((s) => s !== 'WY' && s !== 'DD');
   const createInvoice = customs && f.customs_invoice_mode === 'create';
-  // DHL requires exportDeclarations[].invoice { number, date } on every customs shipment (both modes)
-  const number = customs ? t(f.customs_invoice_number) : null;
+  // DHL requires exportDeclarations[].invoice { number, date } on every customs shipment. «Create Invoice»: SHIPPEC
+  // issues them on the server (CI-<reference>, the sender's date) — nothing sent from here; «Use My Own Invoice»: typed.
+  const ownInvoice = customs && f.customs_invoice_mode === 'own';
+  const number = ownInvoice ? t(f.customs_invoice_number) : null;
   const paperless = createInvoice && f.paperless_trade;
   return {
     client_id: f.client_id,
@@ -382,8 +384,8 @@ export function toContent(f: WizardForm): Partial<DraftContent> {
     export_reason_type: customs && t(f.export_reason_type) ? f.export_reason_type : null,
     shipment_type: null,
     customs_invoice_number: number,
-    customs_invoice_date: customs ? t(f.customs_invoice_date) : null,
-    dhl_invoice_type: createInvoice && f.dhl_invoice_type ? f.dhl_invoice_type : null,
+    customs_invoice_date: ownInvoice ? t(f.customs_invoice_date) : null,
+    dhl_invoice_type: createInvoice ? effectiveInvoiceType(f) || null : null,
     // remarks are printed on the invoice DHL creates (Create Invoice only)
     invoice_remarks: createInvoice ? remarkLines(f.invoice_remarks) : [],
     declaration_statements: createInvoice ? f.declaration_statements.filter((id) => declarationOptions(f).some((o) => o.id === id && o.supported)) : [],
@@ -510,7 +512,10 @@ export function fromShipment(sh: DhlShipment, clientName = ''): WizardForm {
     charges: (extra?.charges ?? []).map((c) => ({ type: (['freight', 'insurance', 'other'].includes(String(c.type)) ? c.type : 'other') as ChargeType, description: s(c.description), amount: c.amount == null ? '' : s(c.amount) })),
     declared_value: sh.customs_required ? '' : s(sh.declared_value != null ? num(sh.declared_value) : ''), currency: s(sh.currency) || 'SAR',
     shipment_purpose: sh.shipment_purpose ?? '', export_reason_type: s(sh.export_reason_type),
-    customs_invoice_number: s(sh.customs_invoice_number), customs_invoice_date: s(sh.customs_invoice_date),
+    // the form holds the person's OWN invoice number / date only; a «Create Invoice» draft's are SHIPPEC-issued (read-only, from the draft)
+    ...((extra?.customs_invoice_mode ?? (sh.dhl_invoice_type ? 'create' : sh.customs_invoice_number ? 'own' : 'create')) === 'own'
+      ? { customs_invoice_number: s(sh.customs_invoice_number), customs_invoice_date: s(sh.customs_invoice_date) }
+      : { customs_invoice_number: '', customs_invoice_date: '' }),
     dhl_invoice_type: sh.dhl_invoice_type ?? '', paperless_trade: !!sh.paperless_trade, incoterm: s(sh.incoterm) || 'DAP',
     // older drafts (no stored mode): an invoice DHL renders = Create Invoice; an invoice number without one = the shipper's own
     customs_invoice_mode: extra?.customs_invoice_mode ?? (sh.dhl_invoice_type ? 'create' : sh.customs_invoice_number ? 'own' : 'create'),
@@ -882,6 +887,13 @@ export function suggestedInvoiceType(p: ShipmentPurpose | ''): 'commercial' | 'p
   return null;
 }
 /**
+ * The invoice type DHL renders for «Create Invoice»: the one the person chose, else the one the purpose
+ * reliably implies (sale → Commercial; gift / sample / personal, not for resale → Proforma) — shown as
+ * selected on the Customs step and changeable; other purposes need a choice.
+ */
+export const effectiveInvoiceType = (f: Pick<WizardForm, 'dhl_invoice_type' | 'shipment_purpose'>): 'commercial' | 'proforma' | '' =>
+  f.dhl_invoice_type || suggestedInvoiceType(f.shipment_purpose) || '';
+/**
  * The Customs Invoice gate (Next / stepper): field key → message; empty = Next allowed.
  * Create Invoice: the invoice type; the number only when «include an invoice number» is ticked.
  * Remarks ≤ 3 lines × 45, Latin; every customs document row complete (type + ID ≤ 35, Latin).
@@ -890,12 +902,15 @@ export function customsGate(f: WizardForm, lang: CsLang = 'ar'): FieldErrors {
   const e: FieldErrors = {};
   if (!needsCustoms(f)) return e;
   const T = (ar: string, en: string) => tr(lang, ar, en);
-  if (f.customs_invoice_mode === 'create' && !f.dhl_invoice_type) e.dhl_invoice_type = T('اختر نوع الفاتورة التي تُنشئها DHL.', 'Choose the invoice type DHL creates.');
-  // DHL requires the invoice number AND date on every customs shipment, in both modes — typed, never invented
-  const number = f.customs_invoice_number.trim();
-  if (!number) e.customs_invoice_number = T('رقم الفاتورة مطلوب (تشترطه DHL).', 'The invoice number is required (DHL requires it).');
-  else if (!isLatin(number)) e.customs_invoice_number = T('رقم الفاتورة بالأحرف اللاتينية فقط.', 'Latin characters only.');
-  if (!f.customs_invoice_date.trim()) e.customs_invoice_date = T('تاريخ الفاتورة مطلوب (تشترطه DHL).', 'The invoice date is required (DHL requires it).');
+  if (f.customs_invoice_mode === 'create' && !effectiveInvoiceType(f)) e.dhl_invoice_type = T('اختر نوع الفاتورة التي تُنشئها DHL.', 'Choose the invoice type DHL creates.');
+  // «Use My Own Invoice»: DHL requires YOUR invoice number AND date — typed, never generated.
+  // («Create Invoice»: SHIPPEC issues them — nothing to type.)
+  if (f.customs_invoice_mode === 'own') {
+    const number = f.customs_invoice_number.trim();
+    if (!number) e.customs_invoice_number = T('رقم الفاتورة مطلوب (تشترطه DHL).', 'The invoice number is required (DHL requires it).');
+    else if (!isLatin(number)) e.customs_invoice_number = T('رقم الفاتورة بالأحرف اللاتينية فقط.', 'Latin characters only.');
+    if (!f.customs_invoice_date.trim()) e.customs_invoice_date = T('تاريخ الفاتورة مطلوب (تشترطه DHL).', 'The invoice date is required (DHL requires it).');
+  }
   const lines = f.customs_invoice_mode === 'create' ? remarkLines(f.invoice_remarks) : [];
   if (lines.length > REMARKS_MAX_LINES) e.invoice_remarks = T(`${REMARKS_MAX_LINES} أسطر كحد أقصى (حد DHL).`, `At most ${REMARKS_MAX_LINES} lines (DHL limit).`);
   else if (lines.some((l) => l.length > REMARK_MAX)) e.invoice_remarks = T(`كل سطر ${REMARK_MAX} حرفًا كحد أقصى (حد DHL).`, `Each line: at most ${REMARK_MAX} characters (DHL limit).`);

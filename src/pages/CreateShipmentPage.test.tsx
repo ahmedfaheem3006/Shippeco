@@ -1578,32 +1578,22 @@ describe('«إنشاء شحنة» wizard', () => {
     return screen.findByTestId('customs-step')
   }
 
-  it('Customs Invoice (AR): Create Invoice by default; invoice type required (suggested from the purpose, never silent); the invoice number AND date required (DHL); remarks; Certificate of Origin; documents; no US filing / USMCA for a Saudi origin; saved in the draft', async () => {
+  it('Customs Invoice (AR): Create Invoice by default — MyDHL+-like: the invoice type preselected from the purpose (visible, changeable), the SHIPPEC-issued invoice number / date shown read-only (nothing to type), Next works; remarks; Certificate of Origin; documents; no US filing / USMCA for a Saudi origin; saved in the draft', async () => {
     svc.options.mockResolvedValue(OPTIONS(true))
     const step = within(await openCustoms(intlDraft()))
     expect(step.getByText('تفاصيل الفاتورة الجمركية')).toBeTruthy()
     expect(step.getByRole('radio', { name: /إنشاء فاتورة/ }).getAttribute('aria-checked')).toBe('true')
     expect(step.getByRole('radio', { name: /استخدام فاتورتي الخاصة/ }).getAttribute('aria-checked')).toBe('false')
-    // the invoice type is not chosen silently: a suggestion from «هدية» → Proforma, and Next is blocked until chosen
-    expect(step.getByRole('radio', { name: /فاتورة مبدئية/ }).getAttribute('aria-checked')).toBe('false')
-    expect(step.getByTestId('invoice-type-suggestion').textContent).toMatch(/هدية.*فاتورة مبدئية/)
-    next()
-    expect(await screen.findByText('اختر نوع الفاتورة التي تُنشئها DHL.')).toBeTruthy()
-    expect(screen.getByTestId('customs-step')).toBeTruthy()
-    fireEvent.click(step.getByRole('button', { name: 'استخدامها' }))
+    // the invoice type: «هدية» → Proforma, shown as selected with its reason (changeable)
     expect(step.getByRole('radio', { name: /فاتورة مبدئية/ }).getAttribute('aria-checked')).toBe('true')
-    // the invoice number AND date: always shown, both required (DHL's exportDeclarations[].invoice) — no «optional» checkbox
+    expect(step.getByTestId('invoice-type-preselected').textContent).toMatch(/محدّدة تلقائيًا من غرض الشحنة/)
+    expect(step.getByTestId('invoice-type-suggestion').textContent).toMatch(/هدية.*فاتورة مبدئية/)
+    // the invoice number / date: issued by SHIPPEC and shown read-only — no input to fill
+    expect(step.getByTestId('generated-invoice-number').textContent).toBe('PI-2026-0118')
+    expect(step.getByTestId('generated-invoice-date').textContent).toBe('2026-11-19')
+    expect(step.queryByLabelText(/^رقم الفاتورة/)).toBeNull()
+    expect(step.queryByLabelText(/^تاريخ الفاتورة/)).toBeNull()
     expect(step.queryByLabelText('أرغب في إضافة رقم فاتورة')).toBeNull()
-    fireEvent.change(step.getByLabelText(/^رقم الفاتورة/), { target: { value: '' } })
-    fireEvent.change(step.getByLabelText(/^تاريخ الفاتورة/), { target: { value: '' } })
-    next()
-    expect(await screen.findByText('رقم الفاتورة مطلوب (تشترطه DHL).')).toBeTruthy()
-    expect(screen.getByText('تاريخ الفاتورة مطلوب (تشترطه DHL).')).toBeTruthy()
-    expect(screen.getByTestId('customs-step')).toBeTruthy()
-    fireEvent.change(step.getByLabelText(/^رقم الفاتورة/), { target: { value: 'INV-2026-77' } })
-    // the date is never filled silently: «استخدام تاريخ الشحن» fills it only on click
-    fireEvent.click(step.getByRole('button', { name: /استخدام تاريخ الشحن/ }))
-    expect((step.getByLabelText(/^تاريخ الفاتورة/) as HTMLInputElement).value).toBe('2026-11-19')
     fireEvent.change(step.getByLabelText(/^معلومات إضافية على الفاتورة/), { target: { value: 'Goods for exhibition\nReturn within 30 days' } })
     // declarations: Certificate of Origin with the exact printed text; no NAFTA / USMCA, no US export filing on SA → AE
     expect(step.getByTestId('declaration-certificate_of_origin').textContent).toContain('We hereby certify that the goods described in this invoice are of China origin.')
@@ -1632,7 +1622,7 @@ describe('«إنشاء شحنة» wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
     await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
     expect(svc.updateDraft.mock.calls[0][1]).toMatchObject({
-      dhl_invoice_type: 'proforma', customs_invoice_number: 'INV-2026-77', invoice_remarks: ['Goods for exhibition', 'Return within 30 days'],
+      dhl_invoice_type: 'proforma', customs_invoice_number: null, customs_invoice_date: null, invoice_remarks: ['Goods for exhibition', 'Return within 30 days'],
       declaration_statements: ['certificate_of_origin'], customs_documents: [{ type_code: 'COO', value: 'COO-2026-118' }], paperless_trade: true, service_codes: ['WY'],
       details_extra: expect.objectContaining({ customs_invoice_mode: 'create' }),
     })
@@ -1684,8 +1674,8 @@ describe('«إنشاء شحنة» wizard', () => {
     const usmca = within(step.getByTestId('declaration-usmca')).getByRole('checkbox') as HTMLInputElement
     expect(usmca.disabled).toBe(true)
     expect(usmca.checked).toBe(false)
-    // reloaded: Create Invoice, number shown, remarks, statement, document
-    expect((step.getByLabelText(/^رقم الفاتورة/) as HTMLInputElement).value).toBe('INV-9')
+    // reloaded: Create Invoice, the issued number shown, remarks, statement, document
+    expect(step.getByTestId('generated-invoice-number').textContent).toBe('INV-9')
     expect((step.getByLabelText(/^معلومات إضافية على الفاتورة/) as HTMLTextAreaElement).value).toBe('Line A')
     expect((within(step.getByTestId('declaration-certificate_of_origin')).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
     expect((within(step.getByTestId('customs-documents')).getByLabelText('رقم المستند') as HTMLInputElement).value).toBe('EL-4471')
