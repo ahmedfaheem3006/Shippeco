@@ -100,6 +100,13 @@ function Invoice({ t }: { t: TrackingItem }) {
     : <span className="text-[11px] text-slate-400">بدون فاتورة</span>;
 }
 
+/** A SHIPPEC shipment cancelled / replaced in SHIPPEC: its tracking history stays, the state is shown with it. */
+function ShipmentState({ t }: { t: TrackingItem }) {
+  if (t.shipment_status === 'cancelled') return <span className="mt-1 inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border bg-slate-100 text-slate-600 border-slate-200" data-testid="tracking-row-cancelled">ملغاة في SHIPPEC</span>;
+  if (t.shipment_status === 'superseded') return <span className="mt-1 inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border bg-amber-50 text-amber-800 border-amber-200" data-testid="tracking-row-superseded" title={t.replaced_by_awb ? `البديلة ${t.replaced_by_awb}` : undefined}>مستبدلة{t.replaced_by_awb ? ` ← ${t.replaced_by_awb}` : ''}</span>;
+  return null;
+}
+
 /** Table cells: fixed layout (column widths in the header), content truncated — never clipped off the row. */
 const TD = 'py-3 px-2 min-w-0 overflow-hidden';
 const TH = 'py-2.5 px-2 text-start';
@@ -111,7 +118,7 @@ function Row({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem)
   return (
     <tr data-tracking-awb={t.awb} className={`border-b border-slate-100 dark:border-slate-700/60 align-top ${action ? 'bg-red-50/40 dark:bg-red-900/10' : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/20'}`}>
       <td className={TD}><AwbLink t={t} size="sm" /></td>
-      <td className={TD}><span className={`inline-block max-w-full truncate px-2 py-1 rounded-xl text-[11px] font-black border whitespace-nowrap ${badge.cls}`} title={badge.label}>{badge.label}</span></td>
+      <td className={TD}><span className={`inline-block max-w-full truncate px-2 py-1 rounded-xl text-[11px] font-black border whitespace-nowrap ${badge.cls}`} title={badge.label}>{badge.label}</span><ShipmentState t={t} /></td>
       <td className={TD}><Customer t={t} onCustomer={onCustomer} /><Invoice t={t} /></td>
       <td className={`${TD} text-[11px] text-slate-600 dark:text-slate-300`}><span className="block truncate" dir="auto" title={routeOf(t)}>{routeOf(t)}</span></td>
       <td className={`${TD} text-xs tabular-nums`}><span className="block truncate">{dateOf(t)}</span><div className="text-[11px] text-slate-500 truncate">استلام: {pickupOf(t)}</div></td>
@@ -133,7 +140,7 @@ function Card({ t, onCustomer }: { t: TrackingItem; onCustomer: (t: TrackingItem
       className={`w-full min-w-0 bg-white dark:bg-slate-800 rounded-2xl border p-4 space-y-3 ${needsAction(t) ? 'border-red-200 dark:border-red-900/50' : 'border-slate-200 dark:border-slate-700'}`}>
       <div className="flex items-start justify-between gap-2">
         <AwbLink t={t} size="lg" />
-        <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black border shrink-0 ${badge.cls}`}>{badge.label}</span>
+        <div className="flex flex-col items-end gap-1 shrink-0"><span className={`px-2.5 py-1 rounded-xl text-[11px] font-black border ${badge.cls}`}>{badge.label}</span><ShipmentState t={t} /></div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2 text-[11px]">
         <div className={field}><div className={label}>العميل</div><Customer t={t} onCustomer={onCustomer} /></div>

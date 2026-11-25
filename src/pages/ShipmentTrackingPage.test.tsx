@@ -5,7 +5,7 @@ import type { TrackingDetails, TrackingItem, TrackingSummary } from '../services
 
 const svc = vi.hoisted(() => ({
   list: vi.fn(), summary: vi.fn(), details: vi.fn(), refresh: vi.fn(), lookup: vi.fn(),
-  verifyAwbs: vi.fn(), pendingSyncStatus: vi.fn(), startPendingSync: vi.fn(), downloadAwbDocument: vi.fn(), resumeSync: vi.fn(),
+  verifyAwbs: vi.fn(), pendingSyncStatus: vi.fn(), startPendingSync: vi.fn(), downloadAwbDocument: vi.fn(), downloadAwbBundle: vi.fn(), resumeSync: vi.fn(),
 }))
 vi.mock('../services/shipmentTracking.service', () => ({ shipmentTrackingService: svc }))
 const dhl = vi.hoisted(() => ({ get: vi.fn(), getPickup: vi.fn(), downloadDocument: vi.fn() }))
@@ -237,8 +237,48 @@ describe('/shipment-tracking/:awb — details', () => {
     expect(screen.getByText('JD014600004617230779')).toBeTruthy()
     expect(await screen.findByText('SHIPPEC-ABC')).toBeTruthy()
     expect(screen.getByText('EXPRESS WORLDWIDE')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /ملصق الشحن/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'ملصق الشحن' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'ملصق الشحن الكامل' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /تحديث الحالة من DHL/ })).toBeTruthy()
+  })
+
+  it('«ملصق الشحن الكامل» comes FIRST (above the single documents) and downloads the complete DHL PDF of the AWB — never a new shipment; unavailable → a clear message', async () => {
+    svc.details.mockResolvedValue(details('1675565474', { normalized_status: 'PRE_TRANSIT', dhl_shipment_id: 7 }))
+    dhl.get.mockResolvedValue({ id: 7, creation_status: 'created', shippec_reference: 'SHIPPEC-5513F39F33A4', product_name: 'EXPRESS WORLDWIDE', pickup_option: 'none', pickup_id: null, service_point_name: null,
+      documents: [
+        { id: 1, document_type: 'shipping_label', content_type: 'application/pdf', size_bytes: 1, sha256: 'x' },
+        { id: 2, document_type: 'waybill', content_type: 'application/pdf', size_bytes: 1, sha256: 'y' },
+        { id: 3, document_type: 'proforma_invoice', content_type: 'application/pdf', size_bytes: 1, sha256: 'z' },
+      ] })
+    svc.downloadAwbBundle.mockResolvedValue({ blob: new Blob(['%PDF']), filename: 'DHL-1675565474-documents.pdf', pages: 3 })
+    renderApp('/shipment-tracking/1675565474')
+    const box = await screen.findByTestId('tracking-documents')
+    const buttons = within(box).getAllByRole('button')
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual(['ملصق الشحن الكامل', 'ملصق الشحن', 'بوليصة الشحن', 'الفاتورة المبدئية'])
+    fireEvent.click(buttons[0])
+    await waitFor(() => expect(files.downloadBlob).toHaveBeenCalledWith('DHL-1675565474-documents.pdf', expect.any(Blob)))
+    expect(svc.downloadAwbBundle).toHaveBeenCalledWith('1675565474')
+    expect(screen.getByRole('link', { name: /إدارة الشحنة والمستندات/ }).getAttribute('href')).toBe('/create-shipment/success/7')
+    const { toast } = await import('react-hot-toast')
+    svc.downloadAwbBundle.mockRejectedValue(new ApiError('none', 404, 'DOCUMENTS_UNAVAILABLE'))
+    fireEvent.click(screen.getByTestId('full-shipping-documents'))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/لا تُنشأ بوليصة جديدة/)))
+  })
+
+  it('a SHIPPEC shipment cancelled / superseded in SHIPPEC keeps its tracking page and shows that state (with the replacement AWB)', async () => {
+    svc.details.mockResolvedValue(details('1675565474', { normalized_status: 'PRE_TRANSIT', shipment_status: 'superseded', replaced_by_awb: '1675565999' }))
+    renderApp('/shipment-tracking/1675565474')
+    const tag = await screen.findByTestId('tracking-shipment-superseded')
+    expect(tag.textContent).toContain('1675565999')
+    expect(within(tag).getByRole('link').getAttribute('href')).toBe('/shipment-tracking/1675565999')
+    cleanup()
+    svc.details.mockResolvedValue(details('1675565474', { shipment_status: 'cancelled' }))
+    renderApp('/shipment-tracking/1675565474')
+    expect((await screen.findByTestId('tracking-shipment-cancelled')).textContent).toBe('ملغاة في SHIPPEC')
+    cleanup()
+    svc.list.mockResolvedValue(page([item('1675565474', { shipment_status: 'cancelled' }), item('1675565999', { shipment_status: 'booked' })]))
+    renderApp('/shipment-tracking')
+    expect((await screen.findAllByTestId('tracking-row-cancelled')).length).toBeGreaterThan(0)
   })
 
   it('QA 3D.1: no DHL pickup event — "not picked up yet" only before transit; otherwise "not available from DHL"', async () => {

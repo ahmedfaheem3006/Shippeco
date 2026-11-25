@@ -2,6 +2,7 @@ import { api, ApiError } from '../utils/apiClient';
 import { useAuthStore } from '../hooks/useAuthStore';
 import { env } from '../utils/env';
 import { unifiedService } from './unifiedService';
+import { fetchFile } from './dhlShipment.service';
 
 /** Backend src/services/mydhl/trackingStatus.ts — never compared to raw DHL codes here. */
 export type NormalizedStatus =
@@ -71,6 +72,9 @@ export interface TrackingItem {
   discovered_at?: string | null;
   dhl_shipment_id?: number | null;
   shippec_reference?: string | null;
+  /** SHIPPEC's own state of a shipment it created (cancelled / superseded stay visible with their history). */
+  shipment_status?: string | null;
+  replaced_by_awb?: string | null;
   receiver_name?: string | null;
   sources?: Array<'shippec_created' | 'invoice_awb' | 'manual_lookup' | 'dhl_billing' | 'reference_query'>;
   /** DHL's actual collection (earliest PU checkpoint). */
@@ -315,6 +319,11 @@ export const shipmentTrackingService = {
    * (GET /shipment-tracking/:awb/waybill). The browser never calls DHL; the
    * Backend never asks DHL either (stored document only).
    */
+  /** «ملصق الشحن الكامل»: every DHL document of the AWB as ONE PDF (SHIPPEC's store; never a new shipment). */
+  downloadAwbBundle(awb: string) {
+    return fetchFile(`${BASE}/${encodeURIComponent(awb)}/documents`, `DHL-${awb}-documents.pdf`);
+  },
+
   async downloadAwbDocument(awb: string): Promise<{ blob: Blob; filename: string }> {
     const token = useAuthStore.getState().token;
     const res = await fetch(`${env.apiUrl}${BASE}/${encodeURIComponent(awb)}/waybill`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });

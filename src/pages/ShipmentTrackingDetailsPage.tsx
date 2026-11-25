@@ -24,7 +24,7 @@ import { canShipment } from '../utils/dhlShipmentPermissions';
 
 export const AWB_DOC_UNAVAILABLE = 'مستند البوليصة غير متاح — لا يوجد مستند محفوظ لهذه الشحنة في SHIPPEC';
 
-const DOC_LABEL: Record<string, string> = { shipping_label: 'ملصق الشحن', waybill: 'بوليصة الشحن', commercial_invoice: 'الفاتورة التجارية', proforma_invoice: 'الفاتورة المبدئية', other: 'مستند DHL' };
+const DOC_LABEL: Record<string, string> = { shipping_label: 'ملصق الشحن', waybill: 'بوليصة الشحن', commercial_invoice: 'الفاتورة التجارية', proforma_invoice: 'الفاتورة المبدئية', shipment_receipt: 'إيصال الشحنة', other: 'مستند DHL' };
 
 export const ShipmentTrackingDetailsPage: React.FC = () => {
   const { awb: raw = '' } = useParams();
@@ -103,6 +103,24 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
       if (err instanceof ApiError && err.status === 429) { setNow(Date.now()); setCooldownUntil(Date.now() + 60_000); }
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  // «ملصق الشحن الكامل»: every DHL document of this AWB as ONE PDF (SHIPPEC's store; never a new shipment).
+  const [bundleBusy, setBundleBusy] = useState(false);
+  const fullBundle = async () => {
+    if (bundleBusy || !d) return;
+    setBundleBusy(true);
+    try {
+      const { blob, filename } = await shipmentTrackingService.downloadAwbBundle(d.awb);
+      downloadBlob(filename, blob);
+      toast.success('بدأ تنزيل مستندات الشحنة كاملة');
+    } catch (err) {
+      toast.error(err instanceof ApiError && err.code === 'DOCUMENTS_UNAVAILABLE'
+        ? 'مستندات DHL الكاملة غير متاحة لهذه البوليصة — لم تُحفظ ولا يمكن استرجاعها من DHL (لا تُنشأ بوليصة جديدة لاسترجاعها).'
+        : describeApiError(err, 'تعذر تجهيز المستندات الكاملة'));
+    } finally {
+      setBundleBusy(false);
     }
   };
 
@@ -193,6 +211,8 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className={`px-3 py-1 rounded-xl text-xs font-black border ${badge.cls}`}>{badge.label}</span>
+              {d.shipment_status === 'cancelled' && <span className="px-3 py-1 rounded-xl text-xs font-black border bg-slate-100 text-slate-600 border-slate-200" data-testid="tracking-shipment-cancelled">ملغاة في SHIPPEC</span>}
+              {d.shipment_status === 'superseded' && <span className="px-3 py-1 rounded-xl text-xs font-black border bg-amber-50 text-amber-800 border-amber-200" data-testid="tracking-shipment-superseded">مستبدلة{d.replaced_by_awb ? <> ← <Link to={`/shipment-tracking/${d.replaced_by_awb}`} className="font-mono underline" dir="ltr">{d.replaced_by_awb}</Link></> : null}</span>}
               <Freshness t={d} />
             </div>
           </div>
@@ -280,10 +300,15 @@ export const ShipmentTrackingDetailsPage: React.FC = () => {
             <section className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 space-y-3">
               <h2 className="text-sm font-extrabold flex items-center gap-1.5"><Truck size={16} className="text-indigo-600" /> شحنة SHIPPEC</h2>
               <Field label="مرجع SHIPPEC"><span dir="ltr" className="font-mono text-xs">{shipment.shippec_reference}</span></Field>
+              <Link to={`/create-shipment/success/${shipment.id}`} className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:underline">إدارة الشحنة والمستندات <ExternalLink size={12} /></Link>
               <Field label="الاستلام">{shipment.pickup_option === 'schedule' ? (pickup?.dispatch_confirmation_number ? <span dir="ltr" className="font-mono">{pickup.dispatch_confirmation_number} ({pickup.status === 'cancelled' ? 'ملغى' : pickup.pickup_date})</span> : 'مجدول') : shipment.pickup_option === 'drop_off' ? `نقطة خدمة: ${shipment.service_point_name ?? ''}` : 'بدون استلام'}</Field>
-              {canShipment(role, 'download_documents') && shipment.documents.length > 0 && (
-                <div className="space-y-2">
+              {canShipment(role, 'download_documents') && (shipment.creation_status === 'created' || shipment.documents.length > 0) && (
+                <div className="space-y-2" data-testid="tracking-documents">
                   <div className="text-[10px] font-bold text-slate-400">المستندات</div>
+                  <button type="button" onClick={() => void fullBundle()} disabled={bundleBusy} data-testid="full-shipping-documents"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold min-h-[44px] disabled:opacity-60">
+                    {bundleBusy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} {bundleBusy ? 'جاري التجهيز…' : 'ملصق الشحن الكامل'} <Download size={14} className="ms-auto" />
+                  </button>
                   {shipment.documents.map((doc) => (
                     <button key={doc.id} type="button" className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold hover:border-indigo-300 min-h-[44px]"
                       onClick={async () => { try { const { blob, filename } = await dhlShipmentService.downloadDocument(shipment.id, doc.id); downloadBlob(filename, blob); } catch (e) { toast.error(describeApiError(e, 'تعذر تنزيل المستند')); } }}>
