@@ -73,6 +73,10 @@ async function base(page: Page, lang: 'ar' | 'en', pickupBooking = true) {
     return r.fulfill(json({ success: true, data: current }))
   })
   await page.route(/\/api\/dhl\/shipments\/5\/products$/, (r) => r.fulfill(json({ success: true, data: { products: PRODUCTS } })))
+  await page.route(/\/api\/dhl\/shipments\/5\/product$/, (r) => {
+    current = { ...current, product_code: 'N', local_product_code: 'N', product_name: 'EXPRESS DOMESTIC' }
+    return r.fulfill(json({ success: true, data: current }))
+  })
   await page.route(/\/api\/dhl\/shipments\/5\/rates$/, (r) => {
     sent.rates += 1
     const q = quote((current.service_codes as string[]).includes('SF'))
@@ -152,6 +156,10 @@ for (const lang of ['ar', 'en'] as const) {
       await expect.poll(() => sent.patches.at(-1)?.shipment_date).toBe(other)
       await expect.poll(() => sent.rates).toBeGreaterThan(before)
       await expect(svc.getByRole('status', { name: L('جاري جلب خدمات DHL', 'Loading DHL services') })).toHaveCount(0)
+      // a new date never keeps the earlier service: DHL's service for that date is chosen again
+      expect(sent.patches.at(-1)?.product_code).toBeNull()
+      await svc.locator('[data-product="N"]').getByRole('button', { name: L('اختيار', 'Select') }).click()
+      await expect(svc.locator('[data-product="N"]').getByRole('button', { name: new RegExp(L('تم الاختيار', 'Selected')) })).toBeVisible()
 
       // ── Pickup ──
       await page.getByRole('button', { name: L('الاستلام', 'Pickup') }).first().click()
@@ -204,6 +212,53 @@ for (const lang of ['ar', 'en'] as const) {
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/pickup-off-${lang}-${w}.png`, fullPage: true })
       await page.getByRole('button', { name: L('التالي', 'Next') }).click()
       await expect(pk).toHaveCount(0) // Pickup = No → on to the review
+      expect(sent.pickups).toBe(0)
+    })
+  }
+}
+
+for (const lang of ['ar', 'en'] as const) {
+  const L = (ar: string, en: string) => (lang === 'en' ? en : ar)
+  for (const [w, h] of [[1440, 900], [390, 844]] as const) {
+    test(`Shipment date without DHL service (996) ${lang.toUpperCase()} at ${w}px: date marked, old services cleared, next date offered and only applied on click`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: h })
+      const sent = await base(page, lang)
+      let blocked = ''
+      const probes: string[] = []
+      // the first date the person picks has no DHL product; the probe offers the following one
+      await page.route(/\/api\/dhl\/shipments\/5\/products$/, (r) => (sent.patches.at(-1)?.shipment_date === blocked
+        ? r.fulfill(json({ success: false, error: { code: 'NO_PRODUCT_FOR_SHIPMENT_DATE', message: 'No DHL service is available for the selected shipment date. Choose another date.', details: { dhl_code: '996' } } }, 422))
+        : r.fulfill(json({ success: true, data: { products: PRODUCTS } }))))
+      await page.route(/\/api\/dhl\/shipments\/5\/next-available-date$/, (r) => {
+        const after = (r.request().postDataJSON() as { after: string }).after
+        probes.push(after)
+        const nextDay = new Date(Date.parse(`${after}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+        return r.fulfill(json({ success: true, data: { date: nextDay, checked: [{ date: nextDay, available: true }] } }))
+      })
+      await page.goto('/create-shipment?draft=5')
+      await expect(page.getByText('Gulf Retail Client').first()).toBeVisible()
+      await page.getByRole('button', { name: L('الخدمة', 'Service') }).first().click()
+      const svc = page.getByTestId('service-step')
+      const dates = svc.getByRole('radiogroup', { name: L('سأرسل شحنتي في', "I'm sending my shipment on") }).getByRole('radio')
+      blocked = (await dates.nth(0).getAttribute('data-date')) as string
+      const ratesBefore = sent.rates
+      await dates.nth(0).click()
+      await expect(svc.getByTestId('no-date')).toContainText(L('لا توجد خدمة DHL متاحة في تاريخ الشحن المحدد. اختر تاريخًا آخر.', 'No DHL service is available for the selected shipment date. Choose another date.'))
+      await expect(dates.nth(0)).toHaveAttribute('data-status', 'none')
+      await expect(svc.locator('[data-product]')).toHaveCount(0)
+      expect(sent.rates).toBe(ratesBefore) // no rate for a date without products
+      expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/Process ID|996/)
+      const use = svc.getByTestId('use-next-date')
+      await expect(use).toContainText(L('استخدام أقرب تاريخ متاح', 'Use next available date'))
+      expect(probes).toEqual([blocked])
+      await expect(dates.nth(0)).toHaveAttribute('aria-checked', 'true') // not changed by itself
+      await fits(page, 'service-step')
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/no-date-${lang}-${w}.png`, fullPage: true })
+      await use.click()
+      await expect(dates.nth(1)).toHaveAttribute('aria-checked', 'true')
+      await expect(svc.getByTestId('no-date')).toHaveCount(0)
+      await expect(svc.locator('[data-product="N"]')).toBeVisible()
+      expect(sent.patches.at(-1)).toMatchObject({ shipment_date: await dates.nth(1).getAttribute('data-date'), product_code: null })
       expect(sent.pickups).toBe(0)
     })
   }

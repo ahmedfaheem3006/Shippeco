@@ -6,7 +6,7 @@ const svc = vi.hoisted(() => ({
   listDrafts: vi.fn(), get: vi.fn(), createDraft: vi.fn(), updateDraft: vi.fn(), cancel: vi.fn(), checkProducts: vi.fn(), selectProduct: vi.fn(),
   validate: vi.fn(), checkRates: vi.fn(), setPricing: vi.fn(), confirm: vi.fn(), unconfirm: vi.fn(), costSummary: vi.fn(), create: vi.fn(), resolve: vi.fn(),
   retryInvoice: vi.fn(), options: vi.fn(), incoterms: vi.fn(), servicePoints: vi.fn(), defaultShipper: vi.fn(), setDefaultShipper: vi.fn(), getPickup: vi.fn(),
-  downloadDocument: vi.fn(),
+  downloadDocument: vi.fn(), nextAvailableDate: vi.fn(),
 }))
 const clients = vi.hoisted(() => ({ searchClients: vi.fn() }))
 vi.mock('../services/dhlShipment.service', () => ({ dhlShipmentService: svc, searchClients: clients.searchClients }))
@@ -357,6 +357,62 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(document.querySelectorAll('[data-product]').length).toBe(0)
     expect(svc.checkRates).not.toHaveBeenCalled()
     confirm.mockRestore()
+  })
+
+  it('Shipment date unavailable (DHL 996, EN): the date is marked «No services», the old services are cleared, the message is plain (no DHL Process ID); the next date with a DHL product is looked up read-only and only OFFERED; choosing it refreshes products before rates; the old product is never reused', async () => {
+    const svcErr = () => new ApiError('No DHL service is available for the selected shipment date. Choose another date.', 422, 'NO_PRODUCT_FOR_SHIPMENT_DATE', { dhl_code: '996' })
+    svc.updateDraft.mockImplementation(async (_id: number, c: Record<string, unknown>) => shipment({ shipment_date: c.shipment_date, product_code: c.product_code ?? null }))
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Service/)
+    const dates = () => within(screen.getByRole('radiogroup', { name: "I'm sending my shipment on" })).getAllByRole('radio')
+    const today = dates()[0].getAttribute('data-date') as string
+    const tomorrow = dates()[1].getAttribute('data-date') as string
+    expect(dates()[0].getAttribute('data-status')).toBe('unchecked') // today is a candidate, not assumed bookable
+    svc.checkProducts.mockRejectedValueOnce(svcErr())
+    svc.nextAvailableDate.mockResolvedValue({ date: tomorrow, checked: [{ date: tomorrow, available: true }] })
+    fireEvent.click(dates()[0])
+    const note = await screen.findByTestId('no-date')
+    expect(note.textContent).toContain('No DHL service is available for the selected shipment date. Choose another date.')
+    expect(note.textContent).not.toMatch(/Process ID|996/) // a manager sees no DHL internals
+    expect(document.querySelectorAll('[data-product]').length).toBe(0) // the previous date's services are gone
+    expect(svc.checkRates).not.toHaveBeenCalled()
+    await waitFor(() => expect(dates()[0].getAttribute('data-status')).toBe('none'))
+    expect(dates()[0].textContent).toContain('No services')
+    expect(svc.updateDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({ shipment_date: today, product_code: null })) // the old product is not kept
+    // the next date is looked up (read-only) and offered — the date is NOT changed by itself
+    await waitFor(() => expect(svc.nextAvailableDate).toHaveBeenCalledWith(5, today))
+    const use = await screen.findByTestId('use-next-date')
+    expect(use.textContent).toMatch(/Use next available date/)
+    expect(dates()[0].getAttribute('aria-checked')).toBe('true')
+    expect(dates()[1].getAttribute('data-status')).toBe('available')
+    // choosing it: saved with that date, then products, then rates
+    svc.checkProducts.mockResolvedValue({ products: PRODUCTS })
+    svc.checkRates.mockResolvedValue({ quotes: [QUOTE], quoted_at: '2026-11-25T08:00:00Z' })
+    fireEvent.click(use)
+    await waitFor(() => expect(svc.checkRates).toHaveBeenCalledTimes(1))
+    expect(svc.updateDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({ shipment_date: tomorrow, product_code: null }))
+    expect(svc.checkProducts.mock.invocationCallOrder.at(-1)!).toBeLessThan(svc.checkRates.mock.invocationCallOrder[0])
+    await waitFor(() => expect(screen.queryByTestId('no-date')).toBeNull())
+    expect(dates()[1].getAttribute('aria-checked')).toBe('true')
+    expect(svc.create).not.toHaveBeenCalled()
+  })
+
+  it('Shipment date unavailable (AR, admin): the Arabic message; an admin also sees DHL\'s code', async () => {
+    auth.role = 'admin'
+    svc.updateDraft.mockImplementation(async () => shipment())
+    svc.checkProducts.mockRejectedValueOnce(new ApiError('x', 422, 'NO_PRODUCT_FOR_SHIPMENT_DATE', { dhl_code: '996' }))
+    svc.nextAvailableDate.mockResolvedValue({ date: null, checked: [] })
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    goStep(/الخدمة/)
+    fireEvent.click(screen.getByRole('button', { name: /تحديث الخدمات والأسعار/ }))
+    const note = await screen.findByTestId('no-date')
+    expect(note.textContent).toContain('لا توجد خدمة DHL متاحة في تاريخ الشحن المحدد. اختر تاريخًا آخر.')
+    expect(note.textContent).toContain('لا توجد خدمات متاحة لهذا التاريخ')
+    expect(screen.getByTestId('no-date-admin').textContent).toBe('admin: DHL 996')
+    expect(await screen.findByText(/لا توجد خدمات DHL في الأيام العشرة القادمة/)).toBeTruthy()
   })
 
   /** DHL TEST 2026-11-18 (domestic N), with DHL's lines before tax (basePrice). */

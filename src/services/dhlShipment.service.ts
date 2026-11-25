@@ -387,6 +387,9 @@ export const dhlShipmentService = {
   updateDraft: (id: number, content: Partial<DraftContent>) => api.patch<DhlShipment>(`${BASE}/${id}`, content),
   cancel: (id: number, reason?: string) => api.delete<DhlShipment>(`${BASE}/${id}`, reason ? { reason } : {}),
   checkProducts: (id: number) => api.post<{ products: ProductOption[] }>(`${BASE}/${id}/products`, {}),
+  /** READ-ONLY: the first shipment date after `after` for which DHL lists a product (the draft is not changed). */
+  nextAvailableDate: (id: number, after: string) =>
+    api.post<{ date: string | null; checked: Array<{ date: string; available: boolean }> }>(`${BASE}/${id}/next-available-date`, { after }),
   selectProduct: (id: number, product_code: string) => api.post<DhlShipment>(`${BASE}/${id}/product`, { product_code }),
   validate: (id: number) => api.post<ValidationResult>(`${BASE}/${id}/validate`, {}),
   /** quoted_at: when SHIPPEC received the quote from DHL ("DHL rate estimate as of"). */

@@ -1171,6 +1171,9 @@ export function goGreenOf(q: Pick<RateQuote, 'optionalServices' | 'breakdown'> |
   return charged || offered ? { charged, offered } : null;
 }
 
+/** The same as routeSnapshot but without the date — the key under which per-date DHL availability is remembered. */
+export const availabilityKey = (f: WizardForm) => routeSnapshot({ ...f, shipment_date: '' });
+
 /** What DHL's products / quotes depend on — a change here makes them stale (Backend routeFingerprint is final). */
 export function routeSnapshot(f: WizardForm): string {
   const side = (p: PartyForm) => [p.country_code, p.city.trim().toLowerCase(), p.postal_code.trim(), p.address_line1.trim()];

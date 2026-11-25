@@ -11,7 +11,7 @@ import {
   dhlShipmentService, type CreateResult, type DhlShipment, type Issue, type ProductOption, type RateQuote, type ValidationResult,
 } from '../../services/dhlShipment.service';
 import {
-  emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, toggleOptionalService, visibleSteps,
+  availabilityKey, emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, toggleOptionalService, visibleSteps,
   type FieldErrors, type StepId, type WizardForm,
 } from './wizardModel';
 import { useCsLang } from './csLang';
@@ -22,7 +22,9 @@ export type CostMode = 'dhl_quote' | 'manual' | 'unknown';
  * a deleted draft: SHIPPEC's own rules (field issues, no DHL call made), stale shipment data, DHL's
  * own answer, a draft that really no longer exists, anything else.
  */
-export type ServicesError = { kind: 'local' | 'stale' | 'provider' | 'missing' | 'other'; message: string };
+export type ServicesError = { kind: 'local' | 'stale' | 'provider' | 'missing' | 'no_date' | 'other'; message: string; dhlCode?: string | null };
+/** DHL availability of a shipment date for the current shipment data (never assumed: today is only a candidate). */
+export type DateStatus = 'checking' | 'available' | 'none';
 export interface Pricing { selling_price: string; cost_mode: CostMode; manual_cost: string }
 export type CreatePhase = 'idle' | 'saving' | 'validating' | 'pricing' | 'confirming' | 'sending' | 'done';
 
@@ -83,6 +85,17 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   }, []);
   const generation = useRef(0);
   const servicesSeq = useRef(0);
+  /** Per-date availability, valid only for the shipment data (without the date) it was learned for. */
+  const [dateAvail, setDateAvail] = useState<{ key: string; map: Record<string, DateStatus> }>({ key: '', map: {} });
+  const noteDates = useCallback((f: WizardForm, entries: Record<string, DateStatus | null>) => {
+    const key = availabilityKey(f);
+    setDateAvail((cur) => {
+      const map: Record<string, DateStatus> = { ...(cur.key === key ? cur.map : {}) };
+      for (const [d, v] of Object.entries(entries)) { if (v) map[d] = v; else delete map[d]; }
+      return { key, map };
+    });
+  }, []);
+  const [nextDate, setNextDate] = useState<{ checking: boolean; date: string | null; searched: boolean }>({ checking: false, date: null, searched: false });
   useEffect(() => () => { generation.current += 1; }, []);
   const [selecting, setSelecting] = useState<string | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -225,6 +238,10 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     const T = (ar: string, en: string) => (langRef.current === 'en' ? en : ar);
     if (err instanceof ApiError) {
       if (err.code === 'ROUTE_INCOMPLETE') return { kind: 'local', message: routeIssuesText(issuesOf(err), langRef.current) };
+      if (err.code === 'NO_PRODUCT_FOR_SHIPMENT_DATE') {
+        const raw = err.rawDetails as { dhl_code?: string | null } | undefined;
+        return { kind: 'no_date', message: T('لا توجد خدمة DHL متاحة في تاريخ الشحن المحدد. اختر تاريخًا آخر.', 'No DHL service is available for the selected shipment date. Choose another date.'), dhlCode: raw?.dhl_code ?? null };
+      }
       if (err.code === 'CUSTOMS_INVOICE_INCOMPLETE') {
         return { kind: 'local', message: T('بيانات الفاتورة الجمركية غير مكتملة. أكمل رقم الفاتورة وتاريخها في خطوة الجمارك.', 'Customs invoice information is incomplete. Complete the invoice number and date on the Customs step.') };
       }
@@ -238,6 +255,21 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     return { kind: 'other', message: describeApiError(err, T(...fallback)) };
   }, []);
 
+  /** READ-ONLY probe: the first later date DHL lists a product for (offered, never applied by itself). */
+  const probeNextDate = useCallback(async (shipmentId: number, f: WizardForm) => {
+    const myGen = generation.current;
+    setNextDate({ checking: true, date: null, searched: false });
+    try {
+      const r = await dhlShipmentService.nextAvailableDate(shipmentId, f.shipment_date);
+      if (myGen !== generation.current) return;
+      noteDates(f, Object.fromEntries(r.checked.map((c) => [c.date, c.available ? 'available' : 'none'] as const)));
+      setNextDate({ checking: false, date: r.date, searched: true });
+    } catch {
+      if (myGen !== generation.current) return;
+      setNextDate({ checking: false, date: null, searched: true });
+    }
+  }, [noteDates]);
+
   const fetchServices = useCallback(async (next?: WizardForm) => {
     const f = next ?? form;
     if (next) setForm(next);
@@ -246,12 +278,17 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     const current = () => mySeq === servicesSeq.current && myGen === generation.current;
     setServicesLoading(true);
     setServicesError(null);
+    setNextDate({ checking: false, date: null, searched: false });
+    if (f.shipment_date) noteDates(f, { [f.shipment_date]: 'checking' });
+    let savedId: number | null = null;
     try {
       // save the current draft → the Backend checks its own rules → GET products → POST rates (in that order)
       const sh = await save(true, f);
       if (!sh || !current()) return;
+      savedId = sh.id;
       const p = await dhlShipmentService.checkProducts(sh.id);
       if (!current()) return;
+      noteDates(f, { [f.shipment_date]: 'available' });
       let r: Awaited<ReturnType<typeof dhlShipmentService.checkRates>> | null = null;
       let ratesErr: unknown = null;
       try { r = await dhlShipmentService.checkRates(sh.id); } catch (e) { ratesErr = e; }
@@ -270,11 +307,32 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       if (!current()) return;
       const issues = issuesOf(err);
       if (issues.length) showIssues(issues);
-      setServicesError(classify(err, ['تعذر جلب خدمات DHL', 'Could not load the DHL services']));
+      const c = classify(err, ['تعذر جلب خدمات DHL', 'Could not load the DHL services']);
+      setServicesError(c);
+      if (c.kind === 'no_date') {
+        // DHL has no product for this date: nothing of another date stays visible or selected
+        noteDates(f, { [f.shipment_date]: 'none' });
+        setProducts([]);
+        setQuotes([]);
+        setQuotedAt(null);
+        setServicesSnapshot(routeSnapshot(f));
+        setForm((x) => (x.product_code ? { ...x, product_code: '', local_product_code: '' } : x));
+        if (savedId) void probeNextDate(savedId, f);
+      } else if (f.shipment_date) {
+        noteDates(f, { [f.shipment_date]: null }); // unknown (another kind of problem — not «no service»)
+      }
     } finally {
       if (current()) setServicesLoading(false);
     }
-  }, [save, form, showIssues, classify]);
+  }, [save, form, showIssues, classify, noteDates, probeNextDate]);
+
+  /**
+   * «Use next available date»: asks the Backend (read-only DHL products, following dates) for the first date
+   * with a DHL product — it only OFFERS the date; the person chooses it (never changed silently).
+   */
+  const findNextAvailableDate = useCallback(async () => {
+    if (shipment) await probeNextDate(shipment.id, form);
+  }, [form, shipment, probeNextDate]);
 
   /** An optional DHL service ticked / unticked: saved, then DHL prices the shipment again with it. */
   const toggleService = useCallback((code: string) => {
@@ -283,7 +341,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   /** A new shipment date: saved, then DHL's products and prices for that date. */
   const changeShipmentDate = useCallback((ymd: string) => {
     if (!ymd || ymd === form.shipment_date) return;
-    void fetchServices({ ...form, shipment_date: ymd });
+    // a new date: the service chosen for another date is not kept — DHL's products for the new date decide
+    void fetchServices({ ...form, shipment_date: ymd, product_code: '', local_product_code: '' });
   }, [fetchServices, form]);
 
   const chooseProduct = useCallback(async (code: string) => {
@@ -390,6 +449,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
     setServicesLoading(false);
     setSelecting(null);
     setServicesError(null);
+    setDateAvail({ key: '', map: {} });
+    setNextDate({ checking: false, date: null, searched: false });
     setForm(emptyForm());
     setShipment(null);
     setSavedJson(null);
@@ -412,6 +473,8 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
   return {
     form, update, shipment, setShipment, step, setStep, steps, loading, loadError, saving, dirty, errors, stepIssues,
     pickupBookingEnabled,
+    dateStatus: dateAvail.key === availabilityKey(form) ? dateAvail.map : ({} as Record<string, DateStatus>),
+    nextDate, findNextAvailableDate,
     save, products, quotes, quote, quotedAt, servicesLoading, servicesError, servicesStale, fetchServices, toggleService, changeShipmentDate, chooseProduct, selecting,
     validate, validation, validating, validationCurrent: validatedJson === contentJson && !!validation,
     pricing, setPricing, dhlCost, create, createPhase, createError, result, setResult, reset, customs: needsCustoms(form),

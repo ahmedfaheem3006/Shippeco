@@ -84,23 +84,29 @@ function DateSelector({ w }: { w: Wizard }) {
     w.changeShipmentDate(ymd);
   };
   const selectedParts = form.shipment_date ? dateParts(form.shipment_date, lang) : null;
+  const noServices = t('لا توجد خدمات متاحة لهذا التاريخ', 'No services available');
   return (
     <div className="space-y-3" data-testid="ship-date">
       <div role="radiogroup" aria-label={t('سأرسل شحنتي في', "I'm sending my shipment on")} className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {cards.map((c) => {
           const p = dateParts(c.ymd, lang);
           const active = form.shipment_date === c.ymd;
+          // DHL's answer for this date with the current shipment data (today is a candidate, never assumed bookable)
+          const status = w.dateStatus[c.ymd];
           const rel = c.rel === 'today' ? t('اليوم', 'Today') : c.rel === 'tomorrow' ? t('غدًا', 'Tomorrow') : p.weekday;
           return (
             <button
               key={c.ymd} type="button" role="radio" aria-checked={active} disabled={busy} data-date={c.ymd} onClick={() => pick(c.ymd)}
-              aria-label={`${p.day} ${p.month} — ${rel}`}
+              aria-label={`${p.day} ${p.month} — ${rel}${status === 'none' ? ` — ${noServices}` : ''}`} data-status={status ?? 'unchecked'}
               className={`shrink-0 w-[84px] rounded-2xl border px-2 py-2 text-center transition-colors disabled:opacity-60 ${
-                active ? 'border-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900/40 bg-indigo-600 text-white' : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 bg-white dark:bg-slate-800'}`}
+                active ? (status === 'none' ? 'border-amber-500 ring-2 ring-amber-100 dark:ring-amber-900/40 bg-amber-600 text-white' : 'border-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900/40 bg-indigo-600 text-white')
+                  : status === 'none' ? 'border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 text-slate-400' : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 bg-white dark:bg-slate-800'}`}
             >
               <span className={`block text-[10px] font-bold ${active ? 'text-indigo-100' : 'text-slate-500'}`}>{p.month}</span>
               <span className="block text-2xl font-extrabold tabular-nums leading-tight">{p.day}</span>
               <span className={`block text-[10px] font-bold truncate ${active ? 'text-white' : 'text-slate-600 dark:text-slate-300'}`}>{rel}</span>
+              {status === 'none' && <span className={`block text-[9px] font-bold leading-tight ${active ? 'text-white' : 'text-amber-700 dark:text-amber-300'}`}>{t('لا خدمات', 'No services')}</span>}
+              {status === 'checking' && <span className="block text-[9px] font-bold leading-tight opacity-80">{t('جارٍ التحقق…', 'Checking…')}</span>}
             </button>
           );
         })}
@@ -250,6 +256,38 @@ function OptionalServices({ w }: { w: Wizard }) {
   );
 }
 
+/**
+ * DHL 996 — no DHL product for the chosen shipment date. The next date DHL lists a product for is looked up
+ * read-only and OFFERED; the date changes only when the person chooses it.
+ */
+function NoServiceForDate({ w }: { w: Wizard }) {
+  const { t, lang } = useCsLang();
+  const role = useAuthStore((s) => s.user?.role);
+  const n = w.nextDate;
+  const parts = n.date ? dateParts(n.date, lang) : null;
+  return (
+    <div className="mb-3" data-testid="no-date">
+      <Note tone="warn" title={t('لا توجد خدمات متاحة لهذا التاريخ', 'No services available')}>
+        <span className="block">{w.servicesError?.message}</span>
+        {role === 'admin' && w.servicesError?.dhlCode && <span className="block text-[10px] font-mono opacity-80" data-testid="no-date-admin">admin: DHL {w.servicesError.dhlCode}</span>}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {n.checking ? (
+            <span className="inline-flex items-center gap-1 text-[11px]" role="status"><Loader2 size={12} className="animate-spin" /> {t('جارٍ البحث عن أقرب تاريخ تتوفر فيه خدمات DHL…', 'Looking for the next date with DHL services…')}</span>
+          ) : n.date && parts ? (
+            <Button className="!py-1.5 text-xs" onClick={() => w.changeShipmentDate(n.date!)} data-testid="use-next-date">
+              {t('استخدام أقرب تاريخ متاح', 'Use next available date')}: {parts.weekday} {parts.day} {parts.month}
+            </Button>
+          ) : n.searched ? (
+            <span className="text-[11px]">{t('لا توجد خدمات DHL في الأيام العشرة القادمة لهذه البيانات — راجع المسار والطرود.', 'No DHL service in the next 10 days for this data — check the route and packages.')}</span>
+          ) : (
+            <Button variant="secondary" className="!py-1.5 text-xs" onClick={() => void w.findNextAvailableDate()}>{t('استخدام أقرب تاريخ متاح', 'Use next available date')}</Button>
+          )}
+        </div>
+      </Note>
+    </div>
+  );
+}
+
 function GoGreenCard({ q }: { q: RateQuote | null }) {
   const { t, lang } = useCsLang();
   const g = goGreenOf(q);
@@ -322,7 +360,8 @@ export function StepService({ w }: { w: Wizard }) {
           {w.servicesStale && products.length > 0 && !w.servicesLoading && (
             <div className="mb-3"><Note tone="warn" title={t('تغيّرت بيانات الشحنة', 'The shipment data changed')}>{t('الخدمات والأسعار المعروضة قد لا تخص البيانات الحالية — اضغط «تحديث الخدمات والأسعار» قبل الاختيار.', 'The services and prices shown may not match the current data — press «Refresh services and prices» before choosing.')}</Note></div>
           )}
-          {w.servicesError && (
+          {w.servicesError?.kind === 'no_date' && <NoServiceForDate w={w} />}
+          {w.servicesError && w.servicesError.kind !== 'no_date' && (
             <div className="mb-3" data-testid="services-error" data-kind={w.servicesError.kind}>
               <Note tone={w.servicesError.kind === 'stale' ? 'warn' : 'error'}
                 title={w.servicesError.kind === 'local' ? t('صحّح بيانات الشحنة — لم يُرسل شيء إلى DHL', 'Correct the shipment data — nothing was sent to DHL')
@@ -337,7 +376,7 @@ export function StepService({ w }: { w: Wizard }) {
             <div className="space-y-3" role="status" aria-label={t('جاري جلب خدمات DHL', 'Loading DHL services')}>
               {[0, 1].map((i) => <Skeleton key={i} className="h-28" />)}
             </div>
-          ) : products.length ? (
+          ) : w.servicesError?.kind === 'no_date' ? null : products.length ? (
             <div className={`space-y-3 ${w.servicesStale ? 'opacity-60' : ''}`}>
               {products.map((p) => (
                 <ServiceResult key={p.productCode} p={p} q={quoteOf(p.productCode)} selected={form.product_code === p.productCode}
