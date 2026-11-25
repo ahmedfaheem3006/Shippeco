@@ -52,7 +52,7 @@ const draft = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-async function base(page: Page, lang: 'ar' | 'en') {
+async function base(page: Page, lang: 'ar' | 'en', pickupBooking = true) {
   const sent = { patches: [] as Array<Record<string, any>>, rates: 0, pickups: 0 }
   let current = draft()
   await page.addInitScript((l) => {
@@ -82,7 +82,7 @@ async function base(page: Page, lang: 'ar' | 'en') {
   await page.route(/\/api\/dhl\/default-shipper$/, (r) => r.fulfill(json({ success: true, data: null })))
   await page.route(/\/api\/dhl\/options$/, (r) => r.fulfill(json({ success: true, data: {
     purposes: [], transport_payers: ['shipper', 'receiver', 'third_party'], duties_payers: ['receiver', 'shipper', 'third_party'], pickup_options: ['none', 'schedule', 'drop_off'], document_refetch_types: [],
-    features: { paperless_upload: false, pickup_booking: true }, declaration_statements: [], customs_document_types: [], payment: { shipper_account_masked: '*****2611' },
+    features: { paperless_upload: false, pickup_booking: pickupBooking }, declaration_statements: [], customs_document_types: [], payment: { shipper_account_masked: '*****2611' },
   } })))
   return sent
 }
@@ -123,6 +123,9 @@ for (const lang of ['ar', 'en'] as const) {
       await expect(dates).toHaveCount(7)
       await expect(dates.nth(0)).toContainText(L('اليوم', 'Today'))
       await expect(dates.nth(1)).toContainText(L('غدًا', 'Tomorrow'))
+      // the Saudi sender's time zone: derived, read-only — never a typed offset
+      await expect(svc.getByTestId('sender-time-zone')).toContainText('UTC+03:00')
+      await expect(svc.getByLabel(new RegExp(`^${L('المنطقة الزمنية للمرسل', 'Sender time zone')}`))).toHaveCount(0)
       const card = svc.locator('[data-product="N"]')
       await expect(card.getByTestId('delivered-by')).toHaveText(L('نهاية اليوم', 'End of Day'))
       await expect(card.getByTestId('estimated-price')).toHaveText(L('75.73 ر.س', '75.73 SAR'))
@@ -176,6 +179,31 @@ for (const lang of ['ar', 'en'] as const) {
       await page.getByRole('button', { name: L('حفظ المسودة', 'Save draft') }).click()
       await expect.poll(() => sent.patches.at(-1)?.pickup_option).toBe('none')
       expect(sent.patches.at(-1)).toMatchObject({ pickup_location: null, pickup_earliest_time: null })
+      expect(sent.pickups).toBe(0)
+    })
+  }
+}
+
+for (const lang of ['ar', 'en'] as const) {
+  const L = (ar: string, en: string) => (lang === 'en' ? en : ar)
+  for (const [w, h] of [[1440, 900], [1024, 768], [768, 1024], [390, 844], [320, 700]] as const) {
+    test(`Pickup OFF ${lang.toUpperCase()} at ${w}px: «Schedule Pickup» disabled, «No» kept, read-only flow reaches Review, no pickup call`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: h })
+      const sent = await base(page, lang, false)
+      await page.goto('/create-shipment?draft=5')
+      await expect(page.getByText('Gulf Retail Client').first()).toBeVisible()
+      await page.getByRole('button', { name: L('الاستلام', 'Pickup') }).first().click()
+      const pk = page.getByTestId('pickup-step')
+      const yes = pk.getByRole('radio', { name: new RegExp(L('نعم — جدولة استلام', 'Yes — Schedule Pickup')) })
+      await expect(yes).toBeDisabled()
+      await expect(yes).toContainText(L('حجز مندوب DHL غير مفعّل حاليًا.', 'Courier pickup booking is not enabled yet.'))
+      await expect(pk.getByRole('radio', { name: new RegExp(`^${L('لا', 'No')}`) })).toHaveAttribute('aria-checked', 'true')
+      await expect(pk.getByTestId('pickup-gate-off')).toContainText(L('استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا.', 'Courier pickup is not currently available.'))
+      expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/DHL_PROD_PICKUP_ENABLED/)
+      await fits(page, 'pickup-step')
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/pickup-off-${lang}-${w}.png`, fullPage: true })
+      await page.getByRole('button', { name: L('التالي', 'Next') }).click()
+      await expect(pk).toHaveCount(0) // Pickup = No → on to the review
       expect(sent.pickups).toBe(0)
     })
   }
