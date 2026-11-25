@@ -23,8 +23,9 @@ import { Button, Field, Note, Section, SelectInput, Skeleton, TextInput } from '
 import { useCsLang } from './csLang';
 import {
   canShipment, chargeRows, countryName, dateParts, dhlDateTime, goGreenOf, isOriginWeekend, kg, money, needsOriginOffset, nextBusinessDay, optionalServiceRows,
-  shipDateCards, shipDateRange, translateIssue,
+  senderTimeZone, shipDateCards, shipDateRange, translateIssue,
 } from './wizardModel';
+import { subdivisionName } from './geoRules';
 import type { CostMode, Wizard } from './useShipmentWizard';
 
 /** DHL's priced lines, tax and DHL's own total (the MyDHL+ breakdown). */
@@ -281,6 +282,8 @@ export function StepService({ w }: { w: Wizard }) {
   const setMode = (m: CostMode) => w.setPricing((p) => ({ ...p, cost_mode: m }));
   const m = (n: number | null | undefined) => money(n, 'SAR', lang);
   const quotedAt = w.quotedAt ? new Date(w.quotedAt) : null;
+  // the sender's own time zone (ship-from country / state) — read-only; typed only when it cannot be resolved
+  const senderZone = senderTimeZone(form, form.shipment_date || new Date().toISOString().slice(0, 10));
 
   return (
     <div className="space-y-4" data-testid="service-step">
@@ -288,9 +291,16 @@ export function StepService({ w }: { w: Wizard }) {
         actions={<Button variant="secondary" onClick={() => void w.fetchServices()} loading={w.servicesLoading}><RefreshCw size={16} /> {products.length ? t('تحديث الخدمات والأسعار', 'Refresh services and prices') : t('عرض خدمات DHL المتاحة', 'Show available DHL services')}</Button>}>
         <DateSelector w={w} />
         {e('shipment_date') && <p className="mt-2 text-[11px] font-semibold text-red-600" role="alert">{e('shipment_date')}</p>}
-        {needsOriginOffset(form) && (
+        {senderZone ? (
+          <p className="mt-3 text-xs text-slate-600 dark:text-slate-300" data-testid="sender-time-zone">
+            {t('المنطقة الزمنية للمرسل:', 'Sender time zone:')}{' '}
+            <span className="font-bold">{countryName(form.shipper.country_code, lang)}{form.shipper.province && form.shipper.country_code !== 'SA' ? ` — ${subdivisionName(form.shipper.country_code, form.shipper.province) ?? form.shipper.province}` : ''}</span>{' '}
+            <span dir="ltr" className="font-bold tabular-nums">(UTC{senderZone.offset})</span>
+          </p>
+        ) : needsOriginOffset(form) && (
           <div className="mt-3 max-w-xs">
-            <Field label={t('المنطقة الزمنية لبلد المرسل', "Sender country's time zone")} required error={e('origin_gmt_offset')} hint={t('مثل -05:00 (نيويورك شتاءً)', 'e.g. -05:00 (New York in winter)')}>
+            <Field label={t('المنطقة الزمنية للمرسل', 'Sender time zone')} required error={e('origin_gmt_offset')}
+              hint={t('تعذّر تحديدها من عنوان المرسل — أدخل فرق التوقيت، مثل -03:00', "It could not be resolved from the sender's address — enter the UTC offset, e.g. -03:00")}>
               {(id) => <TextInput id={id} value={form.origin_gmt_offset} onValue={(v) => update((f) => ({ ...f, origin_gmt_offset: v }))} error={e('origin_gmt_offset')} ltr placeholder="+03:00" />}
             </Field>
           </div>

@@ -129,6 +129,8 @@ export interface PartyDetailsContent {
   country_name: string | null;
   short_address: string | null;
   suburb: string | null;
+  /** The State's display name ("Oregon"); the party's province holds DHL's code ("OR"). */
+  province_name?: string | null;
   phones: Array<{ type: PhoneType; code: string | null; number: string | null; extension: string | null; sms: boolean }>;
   vat_tax_id: string | null;
   eori: string | null;

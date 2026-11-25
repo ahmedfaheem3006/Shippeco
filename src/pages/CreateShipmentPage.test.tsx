@@ -260,6 +260,31 @@ describe('«إنشاء شحنة» wizard', () => {
     await waitFor(() => expect(screen.queryByText('The shipment data changed')).toBeNull())
   })
 
+  it('Sender time zone & US state (EN): a Saudi sender shows «Sender time zone: Saudi Arabia (UTC+03:00)» read-only — no time-zone input; an older draft stored «Oregon» shows «OR» with «Oregon» and is saved as «OR»; a typed full name becomes the code when the field is left', async () => {
+    svc.get.mockResolvedValue(shipment({ receiver_country_code: 'US', receiver_province: 'Oregon', receiver_city: 'Corvallis', receiver_postal_code: '97330', receiver_address_line1: '2464 Northwest Garryanna Street', receiver_address_line2: 'Apt 16', receiver_address_line3: null, is_domestic: false }))
+    svc.updateDraft.mockImplementation(async () => shipment())
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    const to = within(document.querySelector('[data-party="receiver"]') as HTMLElement)
+    const state = to.getByLabelText(/^State/) as HTMLInputElement
+    expect(state.value).toBe('OR')
+    expect(to.getByTestId('state-name').textContent).toBe('Oregon')
+    fireEvent.change(state, { target: { value: 'Michigan' } })
+    fireEvent.blur(state)
+    expect((to.getByLabelText(/^State/) as HTMLInputElement).value).toBe('MI')
+    expect(to.getByTestId('state-name').textContent).toBe('Michigan')
+    fireEvent.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalled())
+    const sent = svc.updateDraft.mock.calls[0][1]
+    expect(sent.receiver.province).toBe('MI')
+    expect(sent.party_details.receiver.province_name).toBe('Michigan')
+    expect(sent.origin_gmt_offset).toBeNull()
+    goStep(/Service/)
+    expect((await screen.findByTestId('sender-time-zone')).textContent).toMatch(/Sender time zone: Saudi Arabia \(UTC\+03:00\)/)
+    expect(screen.queryByLabelText(/^Sender time zone/)).toBeNull()
+  })
+
   /** DHL TEST 2026-11-18 (domestic N), with DHL's lines before tax (basePrice). */
   const NET_QUOTE = {
     ...QUOTE, amount: 75.73, taxTotal: 9.88,

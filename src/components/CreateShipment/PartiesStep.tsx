@@ -41,7 +41,7 @@ import { Button, Field, Section, TextInput, inputCls } from './ui';
 import { useCsLang, type CsLang } from './csLang';
 import { listKeyHandler, useLookup, useOutside, type LookupStatus } from './useLookup';
 import { CountryCombobox, Dropdown } from './Combobox';
-import { citySecondary, postalFormatIssue, postalLookupCode, postalRule, subdivisionName } from './addressRules';
+import { citySecondary, normalizeSubdivision, postalFormatIssue, postalLookupCode, postalRule, subdivisionName } from './addressRules';
 import {
   applyAddress, applyCity, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, SHORT_ADDRESS_RE, withCountry,
 } from './partiesModel';
@@ -567,7 +567,7 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
   // Postal code → City + State (the ZIP typed is kept, e.g. ZIP+4); the note stays while those fields are unchanged
   const [filled, setFilled] = useState<{ postal_code: string; city: string; province: string } | null>(null);
   const pickPostal = (l: PostalLocality) => {
-    const next = { ...value, city: l.city ?? value.city, province: l.province ?? value.province, postal_code: value.postal_code.trim() || l.postal_code };
+    const next = { ...value, city: l.city ?? value.city, province: normalizeSubdivision(value.country_code, l.province ?? value.province), postal_code: value.postal_code.trim() || l.postal_code };
     onChange(next);
     setFilled({ postal_code: next.postal_code, city: next.city, province: next.province });
   };
@@ -661,7 +661,10 @@ function PartyPanel({ who, value, onChange, err, t, lang }: {
             onChange={(v) => set('city', v)} onPick={pickCity} />
         )}</Field>
         <Field label={t('الولاية / المنطقة', 'State')} required={value.country_code === 'US'} error={e('province')}
-          hint={stateName ? <span dir="ltr" data-testid="state-name">{stateName}</span> : undefined}>{(id) => <TextInput id={id} value={value.province} onValue={(v) => set('province', v)} error={e('province')} ltr />}</Field>
+          hint={stateName ? <span dir="ltr" data-testid="state-name">{stateName}</span> : undefined}>{(id) => (
+            // a full state name («Oregon») becomes DHL's code («OR») when the field is left; the name stays shown
+            <TextInput id={id} value={value.province} onValue={(v) => set('province', v)} onBlur={() => { const c = normalizeSubdivision(value.country_code, value.province); if (c !== value.province) set('province', c); }} error={e('province')} ltr />
+          )}</Field>
         <Field label={t('الرمز البريدي', 'Postal Code')} required={sa || value.country_code === 'US'} error={e('postal_code')}>{(id) => (
           <PostalCodeInput id={id} value={value.postal_code} country={value.country_code} error={e('postal_code')} required={sa || value.country_code === 'US'} t={t}
             onChange={(v) => set('postal_code', v)} onPick={pickPostal} />

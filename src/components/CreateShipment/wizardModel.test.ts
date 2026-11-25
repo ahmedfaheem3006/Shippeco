@@ -5,9 +5,11 @@ import {
   itemTotals, locateIssue, needsCustoms, nextBusinessDay, packageTotals, partiesGate, routeIssuesText, routeSnapshot, splitPhone, stepMissing, toContent, translateIssue,
   visibleSteps, type WizardForm,
   chargeRows, dateParts, dhlDateTime, goGreenOf, optionalServiceRows, originToday, shipDateCards, shipDateRange, toggleOptionalService,
+  needsOriginOffset, originOffset, senderTimeZone,
   pickupGate, pickupLocationIn, pickupSlots,
 } from './wizardModel';
-import { applyAddress, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, withCountry } from './partiesModel';
+import { applyAddress, applyCity, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, withCountry } from './partiesModel';
+import { normalizeSubdivision } from './geoRules';
 import { canShipment } from '../../utils/dhlShipmentPermissions';
 
 const saParty = () => ({
@@ -308,19 +310,59 @@ describe('wizard model', () => {
     // 2026-11-24 22:30 UTC = 2026-11-25 01:30 in Riyadh
     const late = new Date('2026-11-24T22:30:00Z');
     expect(originToday(f, late)).toBe('2026-11-25');
-    expect(shipDateRange(f, late)).toEqual({ min: '2026-11-25', max: '2026-12-04' }); // counted from the Backend's (UTC) today
+    expect(shipDateRange(f, late)).toEqual({ min: '2026-11-25', max: '2026-12-05' }); // counted from the sender's today (as the Backend)
     const cards = shipDateCards(f, 7, late);
     expect(cards.map((c) => c.ymd)).toEqual(['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01']);
     expect(cards.slice(0, 3).map((c) => c.rel)).toEqual(['today', 'tomorrow', null]);
-    expect(shipDateCards(f, 20, late).at(-1)?.ymd).toBe('2026-12-04');
-    // a sender in New York with its typed time zone
-    const ny = { ...emptyForm(), shipper: usParty(), origin_gmt_offset: '-05:00' };
-    expect(originToday(ny, new Date('2026-11-25T03:00:00Z'))).toBe('2026-11-24');
+    expect(shipDateCards(f, 20, late).at(-1)?.ymd).toBe('2026-12-05');
+    // a sender in Delaware: its zone (New York) from the state — no typed offset needed
+    const de = { ...emptyForm(), shipper: usParty(), origin_gmt_offset: '' };
+    expect(originToday(de, new Date('2026-11-25T03:00:00Z'))).toBe('2026-11-24');
     expect(dateParts('2026-11-25', 'en')).toEqual({ month: 'November', day: '25', weekday: 'Wednesday' });
     expect(dateParts('2026-12-08', 'ar')).toMatchObject({ day: '8', month: 'ديسمبر', weekday: 'الثلاثاء' });
     expect(dhlDateTime('2026-12-08T23:59:00')).toEqual({ date: '2026-12-08', time: '23:59', eod: true });
     expect(dhlDateTime('2026-11-30T12:00:00')).toEqual({ date: '2026-11-30', time: '12:00', eod: false });
     expect(dhlDateTime(null)).toBeNull();
+  });
+
+  it('Sender time zone from the ship-from location: Saudi Arabia → Asia/Riyadh UTC+03:00 (a stray typed −08:00 is ignored and never sent); a US state → its zone with DST; only an unresolvable location asks for an offset', () => {
+    const sa = { ...emptyForm(), shipper: saParty(), receiver: usParty(), origin_gmt_offset: '-08:00', shipment_date: '2026-11-25' };
+    expect(senderTimeZone(sa, '2026-11-25')).toEqual({ zone: 'Asia/Riyadh', offset: '+03:00', partial: false });
+    expect(senderTimeZone(sa, '2026-07-01')?.offset).toBe('+03:00');
+    expect(needsOriginOffset(sa)).toBe(false);
+    expect(originOffset(sa)).toBe('+03:00');
+    expect(toContent(sa).origin_gmt_offset).toBeNull();
+    // the browser's time zone never matters: the same instant gives the Riyadh date (01:30 on the 25th)
+    expect(originToday(sa, new Date('2026-11-24T22:30:00Z'))).toBe('2026-11-25');
+    const or = { ...emptyForm(), shipper: { ...usParty(), province: 'OR', city: 'Corvallis', postal_code: '97330' }, receiver: saParty(), shipment_date: '2026-11-25' };
+    expect(senderTimeZone(or, '2026-11-25')).toEqual({ zone: 'America/Los_Angeles', offset: '-08:00', partial: true });
+    expect(senderTimeZone(or, '2026-07-01')?.offset).toBe('-07:00');
+    expect(needsOriginOffset(or)).toBe(false);
+    // changing the sender recalculates it
+    expect(senderTimeZone({ shipper: { ...or.shipper, province: 'MI' } }, '2026-11-25')?.zone).toBe('America/Detroit');
+    expect(senderTimeZone({ shipper: saParty() }, '2026-11-25')?.zone).toBe('Asia/Riyadh');
+    // unresolvable: a multi-zone country / a US address without a state
+    const br = { ...emptyForm(), shipper: { ...usParty(), country_code: 'BR', province: '' }, origin_gmt_offset: '-03:00' };
+    expect([needsOriginOffset(br), originOffset(br), toContent(br).origin_gmt_offset]).toEqual([true, '-03:00', '-03:00']);
+    expect(needsOriginOffset({ shipper: { ...usParty(), province: '' } })).toBe(true);
+  });
+
+  it('US state: «Oregon» is stored and sent as «OR» (name kept for display); a code stays; Michigan from a lookup or contact → «MI»; an older draft with «Oregon» loads as «OR»', () => {
+    const f = { ...emptyForm(), shipper: saParty(), receiver: { ...usParty(), province: 'Oregon', city: 'Corvallis', postal_code: '97330' } };
+    const c = toContent(f);
+    expect(c.receiver.province).toBe('OR');
+    expect(c.party_details?.receiver?.province_name).toBe('Oregon');
+    expect(JSON.stringify(c.receiver)).not.toMatch(/Oregon/);
+    expect(toContent({ ...f, receiver: { ...f.receiver, province: 'or' } }).receiver.province).toBe('OR');
+    expect(toContent({ ...f, receiver: { ...f.receiver, province: 'Oregn' } }).receiver.province).toBe('Oregn'); // no fuzzy guess — validation asks for the code
+    expect(normalizeSubdivision('US', 'Michigan')).toBe('MI');
+    expect(normalizeSubdivision('CA', 'Ontario')).toBe('ON');
+    expect(normalizeSubdivision('SA', 'Eastern Province')).toBe('Eastern Province');
+    // Google / postal lookup / city suggestion / saved contact
+    expect(applyAddress(f.receiver, { country_code: 'US', city: 'Corvallis', province: 'OR', province_name: 'Oregon', postal_code: '97330', address_line1: '2464 NW Garryanna St' } as never).province).toBe('OR');
+    expect(applyCity(f.receiver, { country_code: 'US', city: 'Dearborn', province: 'Michigan' } as never, 'Dearborn').province).toBe('MI');
+    const legacy = fromShipment({ ...({} as never), receiver_country_code: 'US', receiver_province: 'Oregon', receiver_city: 'Corvallis' } as never, '');
+    expect(legacy.receiver.province).toBe('OR');
   });
 
   it('Service: DHL\'s breakdown as MyDHL+ shows it — DHL\'s names, lines before tax + VAT only when DHL stated them, DHL\'s own total (never summed here)', () => {

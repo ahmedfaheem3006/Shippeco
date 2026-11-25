@@ -10,6 +10,7 @@ import type {
   PickupOption, RateQuote, ShipmentPurpose, TransportPayer,
 } from '../../services/dhlShipment.service';
 import { tr, type CsLang } from './csLang';
+import { normalizeSubdivision, originZone, subdivisionName, zoneOffset } from './geoRules';
 
 // ── Countries (full ISO list, names in Arabic and English from the browser, calling codes) ──
 export interface CountryOption { code: string; name: string; ar: string; en: string; dial: string; aliases: string[] }
@@ -71,9 +72,7 @@ export function allCountries(lang: CsLang = 'ar'): CountryOption[] {
   return list;
 }
 export const countryName = (code: string | null | undefined, lang: CsLang = 'ar') => (code ? allCountries(lang).find((c) => c.code === code)?.name ?? code : '—');
-/** Backend ORIGIN_GMT_OFFSETS: origins with one fixed time zone. */
-export const FIXED_OFFSET_COUNTRIES = ['SA', 'KW', 'BH', 'QA', 'IQ', 'JO', 'YE', 'AE', 'OM'];
-const FIXED_OFFSETS: Record<string, string> = { SA: '+03:00', KW: '+03:00', BH: '+03:00', QA: '+03:00', IQ: '+03:00', JO: '+03:00', YE: '+03:00', AE: '+04:00', OM: '+04:00' };
+
 
 // ── Form shapes ──
 export interface NationalAddress { building_number: string; street: string; additional_number: string; district: string; short_address: string }
@@ -244,7 +243,8 @@ export const isInternational = (f: Pick<WizardForm, 'shipper' | 'receiver'>) =>
   !!f.shipper.country_code && !!f.receiver.country_code && f.shipper.country_code !== f.receiver.country_code;
 /** Customs declaration: goods crossing a border (the Backend refuses it for a domestic shipment). */
 export const needsCustoms = (f: WizardForm) => f.content_kind === 'goods' && isInternational(f);
-export const needsOriginOffset = (f: WizardForm) => !!f.shipper.country_code && !FIXED_OFFSET_COUNTRIES.includes(f.shipper.country_code);
+/** A typed sender offset is needed only when the ship-from location has no resolvable time zone (geoRules). */
+export const needsOriginOffset = (f: Pick<WizardForm, 'shipper'>) => !!f.shipper.country_code && !originZone(f.shipper.country_code, f.shipper.province);
 
 const num = (v: string | number | null | undefined) => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.'));
@@ -279,7 +279,7 @@ const t = (s: string | null | undefined) => (typeof s === 'string' && s.trim() ?
 function partyOut(p: PartyForm) {
   const base = {
     company: t(p.company), contact: t(p.contact), phone: t(p.phone), email: t(p.email), city: t(p.city), postal_code: t(p.postal_code),
-    province: t(p.province), country_code: t(p.country_code), type: p.type,
+    province: t(normalizeSubdivision(p.country_code, p.province)), country_code: t(p.country_code), type: p.type,
   };
   if (p.country_code === 'SA' && p.use_na) {
     const na = p.na;
@@ -325,7 +325,7 @@ function partiesPartyOut(p: PartyForm) {
   const phone = first && first.number.trim() ? composePhone(first.code, first.number) : p.phone;
   return {
     company: t(p.company), contact: t(p.contact), phone: t(phone), email: t(p.email), city: t(p.city), postal_code: t(p.postal_code),
-    province: t(p.province), country_code: t(p.country_code), type: p.residential ? 'private' as const : 'business' as const,
+    province: t(normalizeSubdivision(p.country_code, p.province)), country_code: t(p.country_code), type: p.residential ? 'private' as const : 'business' as const,
     address_line1: t(p.address_line1), address_line2: t(p.address_line2),
     address_line3: sa ? t(p.short_address.toUpperCase()) : t(p.suburb),
   };
@@ -334,6 +334,8 @@ function detailsOut(p: PartyForm): PartyDetailsContent {
   return {
     business_contact: p.business_contact, residential: p.residential, country_name: t(countryName(p.country_code, 'en') === '—' ? '' : countryName(p.country_code, 'en')),
     short_address: p.country_code === 'SA' ? t(p.short_address.toUpperCase()) : null, suburb: t(p.suburb),
+    // the State's display name ("Oregon"); DHL gets the code ("OR") in the party itself
+    province_name: t(subdivisionName(p.country_code, normalizeSubdivision(p.country_code, p.province)) ?? p.province),
     phones: p.phones.filter((x) => x.number.trim()).map((x) => ({ type: x.type, code: t(x.code), number: t(x.number), extension: t(x.extension), sms: x.sms })),
     vat_tax_id: t(p.vat_tax_id), eori: t(p.eori), notes: t(p.notes), saved_contact_id: p.saved_contact_id,
   };
@@ -436,7 +438,7 @@ function partyIn(src: Record<string, any>, prefix: string): PartyForm {
     ...emptyParty(country),
     company: get('company'), contact: get('contact'), phone: get('phone'), email: get('email'),
     address_line1: get('address_line1'), address_line2: get('address_line2'), address_line3: get('address_line3'),
-    city: get('city'), postal_code: get('postal_code'), province: get('province'), country_code: country,
+    city: get('city'), postal_code: get('postal_code'), province: normalizeSubdivision(country, get('province')), country_code: country,
     type: get('type') === 'private' ? 'private' : 'business', use_na: false, na: emptyNa(),
   };
   if (country === 'SA') {
@@ -466,7 +468,7 @@ function partiesPartyIn(src: Record<string, unknown>, prefix: string, details: P
     use_na: false,
     company: get('company'), contact: get('contact'), phone: get('phone'), email: get('email'),
     address_line1: get('address_line1'), address_line2: get('address_line2'), address_line3: '',
-    city: get('city'), postal_code: get('postal_code'), province: get('province'), country_code: country,
+    city: get('city'), postal_code: get('postal_code'), province: normalizeSubdivision(country, get('province')), country_code: country,
     type: get('type') === 'private' ? 'private' : 'business',
     business_contact: details?.business_contact ?? get('type') !== 'private',
     residential: details?.residential ?? get('type') === 'private',
@@ -999,28 +1001,33 @@ export function pickupGate(f: WizardForm, cap: { pickupEarliest?: string | null;
 /** DHL accepts a planned shipping date at most this many days ahead (Backend MAX_DAYS_AHEAD). */
 export const SHIP_DATE_MAX_DAYS = 10;
 const ymdPlus = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-/** The sender's time zone (±HH:MM): the fixed one of its country, else the one typed; null when unknown. */
-export function originOffset(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>): string | null {
-  const fixed = FIXED_OFFSETS[f.shipper.country_code];
-  if (fixed) return fixed;
+/**
+ * The sender's time zone: the IANA zone of the ship-from location (geoRules — country, or US / CA / AU
+ * state) with its UTC offset on `ymd` (daylight saving included). null when it cannot be resolved.
+ */
+export function senderTimeZone(f: Pick<WizardForm, 'shipper'>, ymd: string): { zone: string; offset: string; partial: boolean } | null {
+  const z = originZone(f.shipper.country_code, f.shipper.province);
+  const offset = z ? zoneOffset(z.zone, ymd) : null;
+  return z && offset ? { zone: z.zone, offset, partial: z.partial } : null;
+}
+/** The sender's offset (±HH:MM): derived from the ship-from location, the typed one only when unresolvable; null when unknown. */
+export function originOffset(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'> & { shipment_date?: string }, now = new Date()): string | null {
+  const derived = senderTimeZone(f, f.shipment_date || now.toISOString().slice(0, 10));
+  if (derived) return derived.offset;
   return /^[+-]\d{2}:\d{2}$/.test(f.origin_gmt_offset.trim()) ? f.origin_gmt_offset.trim() : null;
 }
-/** "Today" at the sender (its time zone; the browser's own date when it is unknown). */
+/** "Today" at the sender — its own time zone, never the browser's; UTC only while the sender's time zone is unknown (as the Backend). */
 export function originToday(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>, now = new Date()): string {
-  const off = originOffset(f);
-  if (!off) return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const off = originOffset({ shipper: f.shipper, origin_gmt_offset: f.origin_gmt_offset }, now);
+  if (!off) return now.toISOString().slice(0, 10);
   const m = /^([+-])(\d{2}):(\d{2})$/.exec(off)!;
   const minutes = (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
   return new Date(now.getTime() + minutes * 60_000).toISOString().slice(0, 10);
 }
-/**
- * The dates the person may choose: from the sender's today up to DHL's limit (counted from the
- * Backend's UTC today, which is never later than the sender's — a past or too-far date is never offered).
- */
+/** The dates the person may choose: from the sender's today up to DHL's limit (the Backend counts from the same sender date). */
 export function shipDateRange(f: Pick<WizardForm, 'shipper' | 'origin_gmt_offset'>, now = new Date()): { min: string; max: string } {
   const min = originToday(f, now);
-  const utc = now.toISOString().slice(0, 10);
-  return { min, max: ymdPlus(utc < min ? utc : min, SHIP_DATE_MAX_DAYS) };
+  return { min, max: ymdPlus(min, SHIP_DATE_MAX_DAYS) };
 }
 export interface DateCard { ymd: string; rel: 'today' | 'tomorrow' | null }
 /** The next `count` dates as MyDHL+ shows them (Today, Tomorrow, then weekdays) — never past the limit. */
