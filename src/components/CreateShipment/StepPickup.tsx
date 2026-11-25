@@ -14,9 +14,10 @@
  * while it is off the choice is shown with a notice and the server refuses it — nothing is booked.
  * The Shipment Cost Summary at the bottom shows DHL's figures only (never SHIPPEC's profit).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useAuthStore } from '../../hooks/useAuthStore';
 import { Ban, CalendarDays, Clock, MapPin, Pencil, Receipt, Search, Store, Truck } from 'lucide-react';
-import { dhlShipmentService, type ServicePoint, type ShipmentOptions } from '../../services/dhlShipment.service';
+import { dhlShipmentService, type ServicePoint } from '../../services/dhlShipment.service';
 import { describeApiError } from '../../utils/apiErrors';
 import { Button, ChoiceCards, Field, Note, Section, SelectInput, Skeleton, TextInput } from './ui';
 import { PartyFields } from './FormSteps';
@@ -125,18 +126,14 @@ function CostSummary({ w }: { w: Wizard }) {
 export function StepPickup({ w, onGo, showGate = false }: { w: Wizard; onGo?: (s: StepId) => void; showGate?: boolean }) {
   const { form, update, errors } = w;
   const { t, lang } = useCsLang();
-  const [opts, setOpts] = useState<ShipmentOptions | null>(null);
-  useEffect(() => {
-    let alive = true;
-    Promise.resolve(dhlShipmentService.options()).then((o) => { if (alive) setOpts(o ?? null); }, () => { if (alive) setOpts(null); });
-    return () => { alive = false; };
-  }, []);
-  const bookingOff = opts?.features?.pickup_booking === false;
+  const role = useAuthStore((s) => s.user?.role);
+  // DHL_PROD_PICKUP_ENABLED off on the server → «Yes — Schedule Pickup» cannot be chosen (the Backend refuses it too)
+  const bookingOff = w.pickupBookingEnabled === false;
   const cap = pickupCapabilitiesOf(w);
   const minT = hm(cap?.pickupEarliest);
   const maxT = hm(cap?.pickupLatest);
   const slots = pickupSlots(minT, maxT);
-  const gate = pickupGate(form, cap, lang);
+  const gate = pickupGate(form, cap, lang, bookingOff);
   // the window is checked as soon as both times are chosen; the rest after a blocked Next
   const live = (k: string) => (k === 'pickup_earliest_time' || k === 'pickup_latest_time') && !!form.pickup_earliest_time && !!form.pickup_latest_time;
   const err = (k: string) => (showGate || live(k) ? gate[k] : null) ?? (errors[k] ? translateIssue(errors[k], lang) : null);
@@ -188,22 +185,25 @@ export function StepPickup({ w, onGo, showGate = false }: { w: Wizard; onGo?: (s
           value={form.pickup_option}
           onChange={choose}
           options={[
-            { value: 'schedule', title: t('نعم — جدولة استلام', 'Yes — Schedule Pickup'), description: t('يحضر مندوب DHL للاستلام ضمن نافذة DHL.', 'A DHL courier collects within DHL\'s window.'), icon: <Truck size={18} /> },
+            { value: 'schedule', title: t('نعم — جدولة استلام', 'Yes — Schedule Pickup'), icon: <Truck size={18} />, disabled: bookingOff,
+              description: bookingOff ? t('حجز مندوب DHL غير مفعّل حاليًا.', 'Courier pickup booking is not enabled yet.') : t('يحضر مندوب DHL للاستلام ضمن نافذة DHL.', 'A DHL courier collects within DHL\'s window.') },
             { value: 'none', title: t('لا', 'No'), description: t('لا يُطلب مندوب مع هذه الشحنة.', 'No courier is requested with this shipment.'), icon: <Ban size={18} /> },
             { value: 'drop_off', title: t('التسليم في نقطة خدمة DHL', 'Drop off at DHL Service Point'), description: t('تُسلَّم الشحنة في نقطة تقبل التسليم.', 'Hand the shipment in at a point that accepts drop-off.'), icon: <Store size={18} /> },
           ]}
         />
         {bookingOff && (
           <div className="mt-3" data-testid="pickup-gate-off">
-            <Note tone="warn" title={t('حجز مندوب DHL متوقف على هذا الخادم', 'Courier pickup booking is switched off on this server')}>
-              {t('لن يطلب SHIPPEC مندوبًا من DHL (DHL_PROD_PICKUP_ENABLED). يمكن تجهيز الاستلام هنا، لكن التحقق يرفضه — اختر «لا» أو التسليم في نقطة خدمة، أو راجع المسؤول.',
-                'SHIPPEC will not ask DHL for a courier (DHL_PROD_PICKUP_ENABLED). The pickup can be prepared here, but validation refuses it — choose «No» or drop-off, or ask an admin.')}
+            <Note tone={form.pickup_option === 'schedule' ? 'error' : 'info'}>
+              {form.pickup_option === 'schedule'
+                ? t('استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.', 'Courier pickup is currently unavailable. Choose No or Drop off.')
+                : t('استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.', 'Courier pickup is not currently available. Choose No or drop off at a DHL Service Point.')}
+              {role === 'admin' && <span className="block mt-1 text-[10px] font-mono opacity-80" data-testid="pickup-gate-admin">admin: DHL_PROD_PICKUP_ENABLED=false</span>}
             </Note>
           </div>
         )}
       </Section>
 
-      {form.pickup_option === 'schedule' && (
+      {form.pickup_option === 'schedule' && !bookingOff && (
         <>
           <Section title={t('نافذة الاستلام — متى قد يصل المندوب وتكون الشحنة جاهزة', 'Pickup Window — When courier may arrive and shipment is ready')} icon={<Clock size={18} className="text-indigo-600" />}>
             <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-4">

@@ -68,6 +68,19 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
    * `servicesSeq` when a newer refresh starts. An answer from an older generation / refresh is ignored —
    * it can never fill another draft. Nothing is retried.
    */
+  /**
+   * May a DHL courier be booked here (GET /dhl/options → features.pickup_booking, DHL_PROD_PICKUP_ENABLED
+   * on the server)? null = not known yet. The Backend stays authoritative either way.
+   */
+  const [pickupBookingEnabled, setPickupBookingEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(dhlShipmentService.options()).then(
+      (o) => { if (alive) setPickupBookingEnabled(typeof o?.features?.pickup_booking === 'boolean' ? o.features.pickup_booking : null); },
+      () => { if (alive) setPickupBookingEnabled(null); },
+    );
+    return () => { alive = false; };
+  }, []);
   const generation = useRef(0);
   const servicesSeq = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
@@ -395,6 +408,7 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
 
   return {
     form, update, shipment, setShipment, step, setStep, steps, loading, loadError, saving, dirty, errors, stepIssues,
+    pickupBookingEnabled,
     save, products, quotes, quote, quotedAt, servicesLoading, servicesError, servicesStale, fetchServices, toggleService, changeShipmentDate, chooseProduct, selecting,
     validate, validation, validating, validationCurrent: validatedJson === contentJson && !!validation,
     pricing, setPricing, dhlCost, create, createPhase, createError, result, setResult, reset, customs: needsCustoms(form),

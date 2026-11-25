@@ -643,6 +643,7 @@ const TRANSLATIONS: Array<[RegExp, string]> = [
   [/Paperless Trade: choose the customs invoice/i, 'Paperless Trade: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
   [/Create Invoice: choose the invoice type/i, 'إنشاء فاتورة: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
   [/Paperless Trade with your own invoice/i, 'Paperless Trade مع فاتورتك الخاصة يتطلب رفع ملف فاتورتك إلى DHL — غير متاح في SHIPPEC بعد'],
+  [/Courier pickup is not currently available/i, 'استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.'],
   [/Paperless Trade upload is turned off/i, 'رفع Paperless Trade متوقف على هذا الخادم — ألغِ الخيار أو راجع المسؤول'],
   [/An invoice date only goes with an invoice number/i, 'تاريخ الفاتورة يُرسل مع رقم الفاتورة فقط'],
   [/Latest pickup time must be after/i, 'آخر وقت للاستلام يجب أن يكون بعد أبكر وقت'],
@@ -961,6 +962,11 @@ export const PICKUP_LOCATION_LABELS: Record<Exclude<PickupLocationChoice, ''>, [
   reception: ['الاستقبال', 'Reception'], front: ['الواجهة / المدخل الأمامي', 'Front'], back: ['الخلف / المدخل الخلفي', 'Back'], other: ['مكان آخر', 'Other'],
 };
 export const PICKUP_TEXT_MAX = 80;
+/** Courier pickup switched off on the server (user-facing — the gate's name is for admins only). */
+export const PICKUP_UNAVAILABLE_TEXT: Record<CsLang, string> = {
+  ar: 'استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.',
+  en: 'Courier pickup is not currently available. Choose No or drop off at a DHL Service Point.',
+};
 function pickupLocationOut(f: Pick<WizardForm, 'pickup_location_choice' | 'pickup_location'>): string | null {
   if (f.pickup_location_choice === 'other') return f.pickup_location.trim() || null;
   if (f.pickup_location_choice) return PICKUP_LOCATION_VALUES[f.pickup_location_choice];
@@ -989,11 +995,13 @@ export function pickupSlots(earliest: string | null | undefined, latest: string 
  * latest after the earliest, and the details when the courier comes to «Other». No minimum window
  * length is invented (the MyDHL API states none; DHL's validation decides).
  */
-export function pickupGate(f: WizardForm, cap: { pickupEarliest?: string | null; pickupLatest?: string | null } | null, lang: CsLang = 'ar'): FieldErrors {
+export function pickupGate(f: WizardForm, cap: { pickupEarliest?: string | null; pickupLatest?: string | null } | null, lang: CsLang = 'ar', bookingOff = false): FieldErrors {
   const e: FieldErrors = {};
   const T = (ar: string, en: string) => tr(lang, ar, en);
   if (f.pickup_option === 'drop_off' && !f.service_point_id) e.service_point_id = T('اختر نقطة خدمة DHL تقبل التسليم.', 'Choose a DHL Service Point that accepts drop-off.');
   if (f.pickup_option !== 'schedule') return e;
+  // a courier cannot be booked here now (older draft): the person changes the choice — never silently changed
+  if (bookingOff) return { pickup_option: PICKUP_UNAVAILABLE_TEXT[lang] };
   const min = cap?.pickupEarliest?.slice(0, 5) ?? null;
   const max = cap?.pickupLatest?.slice(0, 5) ?? null;
   if (!f.pickup_earliest_time) e.pickup_earliest_time = T('اختر أبكر وقت للاستلام.', 'Choose the earliest pickup time.');

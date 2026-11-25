@@ -126,7 +126,7 @@ function Wizard({ draftId }: { draftId: number | null }) {
   const gateOf = (s: StepId): FieldErrors => (
     s === 'parties' ? partiesGate(form, lang) : s === 'details' ? detailsGate(form, lang) : s === 'customs' ? customsGate(form, lang)
       : s === 'payment' ? paymentGate(form, lang) : s === 'service' ? serviceGate(w.servicesStale && !!w.products?.length, lang)
-        : s === 'pickup' ? pickupGate(form, pickupCapabilitiesOf(w), lang) : {}
+        : s === 'pickup' ? pickupGate(form, pickupCapabilitiesOf(w), lang, w.pickupBookingEnabled === false) : {}
   );
   const blockedBefore = (target: number) => {
     for (const s of ['parties', 'details', 'customs', 'payment', 'service', 'pickup'] as const) {

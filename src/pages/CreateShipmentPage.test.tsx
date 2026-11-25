@@ -564,13 +564,62 @@ describe('«إنشاء شحنة» wizard', () => {
     await waitFor(() => expect(saved()).toMatchObject({ pickup_option: 'drop_off', service_point_id: 'DHA014', pickup_location: null, pickup_earliest_time: null }))
   })
 
-  it('Pickup: with DHL_PROD_PICKUP_ENABLED off the choice stays visible with a clear notice (validation refuses it — nothing is booked)', async () => {
-    svc.options.mockResolvedValue({ purposes: [], transport_payers: [], duties_payers: [], pickup_options: [], document_refetch_types: [], features: { paperless_upload: false, pickup_booking: false } })
+  const pickupOff = () => svc.options.mockResolvedValue({ purposes: [], transport_payers: [], duties_payers: [], pickup_options: [], document_refetch_types: [], features: { paperless_upload: false, pickup_booking: false } })
+
+  it('Pickup gate off (AR): «نعم — جدولة استلام» is disabled with «حجز مندوب DHL غير مفعّل حاليًا.»; «لا» / drop-off stay available; no internal variable name for a normal user; Next works with «لا»', async () => {
+    pickupOff()
     renderAt('/create-shipment?draft=5')
     await screen.findByText('عميل الاختبار')
     goStep(/الاستلام/)
-    expect((await screen.findByTestId('pickup-gate-off')).textContent).toMatch(/DHL_PROD_PICKUP_ENABLED/)
-    expect((pickupRadio(/نعم — جدولة استلام/) as HTMLButtonElement).disabled).toBe(false)
+    await waitFor(() => expect((pickupRadio(/نعم — جدولة استلام/) as HTMLButtonElement).disabled).toBe(true))
+    expect(pickupRadio(/نعم — جدولة استلام/).textContent).toContain('حجز مندوب DHL غير مفعّل حاليًا.')
+    expect(pickupRadio(/^لا/).getAttribute('aria-checked')).toBe('true') // the draft (and every new draft) stays on «لا»
+    expect((pickupRadio(/^لا/) as HTMLButtonElement).disabled).toBe(false)
+    expect((pickupRadio(/التسليم في نقطة خدمة DHL/) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByTestId('pickup-gate-off').textContent).toContain('استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.')
+    expect(document.body.textContent).not.toMatch(/DHL_PROD_PICKUP_ENABLED/)
+    fireEvent.click(pickupRadio(/نعم — جدولة استلام/))
+    expect(pickupRadio(/^لا/).getAttribute('aria-checked')).toBe('true')
+    next()
+    await waitFor(() => expect(screen.queryByTestId('pickup-step')).toBeNull())
+    expect(svc.getPickup).not.toHaveBeenCalled()
+  })
+
+  it('Pickup gate off (EN): an older draft still on «Schedule Pickup» must be changed explicitly — the notice says so, Next and the review are blocked until «No» or drop-off; an admin also sees the gate name', async () => {
+    pickupOff()
+    auth.role = 'admin'
+    svc.get.mockResolvedValue(shipment({ pickup_option: 'schedule', pickup_earliest_time: '10:00', pickup_latest_time: '17:00', pickup_location: 'Reception' }))
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Pickup/)
+    expect((await screen.findByTestId('pickup-gate-off')).textContent).toContain('Courier pickup is currently unavailable. Choose No or Drop off.')
+    expect(screen.getByTestId('pickup-gate-admin').textContent).toBe('admin: DHL_PROD_PICKUP_ENABLED=false')
+    expect(pickupRadio(/Yes — Schedule Pickup/).getAttribute('aria-checked')).toBe('true') // not silently changed
+    expect(screen.queryByTestId('pickup-window')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    expect(screen.getByTestId('pickup-step')).toBeTruthy() // blocked
+    goStep(/Review/)
+    expect(screen.getByTestId('pickup-step')).toBeTruthy()
+    fireEvent.click(pickupRadio(/^No/))
+    expect(screen.getByTestId('pickup-gate-off').textContent).toContain('Courier pickup is not currently available. Choose No or drop off at a DHL Service Point.')
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    await waitFor(() => expect(screen.queryByTestId('pickup-step')).toBeNull())
+    expect(screen.queryByText(/Courier pickup is currently unavailable/)).toBeNull() // no pickup blocker on the review
+  })
+
+  it('Pickup gate on: «Yes — Schedule Pickup» is selectable with Reception / Front / Back / Other (no code change needed)', async () => {
+    svc.options.mockResolvedValue({ purposes: [], transport_payers: [], duties_payers: [], pickup_options: [], document_refetch_types: [], features: { paperless_upload: false, pickup_booking: true } })
+    renderAt('/create-shipment?draft=5')
+    await screen.findByText('عميل الاختبار')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    goStep(/Pickup/)
+    await screen.findByText('Do you want to schedule a courier pickup?')
+    expect((pickupRadio(/Yes — Schedule Pickup/) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(pickupRadio(/Yes — Schedule Pickup/))
+    const where = screen.getByLabelText(/^Where should the courier pick up the shipment\?/) as HTMLSelectElement
+    expect([...where.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Select One', 'Reception', 'Front', 'Back', 'Other'])
+    expect(screen.queryByTestId('pickup-gate-off')).toBeNull()
   })
 
   it('review validates with DHL on entry; «إنشاء الشحنة» asks for confirmation and sends ONE create; success shows AWB, invoice and documents', async () => {

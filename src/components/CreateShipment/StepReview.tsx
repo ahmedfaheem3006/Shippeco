@@ -85,6 +85,9 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
   if (!form.client_id) blockers.push(t('اختر عميل SHIPPEC (صاحب الفاتورة)', 'Select the SHIPPEC customer (invoice owner)'));
   if (!form.product_code) blockers.push(t('اختر خدمة DHL', 'Choose a DHL service'));
   if (!priced) blockers.push(t('أدخل سعر البيع للعميل', 'Enter the selling price for the customer'));
+  if (form.pickup_option === 'schedule' && w.pickupBookingEnabled === false) {
+    blockers.push(t('استلام الشحنة بواسطة مندوب DHL غير متاح حاليًا. اختر "لا" أو التسليم في نقطة خدمة DHL.', 'Courier pickup is currently unavailable. Choose No or Drop off.'));
+  }
   if (w.pricing.cost_mode === 'manual' && w.pricing.manual_cost.trim() === '') blockers.push(t('أدخل تكلفة DHL أو اختر «غير معروفة»', 'Enter the DHL cost or choose «Unknown»'));
   if (w.servicesStale) blockers.push(t('حدّث خدمات DHL وأسعارها — تغيّرت بيانات الشحنة', 'Refresh the DHL services and prices — the shipment data changed'));
   const ready = blockers.length === 0 && validation?.ok && validation.dhl_validation.status === 'passed' && w.validationCurrent;
