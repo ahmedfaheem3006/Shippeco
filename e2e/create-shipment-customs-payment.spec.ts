@@ -102,6 +102,8 @@ for (const lang of ['ar', 'en'] as const) {
       await expect(customs.getByLabel(L('أرغب في إضافة رقم فاتورة', 'I would like to include an invoice number'))).toHaveCount(0)
       await expect(customs.getByLabel(new RegExp(`^${L('رقم الفاتورة', 'Invoice Number')}`))).toHaveCount(0)
       await expect(customs.getByTestId('generated-invoice')).toBeVisible()
+      // a draft the server has not completed yet: «Preparing invoice information…» — never an empty required field
+      await expect(customs.getByTestId('generated-invoice-pending')).toContainText(L('جارٍ تجهيز بيانات الفاتورة', 'Preparing invoice information'))
       await customs.getByLabel(new RegExp(`^${L('معلومات إضافية على الفاتورة', 'Additional Invoice Information')}`)).fill('Goods for exhibition')
       await customs.getByRole('button', { name: L('إضافة مستند آخر', 'Add Another') }).click()
       await customs.locator('[data-document="0"]').getByLabel(L('نوع المستند', 'Document type')).selectOption('COO')

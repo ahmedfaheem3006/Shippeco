@@ -20,7 +20,7 @@ import { Check, FilePlus2, FileText, Plus, Receipt, Trash2, Users } from 'lucide
 import { dhlShipmentService, type ShipmentOptions } from '../../services/dhlShipment.service';
 import { Button, ChoiceCards, Field, inputCls, Note, Section, SelectInput, TextInput } from './ui';
 import { useCsLang } from './csLang';
-import {
+import { issuedInvoice,
   CUSTOMS_DOCUMENT_ID_MAX, CUSTOMS_DOCUMENT_TYPES, customsGate, declarationOptions, declarationPreview, effectiveInvoiceType, invoiceTotals, itemTotals, kg, needsUsExportFiling,
   packageTotals, purposeLabel, remarkLines, REMARK_MAX, REMARKS_MAX_LINES, suggestedInvoiceType, translateIssue, type WizardForm,
 } from './wizardModel';
@@ -58,8 +58,8 @@ function Check2({ checked, onChange, label, description, disabled, testId }: {
 function GeneratedInvoice({ w }: { w: Wizard }) {
   const { t } = useCsLang();
   const sh = w.shipment;
-  const issued = sh && (sh['shipment_details_extra'] as { customs_invoice_mode?: string } | null)?.customs_invoice_mode === 'create' && sh.customs_invoice_number
-    ? { number: sh.customs_invoice_number, date: sh.customs_invoice_date } : null;
+  // the number the server issued for THIS draft (never a number the person typed for «own»)
+  const issued = issuedInvoice(sh);
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/30 p-3 sm:p-4" data-testid="generated-invoice">
       <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{t('رقم الفاتورة وتاريخها', 'Invoice Number and Date')}</h3>
@@ -69,7 +69,7 @@ function GeneratedInvoice({ w }: { w: Wizard }) {
           <div><dt className="text-[11px] font-bold text-slate-500">{t('تاريخ الفاتورة', 'Invoice Date')}</dt><dd className="font-extrabold tabular-nums" dir="ltr" data-testid="generated-invoice-date">{issued.date ?? '—'}</dd></div>
         </dl>
       ) : (
-        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300" data-testid="generated-invoice-pending">{t('يُصدره SHIPPEC تلقائيًا عند حفظ المسودة — لا حاجة لإدخاله.', 'Issued automatically by SHIPPEC when the draft is saved — nothing to enter.')}</p>
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300" data-testid="generated-invoice-pending" role="status">{t('جارٍ تجهيز بيانات الفاتورة… يُصدرها SHIPPEC تلقائيًا — لا حاجة لإدخال شيء.', 'Preparing invoice information… SHIPPEC issues it automatically — nothing to enter.')}</p>
       )}
       <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">{t('تُصدر SHIPPEC رقم الفاتورة وتاريخها (بتاريخ بلد المرسل) وتطبعهما DHL على الفاتورة التي تُنشئها.', "SHIPPEC issues the invoice number and date (the sender's date) and DHL prints them on the invoice it creates.")}</p>
     </div>

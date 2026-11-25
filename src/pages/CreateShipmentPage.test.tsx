@@ -1619,7 +1619,7 @@ describe('«إنشاء شحنة» wizard', () => {
 
   const intlDraft = (over: Record<string, unknown> = {}) => shipment({
     customs_required: true, content_type: 'goods', is_domestic: false, receiver_country_code: 'AE', receiver_city: 'Dubai', receiver_postal_code: null,
-    currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: null, customs_invoice_number: 'PI-2026-0118', customs_invoice_date: '2026-11-19',
+    currency: 'SAR', incoterm: 'DAP', shipment_purpose: 'gift', content_description: "Men's cotton T-shirt", dhl_invoice_type: null, customs_invoice_number: 'CI-ABC123', customs_invoice_date: '2026-11-19',
     shipment_details_extra: { customs_invoice_mode: 'create' },
     items: [{ line_number: 1, description: "Men's cotton T-shirt", quantity: 2, unit: 'PCS', unit_value: '10.000', currency: 'SAR', country_of_origin: 'CN',
       outbound_hs_code: null, inbound_hs_code: null, unit_net_weight_kg: '0.200', unit_gross_weight_kg: null, line_gross_weight_kg: '0.400' }],
@@ -1645,7 +1645,7 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(step.getByTestId('invoice-type-preselected').textContent).toMatch(/محدّدة تلقائيًا من غرض الشحنة/)
     expect(step.getByTestId('invoice-type-suggestion').textContent).toMatch(/هدية.*فاتورة مبدئية/)
     // the invoice number / date: issued by SHIPPEC and shown read-only — no input to fill
-    expect(step.getByTestId('generated-invoice-number').textContent).toBe('PI-2026-0118')
+    expect(step.getByTestId('generated-invoice-number').textContent).toBe('CI-ABC123')
     expect(step.getByTestId('generated-invoice-date').textContent).toBe('2026-11-19')
     expect(step.queryByLabelText(/^رقم الفاتورة/)).toBeNull()
     expect(step.queryByLabelText(/^تاريخ الفاتورة/)).toBeNull()
@@ -1686,6 +1686,49 @@ describe('«إنشاء شحنة» wizard', () => {
     await waitFor(() => expect(screen.queryByTestId('customs-step')).toBeNull())
   })
 
+  it('Legacy «Create Invoice» draft (AR + EN, production draft 9 shape): no invoice number / date stored → «Preparing invoice information…», nothing to type, Customs not red, Next works; the server-issued number appears after Products; a number the person typed is never shown as SHIPPEC-issued; Review «Validate again» replaces a stale Customs error', async () => {
+    svc.options.mockResolvedValue(OPTIONS(false))
+    const legacy = intlDraft({ customs_invoice_number: null, customs_invoice_date: null, dhl_invoice_type: null, shipment_details_extra: null, shipment_purpose: 'gift', available_products: null, rate_quotes: null })
+    const healed = intlDraft({ dhl_invoice_type: 'proforma', customs_invoice_number: 'CI-ABC123', customs_invoice_date: '2026-11-25' })
+    const step = within(await openCustoms(legacy))
+    expect(step.getByRole('radio', { name: /إنشاء فاتورة/ }).getAttribute('aria-checked')).toBe('true')
+    expect(step.getByTestId('generated-invoice-pending').textContent).toMatch(/جارٍ تجهيز بيانات الفاتورة/)
+    expect(step.queryByTestId('generated-invoice-number')).toBeNull()
+    expect(step.queryByLabelText(/^رقم الفاتورة/)).toBeNull()
+    expect(step.queryByLabelText(/^تاريخ الفاتورة/)).toBeNull()
+    expect(step.queryByRole('alert')).toBeNull()
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    expect(step.getByTestId('generated-invoice-pending').textContent).toMatch(/Preparing invoice information/)
+    expect(screen.getByRole('button', { name: /^\d+\. Customs/ }).getAttribute('aria-label')).not.toMatch(/has errors/)
+    // Products: the server completes the draft → the wizard shows the issued number (read-only)
+    svc.checkProducts.mockResolvedValue({ products: PRODUCTS })
+    svc.checkRates.mockResolvedValue({ quotes: [QUOTE] })
+    svc.get.mockResolvedValue(healed)
+    goStep(/Service/)
+    await waitFor(() => expect(svc.checkProducts).toHaveBeenCalledWith(5))
+    await waitFor(() => expect(svc.get).toHaveBeenCalledTimes(2))
+    goStep(/Customs/)
+    const again = within(await screen.findByTestId('customs-step'))
+    expect(again.getByTestId('generated-invoice-number').textContent).toBe('CI-ABC123')
+    expect(again.getByTestId('generated-invoice-date').textContent).toBe('2026-11-25')
+    // Review: a stale Customs error from an earlier validation is replaced by the CURRENT server answer
+    svc.validate.mockResolvedValueOnce({ ok: false, issues: [{ field: 'customs', message: 'Customs invoice information is incomplete' }], warnings: [], dhl_validation: { status: 'failed', message: 'x' }, shipment: healed })
+    goStep(/Review/)
+    await waitFor(() => expect(screen.getByText(/Errors blocking creation \(1\)/)).toBeTruthy())
+    expect(screen.getByRole('button', { name: /^\d+\. Customs/ }).getAttribute('aria-label')).toMatch(/has errors/)
+    svc.validate.mockResolvedValueOnce({ ok: true, issues: [], warnings: [], notices: [], dhl_validation: { status: 'passed', message: null }, shipment: healed })
+    fireEvent.click(screen.getByRole('button', { name: 'Validate again' }))
+    await waitFor(() => expect(screen.queryByText(/Errors blocking creation/)).toBeNull())
+    expect(screen.queryByText(/Customs invoice information is incomplete/)).toBeNull()
+    expect(screen.getByRole('button', { name: /^\d+\. Customs/ }).getAttribute('aria-label')).not.toMatch(/has errors/)
+  })
+
+  it('«Create Invoice» never shows a number the person typed (an older own number) as SHIPPEC-issued', async () => {
+    const step = within(await openCustoms(intlDraft({ customs_invoice_number: 'MY-OLD-9', dhl_invoice_type: 'proforma' })))
+    expect(step.queryByText('MY-OLD-9')).toBeNull()
+    expect(step.getByTestId('generated-invoice-pending')).toBeTruthy()
+  })
+
   it('Customs Invoice: Paperless follows the server switch (unavailable → cannot be chosen, never pretended); Use My Own Invoice (EN) asks «My Invoice Number» and drops DHL-invoice fields; AR ↔ EN keeps the data', async () => {
     svc.options.mockResolvedValue(OPTIONS(false))
     const step = within(await openCustoms(intlDraft({ dhl_invoice_type: 'commercial' })))
@@ -1722,7 +1765,7 @@ describe('«إنشاء شحنة» wizard', () => {
     const us = intlDraft({
       shipper_country_code: 'US', shipper_city: 'Newark', shipper_postal_code: '19711', shipper_province: 'DE', shipper_address_line1: '742 Test Lane', shipper_address_line2: null,
       shipper_address_line3: null, shipper_phone: '+13025550100', receiver_country_code: 'CA', receiver_city: 'Toronto', receiver_postal_code: 'M5V 2T6',
-      customs_invoice_number: 'INV-9', dhl_invoice_type: 'commercial', invoice_remarks: ['Line A'], declaration_statements: ['certificate_of_origin'],
+      customs_invoice_number: 'CI-ABC123', dhl_invoice_type: 'commercial', invoice_remarks: ['Line A'], declaration_statements: ['certificate_of_origin'],
       customs_documents: [{ type_code: 'EXL', value: 'EL-4471' }], shipment_details_extra: { customs_invoice_mode: 'create' },
     })
     const step = within(await openCustoms(us))
@@ -1731,7 +1774,7 @@ describe('«إنشاء شحنة» wizard', () => {
     expect(usmca.disabled).toBe(true)
     expect(usmca.checked).toBe(false)
     // reloaded: Create Invoice, the issued number shown, remarks, statement, document
-    expect(step.getByTestId('generated-invoice-number').textContent).toBe('INV-9')
+    expect(step.getByTestId('generated-invoice-number').textContent).toBe('CI-ABC123')
     expect((step.getByLabelText(/^معلومات إضافية على الفاتورة/) as HTMLTextAreaElement).value).toBe('Line A')
     expect((within(step.getByTestId('declaration-certificate_of_origin')).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
     expect((within(step.getByTestId('customs-documents')).getByLabelText('رقم المستند') as HTMLInputElement).value).toBe('EL-4471')

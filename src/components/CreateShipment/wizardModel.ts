@@ -652,6 +652,9 @@ const TRANSLATIONS: Array<[RegExp, string]> = [
   [/Customs invoice information is incomplete: the invoice date is required/i, 'بيانات الفاتورة الجمركية غير مكتملة: تاريخ الفاتورة مطلوب'],
   [/Customs invoice information is incomplete: choose the invoice type/i, 'بيانات الفاتورة الجمركية غير مكتملة: اختر نوع الفاتورة التي تُنشئها DHL (تجارية / مبدئية)'],
   [/Customs invoice information is incomplete/i, 'بيانات الفاتورة الجمركية غير مكتملة.'],
+  [/DHL requires the Incoterm on the customs declaration/i, 'تطلب DHL شرط التسليم (Incoterm) في الإقرار الجمركي'],
+  [/DHL requires .* on the customs declaration/i, 'تطلب DHL بيانات إضافية في الإقرار الجمركي — راجع خطوة الجمارك ثم أعد التحقق'],
+  [/DHL refused the customs declaration data/i, 'رفضت DHL بيانات الإقرار الجمركي — راجع خطوة الجمارك ثم أعد التحقق'],
   [/DHL refused this customs line item/i, 'رفضت DHL هذا البند الجمركي — راجع الوصف والكمية والقيمة والأوزان وبلد المنشأ'],
   [/DHL refused the sender \(From\) details/i, 'رفضت DHL بيانات المرسل (من) — راجع العنوان وبيانات الاتصال'],
   [/DHL refused the receiver \(To\) details/i, 'رفضت DHL بيانات المستلم (إلى) — راجع العنوان وبيانات الاتصال'],
@@ -698,6 +701,9 @@ const DHL_TRANSLATIONS: Array<[RegExp, string]> = [
   [/destination location is invalid/i, 'DHL لم تتعرف على عنوان المستلم — تحقق من المدينة والرمز البريدي والدولة'],
   [/origin location is invalid/i, 'DHL لم تتعرف على عنوان المرسل — تحقق من المدينة والرمز البريدي والدولة'],
   [/^7142\b|shipment data validation has failed/i, 'رفضت DHL بيانات الشحنة دون سبب محدد — راجع البيانات أو أعد المحاولة لاحقًا'],
+  // DHL 7147: the description matches a DHL keyword that is too general (e.g. "UNIQUE SHOES") — a real action for the person
+  [/line item description.*Match Keyword/i, 'وصف هذا البند عام جدًا لدى DHL — اكتب وصفًا أدق (نوع المنتج ومادته واستخدامه)'],
+  [/description.*Match Keyword/i, 'وصف محتوى الشحنة عام جدًا لدى DHL — اكتب وصفًا أدق (نوع المنتج ومادته واستخدامه)'],
 ];
 
 /** Backend / DHL message in the page language: Arabic for the common rules; English = as the Backend wrote it. */
@@ -881,6 +887,17 @@ export const CUSTOMS_DOCUMENT_TYPES: Array<{ code: string; ar: string; en: strin
   { code: 'HLC', ar: 'شهادة صحية', en: 'Health certificate' },
 ];
 /** Purpose → the invoice DHL usually generates (a suggestion shown to the person — never chosen silently). */
+/**
+ * The «Create Invoice» number / date SHIPPEC issued for this draft (CI-<reference suffix>, the sender's date) —
+ * only when the stored number really is the issued one (never the person's own number from «Use My Own Invoice»).
+ * null while the server has not issued it yet (an older draft is completed at its next products / rates / validation).
+ */
+export function issuedInvoice(sh: { shippec_reference?: unknown; customs_invoice_number?: unknown; customs_invoice_date?: unknown } | null | undefined): { number: string; date: string | null } | null {
+  if (!sh?.customs_invoice_number || typeof sh.shippec_reference !== 'string') return null;
+  const expected = `CI-${sh.shippec_reference.replace(/^SHIPPEC-/, '')}`.slice(0, 35);
+  return sh.customs_invoice_number === expected ? { number: expected, date: sh.customs_invoice_date ? String(sh.customs_invoice_date) : null } : null;
+}
+
 export function suggestedInvoiceType(p: ShipmentPurpose | ''): 'commercial' | 'proforma' | null {
   if (p === 'commercial') return 'commercial';
   if (p === 'gift' || p === 'personal_not_for_resale' || p === 'sample') return 'proforma';

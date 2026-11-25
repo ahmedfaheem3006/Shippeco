@@ -11,7 +11,7 @@ import {
   dhlShipmentService, type CreateResult, type DhlShipment, type Issue, type ProductOption, type RateQuote, type ValidationResult,
 } from '../../services/dhlShipment.service';
 import {
-  availabilityKey, emptyForm, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, toggleOptionalService, visibleSteps,
+  availabilityKey, emptyForm, issuedInvoice, fromShipment, issuesToErrors, needsCustoms, routeIssuesText, routeSnapshot, toContent, toggleOptionalService, visibleSteps,
   type FieldErrors, type StepId, type WizardForm,
 } from './wizardModel';
 import { useCsLang } from './csLang';
@@ -243,7 +243,11 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
         return { kind: 'no_date', message: T('لا توجد خدمة DHL متاحة في تاريخ الشحن المحدد. اختر تاريخًا آخر.', 'No DHL service is available for the selected shipment date. Choose another date.'), dhlCode: raw?.dhl_code ?? null };
       }
       if (err.code === 'CUSTOMS_INVOICE_INCOMPLETE') {
-        return { kind: 'local', message: T('بيانات الفاتورة الجمركية غير مكتملة. أكمل رقم الفاتورة وتاريخها في خطوة الجمارك.', 'Customs invoice information is incomplete. Complete the invoice number and date on the Customs step.') };
+        // «Create Invoice»: SHIPPEC issues the number / date — only the invoice type can be missing there
+        const onlyType = issuesOf(err).length > 0 && issuesOf(err).every((i) => i.field === 'dhl_invoice_type');
+        return onlyType
+          ? { kind: 'local', message: T('اختر نوع الفاتورة التي تُنشئها DHL في خطوة الجمارك.', 'Choose the invoice type DHL creates on the Customs step.') }
+          : { kind: 'local', message: T('بيانات الفاتورة الجمركية غير مكتملة. أكمل رقم الفاتورة وتاريخها في خطوة الجمارك.', 'Customs invoice information is incomplete. Complete the invoice number and date on the Customs step.') };
       }
       if (err.code === 'CONTENT_CHANGED' || err.code === 'PRODUCTS_STALE' || err.code === 'QUOTE_STALE') {
         return { kind: 'stale', message: T('تغيّرت بيانات الشحنة. حدّث الخدمات والأسعار.', 'Shipment data changed. Refresh services and prices.') };
@@ -289,6 +293,10 @@ export function useShipmentWizard(opts: { draftId?: number | null } = {}) {
       const p = await dhlShipmentService.checkProducts(sh.id);
       if (!current()) return;
       noteDates(f, { [f.shipment_date]: 'available' });
+      // an older «Create Invoice» draft gets its invoice number / date on the server at this call: show them
+      if (needsCustoms(f) && f.customs_invoice_mode === 'create' && !issuedInvoice(sh)) {
+        void dhlShipmentService.get(sh.id).then((x) => { if (current()) setShipment(x); }, () => { /* shown at the next save / validation */ });
+      }
       let r: Awaited<ReturnType<typeof dhlShipmentService.checkRates>> | null = null;
       let ratesErr: unknown = null;
       try { r = await dhlShipmentService.checkRates(sh.id); } catch (e) { ratesErr = e; }

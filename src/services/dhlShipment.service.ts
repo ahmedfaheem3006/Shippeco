@@ -291,10 +291,14 @@ export interface DraftListRow {
   updated_at: string;
 }
 
+/** Information from DHL's own answers shown with a validation (never a warning, never blocking). */
+export interface DhlNotice { field: string; code: string; message: string }
+
 export interface ValidationResult {
   ok: boolean;
   issues: Issue[];
   warnings: Issue[];
+  notices?: DhlNotice[];
   dhl_validation: { status: string; message: string | null };
   shipment: DhlShipment;
 }

@@ -6,7 +6,7 @@ import {
   visibleSteps, type WizardForm,
   chargeRows, dateParts, dhlDateTime, goGreenOf, optionalServiceRows, originToday, shipDateCards, shipDateRange, toggleOptionalService,
   needsOriginOffset, originOffset, senderTimeZone,
-  pickupGate, pickupLocationIn, pickupSlots, effectiveInvoiceType,
+  pickupGate, pickupLocationIn, pickupSlots, effectiveInvoiceType, issuedInvoice,
 } from './wizardModel';
 import { applyAddress, applyCity, applyContact, clearAddress, contactFieldsOf, normalizeShortAddress, withCountry } from './partiesModel';
 import { normalizeSubdivision } from './geoRules';
@@ -487,5 +487,27 @@ describe('wizard model', () => {
     expect(canShipment('manager', 'contacts_manage')).toBe(true);
     expect(canShipment('accountant', 'contacts_read')).toBe(false);
     expect(canShipment('viewer', 'contacts_read')).toBe(false);
+  });
+});
+
+describe('«Create Invoice» issued metadata + DHL declaration messages', () => {
+  it('issuedInvoice: only the number SHIPPEC issued for THIS draft (CI-<reference suffix>), never a typed own number', () => {
+    expect(issuedInvoice({ shippec_reference: 'SHIPPEC-698CD72FD3EC', customs_invoice_number: 'CI-698CD72FD3EC', customs_invoice_date: '2026-11-25' }))
+      .toEqual({ number: 'CI-698CD72FD3EC', date: '2026-11-25' });
+    expect(issuedInvoice({ shippec_reference: 'SHIPPEC-698CD72FD3EC', customs_invoice_number: 'MY-OLD-9', customs_invoice_date: '2026-11-01' })).toBeNull();
+    expect(issuedInvoice({ shippec_reference: 'SHIPPEC-698CD72FD3EC', customs_invoice_number: null })).toBeNull();
+    expect(issuedInvoice(null)).toBeNull();
+  });
+
+  it('translates the declaration refusals by meaning (never «invoice incomplete» for another key) and DHL 7147 keeps its code', () => {
+    expect(translateIssue('DHL requires the Incoterm on the customs declaration', 'ar')).toBe('تطلب DHL شرط التسليم (Incoterm) في الإقرار الجمركي');
+    expect(translateIssue('DHL refused the customs declaration data — check the Customs step and validate again', 'ar')).toMatch(/الإقرار الجمركي/);
+    expect(translateIssue('7147 : The shipment description Match Keyword[Description:UNIQUE SHOES]. Please update the description and retry.', 'ar'))
+      .toBe('وصف محتوى الشحنة عام جدًا لدى DHL — اكتب وصفًا أدق (نوع المنتج ومادته واستخدامه) (DHL 7147)');
+    expect(translateIssue('7147 : The export line item description Match Keyword[Description:UNIQUE SHOES]. Please update the description and retry.', 'ar'))
+      .toBe('وصف هذا البند عام جدًا لدى DHL — اكتب وصفًا أدق (نوع المنتج ومادته واستخدامه) (DHL 7147)');
+    expect(locateIssue('items[1].description')).toEqual({ step: 'details', key: 'items.0.description' });
+    expect(locateIssue('content_description').step).toBe('details');
+    expect(locateIssue('incoterm').step).toBe('payment');
   });
 });

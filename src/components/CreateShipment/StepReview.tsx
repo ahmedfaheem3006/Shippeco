@@ -10,7 +10,7 @@ import { useAuthStore } from '../../hooks/useAuthStore';
 import { Button, Note, Section, Stat } from './ui';
 import { ChargeTable } from './StepService';
 import { useCsLang } from './csLang';
-import {
+import { issuedInvoice,
   ALL_STEPS, canShipment, composePhone, countryName, effectiveInvoiceType, isInternational, itemTotals, kg, locateIssue, maskAccount, money, optionalServiceRows, packageTotals, PICKUP_LOCATION_LABELS, purposeLabel, stepLabel,
   translateIssue, type StepId,
 } from './wizardModel';
@@ -69,8 +69,9 @@ export function StepReview({ w, onGo }: { w: Wizard; onGo: (s: StepId) => void }
   // the customs invoice DHL receives: «Create Invoice» → SHIPPEC-issued (stored on the draft); «own» → typed
   const invType = effectiveInvoiceType(form);
   const ownInvoice = form.customs_invoice_mode === 'own';
-  const invoiceNumber = ownInvoice ? form.customs_invoice_number.trim() : String(w.shipment?.customs_invoice_number ?? '');
-  const invoiceDate = ownInvoice ? form.customs_invoice_date.trim() : String(w.shipment?.customs_invoice_date ?? '');
+  const issued = issuedInvoice(w.shipment);
+  const invoiceNumber = ownInvoice ? form.customs_invoice_number.trim() : issued?.number ?? '';
+  const invoiceDate = ownInvoice ? form.customs_invoice_date.trim() : issued?.date ?? '';
   // the optional services as they go to DHL (WY / DD are SHIPPEC's own, shown elsewhere)
   const chosen = form.service_codes.filter((c) => c !== 'WY' && c !== 'DD');
   const rows = optionalServiceRows(quote, chosen, lang).filter((r) => r.selected);
