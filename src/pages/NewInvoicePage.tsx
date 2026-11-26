@@ -17,10 +17,14 @@ import {
   Box, Truck, AlertCircle, CheckCircle2,
   ArrowRight, FileText, User, CreditCard,
   Package, Hash, Calendar, ClipboardList,
-  Banknote, Weight, Ruler
+  Banknote, Weight, Ruler, UserPlus
 } from 'lucide-react'
 import { SearchableClientInput } from '../components/shared/SearchableClientInput'
 import { SearchableSelect } from '../components/shared/SearchableSelect'
+import { QuickAddCustomerModal, type CreatedCustomer } from '../components/shared/QuickAddCustomerModal'
+import { useAuthStore } from '../hooks/useAuthStore'
+import { canCreateCustomer } from '../utils/customerPermissions'
+import { toast } from 'react-hot-toast'
 
 type CalcKind = 'economy' | 'local' | 'import' | 'export'
 
@@ -103,6 +107,20 @@ export function NewInvoicePage() {
   const [calcError, setCalcError] = useState<string | null>(null)
   const [surchargesState, setSurchargesState] = useState<Record<string, boolean>>({})
   const priceRef = useRef<HTMLInputElement | null>(null)
+  // quick add customer: only the roles the Backend lets create customers (POST /clients)
+  const canAddCustomer = canCreateCustomer(useAuthStore((s) => s.user?.role))
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false)
+  // the saved customer becomes the invoice customer (by id); every other field is left as typed
+  const selectCreatedCustomer = useCallback((c: CreatedCustomer) => {
+    setDraft((p) => ({
+      ...p,
+      client: c.name,
+      clientId: c.id,
+      phone: c.phone || p.phone,
+      clientEmail: c.email || p.clientEmail,
+    }))
+    toast.success('تمت إضافة العميل واختياره للفاتورة')
+  }, [])
 
   useEffect(() => {
     if (step === 2 && mode === 'direct') {
@@ -723,23 +741,35 @@ export function NewInvoicePage() {
               <User size={18} />
             </div>
             <div className={styles.sectionTitle}>بيانات العميل</div>
+            {canAddCustomer && (
+              <button type="button" className={styles.addCustomerBtn} onClick={() => setAddCustomerOpen(true)} data-testid="invoice-add-customer">
+                <UserPlus size={15} /> إضافة عميل جديد
+              </button>
+            )}
           </div>
           <div className={styles.sectionBody} style={{ gridTemplateColumns: '1fr' }}>
             <SearchableClientInput
               nameValue={draft.client}
               phoneValue={draft.phone}
-              onNameChange={(val) => setDraft((p) => ({ ...p, client: val }))}
+              // a different name is a different customer → back to name + phone matching
+              onNameChange={(val) => setDraft((p) => ({ ...p, client: val, clientId: undefined }))}
               onPhoneChange={(val) => setDraft((p) => ({ ...p, phone: val }))}
               onSelect={(name, phone, email, category) =>
                 setDraft((p) => ({
                   ...p,
                   client: name,
+                  clientId: undefined,
                   phone: phone,
                   clientEmail: email || '',
                   collection_category: category || p.collection_category || 'B',
                 }))
               }
             />
+            {draft.clientId ? (
+              <div className={styles.linkedCustomer} data-testid="invoice-linked-customer" role="status">
+                <CheckCircle2 size={14} /> العميل مرتبط بالفاتورة: <strong>{draft.client}</strong> <span dir="ltr">#{draft.clientId}</span>
+              </div>
+            ) : null}
             <div className={styles.field} style={{ marginTop: '0.75rem' }}>
               <label className={styles.fieldLabel}>البريد الإلكتروني للعميل {draft.payment === 'سداد إلكتروني' ? '*' : '(اختياري)'}</label>
               <input
@@ -978,6 +1008,8 @@ export function NewInvoicePage() {
           </button>
         </div>
       </div>
+
+      <QuickAddCustomerModal open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onCreated={selectCreatedCustomer} />
     </div>
   )
 }

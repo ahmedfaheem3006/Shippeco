@@ -20,6 +20,8 @@ vi.mock('../hooks/useAuthStore', () => ({
   useAuthStore: Object.assign((sel: (s: unknown) => unknown) => sel({ user: { id: 1, role: auth.role }, token: 't' }), { getState: () => ({ token: 't', user: { id: 1, role: auth.role } }) }),
 }))
 vi.mock('react-hot-toast', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
+const customers = vi.hoisted(() => ({ createClient: vi.fn() }))
+vi.mock('../services/clientService', () => ({ clientService: customers }))
 
 import { CreateShipmentPage } from './CreateShipmentPage'
 import { ApiError } from '../utils/apiClient'
@@ -1976,5 +1978,87 @@ describe('«إنشاء شحنة» header — «جميع الشحنات»', () =>
     expect(screen.getByTestId('all-shipments-button').textContent).toContain('All Shipments')
     fireEvent.click(screen.getByTestId('all-shipments-button'))
     expect((await screen.findByTestId('subpage')).textContent).toBe('ALL SHIPMENTS')
+  })
+})
+
+describe('«إنشاء شحنة» — «إضافة عميل جديد» (quick add SHIPPEC customer)', () => {
+  const NEW = { id: 412, name: 'شركة النخبة', phone: '0551112222', email: null, company: null, city: 'الرياض', address: null, tax_number: null }
+  const partyValues = () => ({
+    names: screen.getAllByLabelText(/^(الاسم|Name)/).map((el) => (el as HTMLInputElement).value),
+    cities: screen.getAllByLabelText(/^(المدينة|City)/).map((el) => (el as HTMLInputElement).value),
+  })
+  const draftWithoutCustomer = () => svc.get.mockResolvedValue(shipment({ client_id: null, client_name: null }))
+
+  it('opens the shared modal next to the customer search; the saved customer is selected and the draft keeps its id, sender and receiver', async () => {
+    auth.role = 'admin'
+    draftWithoutCustomer()
+    svc.updateDraft.mockImplementation(async (_id: number, c: Record<string, unknown>) => shipment({ client_id: c.client_id, client_name: 'شركة النخبة' }))
+    customers.createClient.mockResolvedValue(NEW)
+    renderAt('/create-shipment?draft=5')
+    const btn = await screen.findByTestId('shipment-add-customer')
+    expect(btn.textContent).toContain('إضافة عميل جديد')
+    expect(screen.getByLabelText(/^عميل SHIPPEC/)).toBeTruthy() // the search stays right there
+    const before = partyValues()
+    expect(before.names).toEqual(['Sara Operations', 'Omar'])
+    fireEvent.click(btn)
+    const dialog = screen.getByRole('dialog', { name: 'إضافة عميل جديد' })
+    fireEvent.change(within(dialog).getByLabelText('الاسم الكامل *'), { target: { value: 'شركة النخبة' } })
+    fireEvent.change(within(dialog).getByLabelText('رقم الجوال'), { target: { value: '0551112222' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /حفظ وإضافة/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(customers.createClient).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('شركة النخبة')).toBeTruthy() // selected invoice owner
+    expect(screen.queryByTestId('shipment-add-customer')).toBeNull()
+    expect(partyValues()).toEqual(before) // DHL sender / receiver untouched
+    // the same draft (id 5) is saved with the new customer id — no new draft
+    fireEvent.click(screen.getByRole('button', { name: /حفظ المسودة/ }))
+    await waitFor(() => expect(svc.updateDraft).toHaveBeenCalledWith(5, expect.objectContaining({ client_id: 412 })))
+    const sent = svc.updateDraft.mock.calls[0][1] as { shipper: Record<string, unknown>; receiver: Record<string, unknown> }
+    expect(sent.shipper).toMatchObject({ contact: 'Sara Operations', company: 'Shippec Trading', city: 'Dammam' })
+    expect(sent.receiver).toMatchObject({ contact: 'Omar', city: 'Khobar' })
+    expect(svc.createDraft).not.toHaveBeenCalled()
+  })
+
+  it('a failed save keeps the wizard as it was (no customer, same parties, nothing saved)', async () => {
+    auth.role = 'accountant'
+    draftWithoutCustomer()
+    customers.createClient.mockRejectedValue(new ApiError('boom', 500))
+    renderAt('/create-shipment?draft=5')
+    fireEvent.click(await screen.findByTestId('shipment-add-customer'))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('الاسم الكامل *'), { target: { value: 'شركة النخبة' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /حفظ وإضافة/ }))
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('حدث خطأ في الخادم')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(partyValues().names).toEqual(['Sara Operations', 'Omar'])
+    expect(screen.getByTestId('shipment-add-customer')).toBeTruthy() // still no customer selected
+    expect(svc.updateDraft).not.toHaveBeenCalled()
+    expect(svc.createDraft).not.toHaveBeenCalled()
+  })
+
+  it('English (LTR): «Add New Customer» and an English form', async () => {
+    auth.role = 'admin'
+    draftWithoutCustomer()
+    renderAt('/create-shipment?draft=5')
+    await screen.findByTestId('shipment-add-customer')
+    fireEvent.click(within(screen.getByTestId('cs-lang-toggle')).getByRole('radio', { name: 'EN' }))
+    const btn = screen.getByTestId('shipment-add-customer')
+    expect(btn.textContent).toContain('Add New Customer')
+    fireEvent.click(btn)
+    const dialog = screen.getByRole('dialog', { name: 'Add New Customer' })
+    expect(dialog.getAttribute('dir')).toBe('ltr')
+    expect(within(dialog).getByLabelText('Full Name *')).toBeTruthy()
+  })
+
+  it('roles the Backend does not let create customers (manager / employee) only search', async () => {
+    draftWithoutCustomer()
+    for (const role of ['manager', 'employee']) {
+      auth.role = role
+      renderAt('/create-shipment?draft=5')
+      expect(await screen.findByLabelText(/^عميل SHIPPEC/)).toBeTruthy()
+      expect(screen.queryByTestId('shipment-add-customer')).toBeNull()
+      cleanup()
+    }
   })
 })

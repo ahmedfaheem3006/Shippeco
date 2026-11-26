@@ -106,6 +106,8 @@ export type Invoice = {
   // ═══ ربط دفترة ═══
   daftra_id?: string
   daftra_client_id?: string
+  /** SHIPPEC customer (clients.id) — sent when the customer was picked by id (quick add). */
+  client_id?: number
 
   // ═══ بيانات الإنشاء ═══
   created_by?: string

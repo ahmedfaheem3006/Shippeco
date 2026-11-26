@@ -8,6 +8,9 @@ export type InvoiceDraftInput = {
   client: string
   phone: string
   clientEmail: string
+  /** clients.id of a customer chosen by id (quick add). Unset → the Backend
+   *  links the invoice by name + phone, as before (customerIdentity.ts). */
+  clientId?: number
   collection_category?: string
   itemType: string
   carrier: string
@@ -124,6 +127,7 @@ export function toInvoiceFromDraft(
   return {
     id,
     client: draft.client || '—',
+    client_id: draft.clientId || undefined,
     phone: draft.phone || undefined,
     client_email: draft.clientEmail || undefined,
     awb: draft.awb || undefined,

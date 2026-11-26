@@ -26,7 +26,7 @@
  */
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, Building2, Database, Eraser, Info, Loader2, MapPin, Plus, Search, Trash2, User, UserCheck, X,
+  ArrowLeftRight, Building2, Database, Eraser, Info, Loader2, MapPin, Plus, Search, Trash2, User, UserCheck, UserPlus, X,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '../../utils/apiClient';
@@ -37,6 +37,8 @@ import {
   addressLookupService, duplicatesOf, shippingContactsService, type AddressSuggestion, type PostalLocality, type SavedContact,
 } from '../../services/shippingContacts.service';
 import { Dialog } from '../shared/Dialog';
+import { QuickAddCustomerModal, type CreatedCustomer } from '../shared/QuickAddCustomerModal';
+import { canCreateCustomer } from '../../utils/customerPermissions';
 import { Button, Field, Section, TextInput, inputCls } from './ui';
 import { useCsLang, type CsLang } from './csLang';
 import { listKeyHandler, useLookup, useOutside, type LookupStatus } from './useLookup';
@@ -750,6 +752,17 @@ function ClientPicker({ w, error, t }: { w: Wizard; error: string | null; t: T }
   };
   const selected = form.client_id ? { id: form.client_id, name: form.client_name } : null;
   const show = open && r.status !== 'idle';
+  // quick add: POST /clients is admin / accountant on the Backend — other roles keep searching only
+  const { lang } = useCsLang();
+  const canAdd = canCreateCustomer(useAuthStore((s) => s.user?.role));
+  const [adding, setAdding] = useState(false);
+  const onCreated = (c: CreatedCustomer) => {
+    // only the invoice owner changes — sender, receiver, packages, customs, service and the draft id stay as they are
+    update((f) => ({ ...f, client_id: c.id, client_name: c.name }));
+    setOpen(false);
+    setQ('');
+    toast.success(t('تمت إضافة العميل واختياره', 'Customer added and selected'));
+  };
   return (
     <div ref={box} className="space-y-2">
       {selected ? (
@@ -763,7 +776,8 @@ function ClientPicker({ w, error, t }: { w: Wizard; error: string | null; t: T }
         <Field label={t('عميل SHIPPEC (صاحب الفاتورة)', 'SHIPPEC Customer (Invoice Owner)')} required error={error}
           hint={t('ابحث باسم العميل أو الجوال — اختيار صاحب الفاتورة لا يستبدل بيانات المرسل أو المستلم.', 'Search by customer name or mobile. Selecting the invoice customer does not replace sender or receiver shipment details.')}>
           {(id) => (
-            <div className="relative">
+            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1 min-w-0">
               <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <TextInput id={id} value={q} onValue={(v) => { setQ(v); setOpen(true); setActive(0); }} className="ps-9" error={error}
                 placeholder={t('اسم العميل أو رقم الجوال', 'Customer name or mobile')} role="combobox" aria-expanded={show} aria-controls={listId} aria-autocomplete="list"
@@ -782,9 +796,16 @@ function ClientPicker({ w, error, t }: { w: Wizard; error: string | null; t: T }
                 </Dropdown>
               )}
             </div>
+            {canAdd && (
+              <Button variant="secondary" className="shrink-0" onClick={() => { setOpen(false); setAdding(true); }} data-testid="shipment-add-customer">
+                <UserPlus size={15} className="text-emerald-600" /> {t('إضافة عميل جديد', 'Add New Customer')}
+              </Button>
+            )}
+            </div>
           )}
         </Field>
       )}
+      <QuickAddCustomerModal open={adding} onClose={() => setAdding(false)} onCreated={onCreated} lang={lang} />
     </div>
   );
 }
